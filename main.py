@@ -1124,7 +1124,10 @@ class BoardWidget(QWidget):
         self.update()
 
     def set_last_move(self, r, c, player):
-        self.last_move = (r, c, player)
+        if r is None or c is None:
+            self.last_move = None
+        else:
+            self.last_move = (r, c, player)
         self.update()
 
     def mouseMoveEvent(self, event: QMouseEvent):
