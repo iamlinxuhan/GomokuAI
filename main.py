@@ -1593,7 +1593,7 @@ class GomokuGame(QMainWindow):
 
         # 游戏状态变量
         self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-        self.return_map = np.zeros((4, BOARD_SIZE, BOARD_SIZE), dtype=int)
+        self.move_history = []  # 每步落子后保存棋盘快照
         self.gamemode = 0  # 0=先手(黑), 1=后手(白)
         self.gameplayer = 1
         self.gamekunnan = 1
@@ -1660,7 +1660,7 @@ class GomokuGame(QMainWindow):
     def _start_game(self):
         """初始化游戏"""
         self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-        self.return_map = np.zeros((4, BOARD_SIZE, BOARD_SIZE), dtype=int)
+        self.move_history = []  # 每步落子后保存棋盘快照
         self.gameplayer = 1
         self.gamerule = 3
         self.output = 3
@@ -1739,7 +1739,7 @@ class GomokuGame(QMainWindow):
             self.board_widget.set_board(self.board)
             self.board_widget.set_last_move(9, 9, 1)
             self.move_count += 1
-            self._save_to_return_map()
+            self.move_history.append(self.board.copy())
             self._update_panel()
 
     def _on_board_click(self, event: QMouseEvent):
@@ -1768,7 +1768,7 @@ class GomokuGame(QMainWindow):
         self.board_widget.set_board(self.board)
         self.board_widget.set_last_move(r, c, player_stone)
         self.move_count += 1
-        self._save_to_return_map()
+        self.move_history.append(self.board.copy())
         self._update_panel()
 
         # 检查玩家是否获胜
@@ -1814,7 +1814,7 @@ class GomokuGame(QMainWindow):
         self.board_widget.set_board(self.board)
         self.board_widget.set_last_move(r, c, ai_stone)
         self.move_count += 1
-        self._save_to_return_map()
+        self.move_history.append(self.board.copy())
         self._update_panel()
 
         # 检查AI是否获胜
@@ -1831,25 +1831,26 @@ class GomokuGame(QMainWindow):
             self._show_game_over()
 
     def _on_undo(self):
-        """悔棋"""
+        """悔棋：撤回玩家最后一步及其后的AI回应（共2步）"""
         if self.game_over or self.ai_thinking:
             return
         if self.output <= 0:
             return
+        if self.move_count == 0:
+            return  # 棋局尚未开始，无法悔棋
 
         self.output -= 1
 
-        # 恢复棋盘（撤回两步：玩家一步 + AI一步）
         if self.move_count >= 2:
-            self.board = self.return_map[1].copy()
-            # 调整 return_map
-            for i in range(1, 4):
-                self.return_map[i] = self.return_map[i - 1].copy() if i > 0 else self.board.copy()
+            # 弹出最后两步（玩家 + AI）
+            self.move_history.pop()  # AI的那步
+            self.move_history.pop()  # 玩家的那步
+            self.board = self.move_history[-1].copy() if self.move_history else np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
             self.move_count -= 2
         elif self.move_count == 1 and self.gamemode == 1:
-            # AI先手的情况，撤回AI第一步
+            # AI先手的情况，撤回AI第一步，重下天元
+            self.move_history.pop()
             self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-            self.return_map = np.zeros((4, BOARD_SIZE, BOARD_SIZE), dtype=int)
             self.move_count = 0
             self.ai_first_move_done = False
             self._ai_first_move()
@@ -1857,8 +1858,8 @@ class GomokuGame(QMainWindow):
             self._update_panel()
             return
         elif self.move_count == 1:
+            self.move_history.pop()
             self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-            self.return_map = np.zeros((4, BOARD_SIZE, BOARD_SIZE), dtype=int)
             self.move_count = 0
 
         self.last_move = None
@@ -1876,12 +1877,6 @@ class GomokuGame(QMainWindow):
     def _on_quit(self):
         """退出"""
         self.close()
-
-    def _save_to_return_map(self):
-        """保存棋盘状态到悔棋缓存"""
-        for i in range(1, 4):
-            self.return_map[i - 1] = self.return_map[i].copy()
-        self.return_map[3] = self.board.copy()
 
     def _update_panel(self):
         """更新右侧面板"""
