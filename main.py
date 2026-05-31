@@ -830,11 +830,9 @@ def ai_move(board, ai_player, depth):
     AI 主入口：TSS 威胁检测 + 迭代加深搜索。
 
     迭代加深流程：
-    1. 从深度 1 开始，逐步增加到目标深度（或时间耗尽）
+    1. 从深度 1 开始，逐步增加到目标深度
     2. 每次迭代把上层搜到的最佳落子作为候选排序的首选
-    3. 设置思考时间上限，避免卡死
     """
-    import time as time_module
 
     # 立即威胁检测（含 TSS）
     threat = _check_immediate_threat(board, ai_player)
@@ -854,16 +852,13 @@ def ai_move(board, ai_player, depth):
 
     human_player = 1 if ai_player == 2 else 2
 
-    # 根据难度设定 目标深度 和 时间上限
+    # 根据难度设定目标深度
     if depth == 1:
         target_depth = 1
-        time_limit = 0.5
     elif depth == 2:
         target_depth = 2
-        time_limit = 1.5
     else:
         target_depth = 4   # 高级模式最多搜到4层
-        time_limit = 5.0
 
     # 启发式排序作为初始候选
     move_scores = []
@@ -882,13 +877,8 @@ def ai_move(board, ai_player, depth):
 
     # 迭代加深搜索
     best_move = move_scores[0][1], move_scores[0][2]
-    start_time = time_module.time()
 
     for cur_depth in range(1, target_depth + 1):
-        # 检查时间：如果已用超过 80%，提前终止
-        elapsed = time_module.time() - start_time
-        if elapsed > time_limit * 0.8 and cur_depth > 1:
-            break
 
         local_best_move = best_move
         best_val = float('-inf')
@@ -902,10 +892,6 @@ def ai_move(board, ai_player, depth):
                 iter_moves.append((score, r, c))
 
         for _, r, c in iter_moves:
-            # 再次检查时间
-            if time_module.time() - start_time > time_limit:
-                break
-
             board[r][c] = ai_player
             new_hash = base_hash ^ _zobrist_table[ai_player - 1][r][c]
             if _check_win_fast(board, ai_player):
