@@ -216,6 +216,40 @@ def check_win(board, player):
     return _check_win_fast(board, player)
 
 
+# ==================== 杀手启发 & 历史启发 ====================
+MAX_DEPTH = 12
+_killer_moves = [[None, None] for _ in range(MAX_DEPTH)]  # 每层2个杀手走法
+
+# 历史启发表：history[player][r][c] 记录该落子导致beta截断的次数
+_history_table = np.zeros((2, BOARD_SIZE, BOARD_SIZE), dtype=np.int32)
+
+def _record_killer(depth, r, c):
+    """记录杀手走法（LRU风格：新杀手放第一位，旧的移到第二位）"""
+    if _killer_moves[depth][0] == (r, c):
+        return
+    _killer_moves[depth][1] = _killer_moves[depth][0]
+    _killer_moves[depth][0] = (r, c)
+
+def _record_history(player, r, c, depth):
+    """记录历史启发：用 depth^2 作为增量，越深截断越有价值"""
+    _history_table[player - 1][r][c] += depth * depth
+
+def _is_killer(depth, r, c):
+    """检查是否为杀手走法"""
+    k0, k1 = _killer_moves[depth]
+    return (r, c) == k0 or (r, c) == k1
+
+def _get_history(player, r, c):
+    """获取历史启发分数（用于排序）"""
+    return _history_table[player - 1][r][c]
+
+def _history_move_order(r, c, current_player, depth):
+    """综合杀手+历史评分，用于排序"""
+    score = _get_history(current_player, r, c)
+    if _is_killer(depth, r, c):
+        score += 100000000  # 杀手走法优先
+    return score
+
 # ==================== AI Alpha-Beta + 置换表 ====================
 # 置换表（LRU缓存）
 TT_SIZE = 1 << 20  # 约100万条
@@ -270,58 +304,138 @@ def _generate_moves(board, around_only=True):
     return moves
 
 
-def _quick_eval_move(board, r, c, player):
-    """快速评估单个落子的价值（用于启发式排序），进攻权重 > 防守权重"""
-    score = 0
+def _composite_eval(board, r, c, player):
+    """
+    复合棋型评估：检测落子后在所有方向上的棋型组合。
+    返回 (五连数, 活四数, 冲四数, 活三数, 眠三数, 活二数) 以及综合评分。
+    
+    关键：一子同时形成双活三 → 极高分数（对手防不住）。
+    """
     directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
-    opp = 1 if player == 2 else 2
+    live4_cnt = 0
+    rush4_cnt = 0
+    live3_cnt = 0
+    sleep3_cnt = 0
+    live2_cnt = 0
+    win = False
 
-    # ===== 进攻评估（自己的棋型） =====
     for dr, dc in directions:
         count, open_ends, has_jump = _analyze_line(board, r, c, dr, dc, player)
         if count >= 5:
-            return 100000000  # 直接五连，最高优先级
+            win = True
+            break
         if count == 4 and open_ends >= 2:
-            score += 5000000   # 活四（必胜），极高权重
+            live4_cnt += 1
         elif count == 4 and open_ends == 1:
-            score += 500000    # 冲四
+            rush4_cnt += 1
         elif count == 3 and open_ends >= 2:
-            score += 50000     # 活三（下一步就活四），高权重
+            live3_cnt += 1
         elif count == 3 and open_ends == 1:
-            score += 5000      # 眠三
+            sleep3_cnt += 1
         elif count == 2 and open_ends >= 2:
-            score += 1000      # 活二
-        elif count == 2 and open_ends == 1:
-            score += 200       # 眠二
-        elif count == 1 and open_ends >= 2:
-            score += 30        # 活一
+            live2_cnt += 1
 
-    # ===== 防守评估（堵对手的棋型） =====
-    # 关键修复：防守分数不能超过同级别的进攻分数
-    for dr, dc in directions:
-        count, open_ends, has_jump = _analyze_line(board, r, c, dr, dc, opp)
-        if count >= 5:
-            score += 90000000   # 堵对手五连（仅次于自己五连）
-        elif count == 4 and open_ends >= 2:
-            score += 3000000    # 堵对手活四
-        elif count == 4 and open_ends == 1:
-            score += 300000     # 堵对手冲四
-        elif count == 3 and open_ends >= 2:
-            score += 30000      # 堵对手活三（低于自己活三的50000）
-        elif count == 3 and open_ends == 1:
-            score += 3000       # 堵对手眠三
-        elif count == 2 and open_ends >= 2:
-            score += 500        # 堵对手活二
+    if win:
+        return 100000000
 
-    # 中心位置加分
-    center_dist = abs(r - 9) + abs(c - 9)
-    score += max(0, 18 - center_dist) * 5
+    # 复合棋型评分
+    score = 0
+
+    # 活四
+    if live4_cnt >= 1:
+        score += 5000000
+    if live4_cnt >= 2:
+        score += 50000000  # 双活四必胜
+
+    # 冲四
+    if rush4_cnt >= 1:
+        score += 500000
+    if rush4_cnt >= 2:
+        score += 10000000  # 双冲四必胜
+
+    # 活三
+    if live3_cnt >= 1:
+        score += 50000
+    if live3_cnt >= 2:
+        score += 5000000   # 双活三必胜！对手防不住
+
+    # 冲四 + 活三组合（也是必胜）
+    if rush4_cnt >= 1 and live3_cnt >= 1:
+        score += 3000000
+
+    # 眠三
+    if sleep3_cnt >= 1:
+        score += 5000
+    if sleep3_cnt >= 2:
+        score += 100000
+
+    # 活二
+    if live2_cnt >= 1:
+        score += 1000
+    if live2_cnt >= 2:
+        score += 8000
 
     return score
 
 
-def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None):
-    """Alpha-Beta剪枝 + 置换表 + 启发式"""
+def _quick_eval_move(board, r, c, player):
+    """快速评估单个落子的价值（用于启发式排序），含复合棋型"""
+    board[r][c] = player
+
+    # 进攻评估
+    attack = _composite_eval(board, r, c, player)
+
+    # 防守评估
+    opp = 1 if player == 2 else 2
+    defense = _composite_eval(board, r, c, opp)
+    # 防守分折算
+    defense = defense // 2
+
+    board[r][c] = 0
+
+    # 中心位置加分
+    center_dist = abs(r - 9) + abs(c - 9)
+    center_bonus = max(0, 18 - center_dist) * 5
+
+    return attack + defense + center_bonus
+
+
+def _order_moves(move_list, board, current_player, depth, hash_key, tt_best_move):
+    """
+    综合排序候选落子：TT最佳 → 杀手 → 历史 → 复合棋型评估。
+    PVS 对排序质量要求极高，好的排序让零窗口搜索大概率成功。
+    """
+    scored = []
+    for r, c in move_list:
+        priority = 0
+        # 1. TT 首选
+        if tt_best_move and (r, c) == tt_best_move:
+            priority = 10000000000
+        # 2. 杀手走法
+        elif _is_killer(depth, r, c):
+            priority = 5000000000
+        else:
+            # 3. 历史启发 + 复合棋型评估
+            hist = _get_history(current_player, r, c)
+            eval_score = _quick_eval_move(board, r, c, current_player)
+            priority = hist + eval_score
+        scored.append((priority, r, c))
+    scored.sort(reverse=True)
+    return scored
+
+
+def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, ply=0):
+    """
+    PVS (Principal Variation Search) + 置换表 + 杀手启发 + 历史启发。
+    
+    核心思想：
+    - 第一个分支全窗口搜索 (alpha, beta)
+    - 后续分支先用零窗口 (alpha, alpha+1) 搜索
+    - 如果零窗口搜索发现更好的值（score > alpha 且 score < beta），
+      再用全窗口重新搜索
+    - 这样在排序好的情况下，绝大多数分支都会被零窗口快速剪掉
+    返回 (best_val, best_move) 或直接返回 best_val（非根节点）。
+    """
     human_player = 1 if ai_player == 2 else 2
 
     # 置换表查询
@@ -333,56 +447,81 @@ def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None):
 
     # 终局判断
     if _check_win_fast(board, ai_player):
-        return 10000000 + depth  # 越快赢越好
+        return 10000000 + depth
     if _check_win_fast(board, human_player):
         return -10000000 - depth
     if depth == 0:
         return evaluate_board(board, ai_player)
 
-    # 生成候选位置
-    moves = _generate_moves(board)
-
-    if not moves:
+    # 生成并排序候选位置
+    all_moves = _generate_moves(board)
+    if not all_moves:
         return 0
 
     current_player = ai_player if maximizing else human_player
+    move_scores = _order_moves(all_moves, board, current_player, depth, hash_key, cached_move)
 
-    # 启发式排序：对候选位置按预估价值排序
-    move_scores = [(_quick_eval_move(board, r, c, current_player), r, c) for r, c in moves]
-    move_scores.sort(reverse=True)
-
-    # 只保留前 N 个候选（减少分支因子）
-    max_branch = 25 if depth <= 1 else 20
+    # 分支限制
+    max_branch = 30 if depth <= 1 else 25
     if len(move_scores) > max_branch:
         move_scores = move_scores[:max_branch]
 
     best_move = None
+    first_child = True
+
     if maximizing:
         best_val = float('-inf')
-        for _, r, c in move_scores:
+        for idx, (_, r, c) in enumerate(move_scores):
             board[r][c] = ai_player
             new_hash = hash_key ^ _zobrist_table[ai_player - 1][r][c]
-            val = alpha_beta(board, depth - 1, alpha, beta, False, ai_player, new_hash)
+
+            if first_child:
+                # 第一个分支：全窗口搜索
+                val = alpha_beta(board, depth - 1, alpha, beta, False, ai_player, new_hash, ply + 1)
+                first_child = False
+            else:
+                # PVS：先用零窗口 (alpha, alpha+1) 搜索
+                val = alpha_beta(board, depth - 1, alpha, alpha + 1, False, ai_player, new_hash, ply + 1)
+                # 如果零窗口发现更优值 → 全窗口重新搜索
+                if alpha < val < beta:
+                    val = alpha_beta(board, depth - 1, val, beta, False, ai_player, new_hash, ply + 1)
+
             board[r][c] = 0
+
             if val > best_val:
                 best_val = val
                 best_move = (r, c)
             alpha = max(alpha, val)
             if beta <= alpha:
+                # Beta 截断 → 记录杀手走法和历史启发
+                _record_killer(depth, r, c)
+                _record_history(ai_player, r, c, depth)
                 break
         flag = 2 if best_val >= beta else (0 if best_val > float('-inf') else 1)
     else:
         best_val = float('inf')
-        for _, r, c in move_scores:
+        for idx, (_, r, c) in enumerate(move_scores):
             board[r][c] = human_player
             new_hash = hash_key ^ _zobrist_table[human_player - 1][r][c]
-            val = alpha_beta(board, depth - 1, alpha, beta, True, ai_player, new_hash)
+
+            if first_child:
+                val = alpha_beta(board, depth - 1, alpha, beta, True, ai_player, new_hash, ply + 1)
+                first_child = False
+            else:
+                # PVS 零窗口
+                val = alpha_beta(board, depth - 1, beta - 1, beta, True, ai_player, new_hash, ply + 1)
+                if beta - 1 < val < beta:
+                    val = alpha_beta(board, depth - 1, alpha, val, True, ai_player, new_hash, ply + 1)
+
             board[r][c] = 0
+
             if val < best_val:
                 best_val = val
                 best_move = (r, c)
             beta = min(beta, val)
             if beta <= alpha:
+                _record_killer(depth, r, c)
+                _record_history(human_player, r, c, depth)
                 break
         flag = 1 if best_val <= alpha else (0 if best_val < float('inf') else 2)
 
@@ -499,14 +638,143 @@ def _find_live_four_moves(board, player):
     return live4_moves
 
 
+def _get_pattern_types(board, r, c, player):
+    """
+    获取在(r,c)落子后，player在四个方向上形成的棋型类型。
+    返回包含: has_live4, has_rush4, has_live3, has_sleep3
+    """
+    directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
+    board[r][c] = player
+    has_live4 = False
+    has_rush4 = False
+    has_live3 = False
+    has_sleep3 = False
+
+    for dr, dc in directions:
+        count, open_ends, _ = _analyze_line(board, r, c, dr, dc, player)
+        if count >= 5:
+            board[r][c] = 0
+            return True, True, True, True  # 五连
+        if count == 4 and open_ends >= 2:
+            has_live4 = True
+        elif count == 4 and open_ends == 1:
+            has_rush4 = True
+        elif count == 3 and open_ends >= 2:
+            has_live3 = True
+        elif count == 3 and open_ends == 1:
+            has_sleep3 = True
+
+    board[r][c] = 0
+    return has_live4, has_rush4, has_live3, has_sleep3
+
+
+def _find_forced_win(board, player, max_depth=4):
+    """
+    Threat-Space Search: 搜索强制获胜序列（VCF/VCT）。
+    
+    只搜索 player 的进攻路线（冲四/活四），枚举对手必须堵的位置。
+    加入 visited 集合和时间上限避免死循环和性能爆炸。
+    """
+    import time as _tss_time
+
+    opp = 1 if player == 2 else 2
+    _tss_start = _tss_time.time()
+    _tss_limit = 1.5  # TSS 最多跑 1.5 秒
+    _tss_visited = set()
+
+    def _tss_endpoints(board, r, c, p):
+        """找到(r,c)处p棋子形成的4+连子的所有空位端点（对手必堵位置）"""
+        ends = set()
+        for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+            # 向正反方向扫描连续p棋子
+            pos_cnt = 1
+            for k in range(1, 6):
+                nr, nc = r + dr * k, c + dc * k
+                if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE and board[nr][nc] == p:
+                    pos_cnt += 1
+                else:
+                    break
+            neg_cnt = 1
+            for k in range(1, 6):
+                nr, nc = r - dr * k, c - dc * k
+                if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE and board[nr][nc] == p:
+                    neg_cnt += 1
+                else:
+                    break
+            total = pos_cnt + neg_cnt - 1
+            if total >= 4:
+                # 正方向端点
+                nr1, nc1 = r + dr * pos_cnt, c + dc * pos_cnt
+                if 0 <= nr1 < BOARD_SIZE and 0 <= nc1 < BOARD_SIZE and board[nr1][nc1] == 0:
+                    ends.add((nr1, nc1))
+                # 反方向端点
+                nr2, nc2 = r - dr * neg_cnt, c - dc * neg_cnt
+                if 0 <= nr2 < BOARD_SIZE and 0 <= nc2 < BOARD_SIZE and board[nr2][nc2] == 0:
+                    ends.add((nr2, nc2))
+        return ends
+
+    def _tt(board_tuple, player, depth):
+        nonlocal _tss_start, _tss_limit, _tss_visited
+
+        if depth == 0:
+            return None
+        # 超时保护
+        if _tss_time.time() - _tss_start > _tss_limit:
+            return None
+        # visited 防重复搜索
+        key = (board_tuple, player, depth)
+        if key in _tss_visited:
+            return None
+        _tss_visited.add(key)
+
+        board = np.array(board_tuple, dtype=int).reshape(BOARD_SIZE, BOARD_SIZE)
+        moves = _generate_moves(board)
+
+        for r, c in moves:
+            if _tss_time.time() - _tss_start > _tss_limit:
+                return None
+
+            # 只关注能形成冲四/活四的走法
+            has_live4, has_rush4, _, _ = _get_pattern_types(board, r, c, player)
+            if not has_live4 and not has_rush4:
+                continue
+
+            board[r][c] = player
+            if _check_win_fast(board, player):
+                board[r][c] = 0
+                return [(r, c)]
+
+            defense_moves = _tss_endpoints(board, r, c, player)
+            if not defense_moves:
+                board[r][c] = 0
+                continue
+
+            for def_r, def_c in defense_moves:
+                if board[def_r][def_c] != 0:
+                    continue
+                board[def_r][def_c] = opp
+                new_tuple = tuple(board.flatten())
+                result = _tt(new_tuple, player, depth - 1)
+                board[def_r][def_c] = 0
+                if result is not None:
+                    board[r][c] = 0
+                    return [(r, c)] + result
+
+            board[r][c] = 0
+        return None
+
+    board_tuple = tuple(board.flatten())
+    return _tt(board_tuple, player, max_depth)
+
+
 def _check_immediate_threat(board, player):
     """
-    检查是否有立即获胜或必须防守的位置。
-    优先级：
+    TSS 增强版威胁检测：
     1. 自己能五连 → 直接赢
     2. 对手能五连 → 必须堵
-    3. 自己能形成活四（必胜） → 走这里
-    4. 对手能形成活四 → 必须堵
+    3. TSS 强制获胜序列 → 走第一步
+    4. 自己能形成活四（必胜） → 走这里
+    5. 对手能形成活四 → 必须堵
     """
     opp = 1 if player == 2 else 2
 
@@ -520,13 +788,36 @@ def _check_immediate_threat(board, player):
     if opp_win:
         return opp_win[0]
 
-    # 3. 自己能否形成活四（必胜局面）
+    # 3. TSS 强制获胜序列（VCF/VCT）
+    # 仅在棋局中期尝试（棋子数 > 4），避免初期浪费计算
+    stone_count = np.count_nonzero(board)
+    if stone_count >= 6:
+        forced_seq = _find_forced_win(board, player, max_depth=4)
+        if forced_seq:
+            return forced_seq[0]
+
+    # 4. 自己能否形成活四（必胜局面）
     my_live4 = _find_live_four_moves(board, player)
     if my_live4:
-        # 在多个活四中选择最优的
         return my_live4[0]
 
-    # 4. 对手能否形成活四（必须提前堵）
+    # 5. 双活三检测（也是必胜）
+    moves = _generate_moves(board)
+    for r, c in moves:
+        has_live4, has_rush4, has_live3, _ = _get_pattern_types(board, r, c, player)
+        if has_live3:
+            # 检查是否同时形成两个活三
+            board[r][c] = player
+            live3_dirs = []
+            for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+                count, open_ends, _ = _analyze_line(board, r, c, dr, dc, player)
+                if count == 3 and open_ends >= 2:
+                    live3_dirs.append((dr, dc))
+            board[r][c] = 0
+            if len(live3_dirs) >= 2:
+                return (r, c)
+
+    # 6. 对手能否形成活四（必须提前堵）
     opp_live4 = _find_live_four_moves(board, opp)
     if opp_live4:
         return opp_live4[0]
@@ -535,8 +826,17 @@ def _check_immediate_threat(board, player):
 
 
 def ai_move(board, ai_player, depth):
-    """AI主入口：迭代加深 + 立即威胁检测"""
-    # 立即威胁检测
+    """
+    AI 主入口：TSS 威胁检测 + 迭代加深搜索。
+
+    迭代加深流程：
+    1. 从深度 1 开始，逐步增加到目标深度（或时间耗尽）
+    2. 每次迭代把上层搜到的最佳落子作为候选排序的首选
+    3. 设置思考时间上限，避免卡死
+    """
+    import time as time_module
+
+    # 立即威胁检测（含 TSS）
     threat = _check_immediate_threat(board, ai_player)
     if threat:
         return threat
@@ -554,40 +854,77 @@ def ai_move(board, ai_player, depth):
 
     human_player = 1 if ai_player == 2 else 2
 
-    # 启发式排序：进攻权重 2x，防守权重 1x
-    # 确保"我能赢" > "堵对手"
+    # 根据难度设定 目标深度 和 时间上限
+    if depth == 1:
+        target_depth = 1
+        time_limit = 0.5
+    elif depth == 2:
+        target_depth = 2
+        time_limit = 1.5
+    else:
+        target_depth = 4   # 高级模式最多搜到4层
+        time_limit = 5.0
+
+    # 启发式排序作为初始候选
     move_scores = []
     for r, c in moves:
         attack = _quick_eval_move(board, r, c, ai_player)
         defense = _quick_eval_move(board, r, c, human_player)
-        # 进攻权重高于防守，确保优先选择进攻路线
         move_scores.append((attack * 2 + defense, r, c))
     move_scores.sort(reverse=True)
 
-    # 迭代加深搜索
-    best_move = move_scores[0][1], move_scores[0][2]
-    best_val = float('-inf')
-
-    search_depth = depth  # depth: 1=简单, 2=中等, 3=困难
-    max_branch_top = 15 if search_depth >= 2 else 10
-
     # 限制顶层分支
+    max_branch_top = 15 if target_depth >= 2 else 10
     if len(move_scores) > max_branch_top:
         move_scores = move_scores[:max_branch_top]
 
     base_hash = zobrist_hash(board)
 
-    for _, r, c in move_scores:
-        board[r][c] = ai_player
-        new_hash = base_hash ^ _zobrist_table[ai_player - 1][r][c]
-        if _check_win_fast(board, ai_player):
+    # 迭代加深搜索
+    best_move = move_scores[0][1], move_scores[0][2]
+    start_time = time_module.time()
+
+    for cur_depth in range(1, target_depth + 1):
+        # 检查时间：如果已用超过 80%，提前终止
+        elapsed = time_module.time() - start_time
+        if elapsed > time_limit * 0.8 and cur_depth > 1:
+            break
+
+        local_best_move = best_move
+        best_val = float('-inf')
+
+        # 本次迭代的候选排序：上次最优放第一位
+        iter_moves = []
+        for score, r, c in move_scores:
+            if (r, c) == best_move:
+                iter_moves.insert(0, (score, r, c))
+            else:
+                iter_moves.append((score, r, c))
+
+        for _, r, c in iter_moves:
+            # 再次检查时间
+            if time_module.time() - start_time > time_limit:
+                break
+
+            board[r][c] = ai_player
+            new_hash = base_hash ^ _zobrist_table[ai_player - 1][r][c]
+            if _check_win_fast(board, ai_player):
+                board[r][c] = 0
+                return (r, c)
+
+            # PVS 搜索
+            val = alpha_beta(board, cur_depth - 1, float('-inf'), float('inf'), False, ai_player, new_hash, ply=1)
             board[r][c] = 0
-            return (r, c)
-        val = alpha_beta(board, search_depth - 1, float('-inf'), float('inf'), False, ai_player, new_hash)
-        board[r][c] = 0
-        if val > best_val:
-            best_val = val
-            best_move = (r, c)
+
+            if val > best_val:
+                best_val = val
+                local_best_move = (r, c)
+
+        best_move = local_best_move
+
+        # 如果某次迭代找到了必胜路线，提前结束
+        if best_val > 9000000:
+            break
 
     return best_move
 
@@ -1155,7 +1492,6 @@ class SelectionScreen(QWidget):
             QPushButton:hover {{
                 background-color: {hover_color};
                 border: 3px solid #cdd6f4;
-                transform: scale(1.05);
             }}
         """)
         return btn
