@@ -98,8 +98,4 @@ pyinstaller --onefile --windowed --icon="五子棋.ico" --name "五子棋AI" mai
 
 输出文件位于 `dist/五子棋AI.exe`。
 
----
 
-## 📄 License
-
-MIT License — 仅供学习交流使用。
