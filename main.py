@@ -294,7 +294,6 @@ def _batch_to_torch(boards_p, boards_o):
     t = np.stack([boards_p, boards_o], axis=1)  # (N, 2, 19, 19)
     return torch.from_numpy(t.astype(np.float32)).to(_device)
 
-@torch.no_grad()
 def _eval_board_torch(board_tensor):
     """
     用 GPU 张量运算评估棋盘（方向核）。
@@ -353,10 +352,10 @@ def _eval_board_torch(board_tensor):
 
         return score
 
-    return _score_channel(p_chan), _score_channel(o_chan)
+    with torch.no_grad():
+        return _score_channel(p_chan), _score_channel(o_chan)
 
 
-@torch.no_grad()
 def _batch_eval_moves(board, moves, player):
     """GPU 批量评估所有候选落子（方向核 × 2色 × N候选），专注有效棋型。
     无GPU时自动回退到CPU排序。""" 
@@ -371,61 +370,62 @@ def _batch_eval_moves(board, moves, player):
     if n == 0:
         return []
 
-    base_p = (board == player).astype(np.float32)
-    base_o = (board == opp).astype(np.float32)
-    boards_p = np.tile(base_p, (n, 1, 1))
-    boards_o = np.tile(base_o, (n, 1, 1))
-    for i, (r, c) in enumerate(moves):
-        boards_p[i, r, c] = 1.0
-        boards_o[i, r, c] = 0.0
+    with torch.no_grad():
+        base_p = (board == player).astype(np.float32)
+        base_o = (board == opp).astype(np.float32)
+        boards_p = np.tile(base_p, (n, 1, 1))
+        boards_o = np.tile(base_o, (n, 1, 1))
+        for i, (r, c) in enumerate(moves):
+            boards_p[i, r, c] = 1.0
+            boards_o[i, r, c] = 0.0
 
-    tensor = _batch_to_torch(boards_p, boards_o)
-    kernels = _get_pattern_kernels()
-    scores = torch.zeros(n, dtype=torch.float32, device=_device)
+        tensor = _batch_to_torch(boards_p, boards_o)
+        kernels = _get_pattern_kernels()
+        scores = torch.zeros(n, dtype=torch.float32, device=_device)
 
-    def _add_batch_conv(ch, k, weight):
-        conv = F.conv2d(ch, k)
-        max_val = conv.amax(dim=[1, 2, 3])
-        hits = (max_val >= k.numel() - 0.2).float()
-        scores.add_(hits * weight)
+        def _add_batch_conv(ch, k, weight):
+            conv = F.conv2d(ch, k)
+            max_val = conv.amax(dim=[1, 2, 3])
+            hits = (max_val >= k.numel() - 0.2).float()
+            scores.add_(hits * weight)
 
-    p_ch = tensor[:, 0:1, :, :]
-    o_ch = tensor[:, 1:2, :, :]
+        p_ch = tensor[:, 0:1, :, :]
+        o_ch = tensor[:, 1:2, :, :]
 
-    for ch, mult in [(p_ch, 1.0), (o_ch, 0.95)]:
-        # === 线型核 (H/V N=2~7) ===
-        for prefix in ['h', 'v']:
+        for ch, mult in [(p_ch, 1.0), (o_ch, 0.95)]:
+            # === 线型核 (H/V N=2~7) ===
+            for prefix in ['h', 'v']:
+                for n, w in [(7, 500000000), (6, 200000000), (5, 100000000),
+                             (4, 500000), (3, 10000), (2, 200)]:
+                    k = kernels.get(f'{prefix}{n}')
+                    if k is not None:
+                        _add_batch_conv(ch, k, w * mult)
+
+            # === 反向变体 ===
+            for kname, w in [('h4r', 500000), ('h3r', 10000), ('h2r', 200),
+                              ('v4r', 500000), ('v3r', 10000), ('v2r', 200)]:
+                k = kernels.get(kname)
+                if k is not None:
+                    _add_batch_conv(ch, k, w * mult)
+
+            # === 间隔跳活核 ===
+            for gname, gw in [('h_gap1', 500000), ('h_gap2', 500000), ('h_gap3', 500000)]:
+                k = kernels.get(gname)
+                if k is not None:
+                    _add_batch_conv(ch, k, gw * mult)
+
+            # === 对角线核 ===
             for n, w in [(7, 500000000), (6, 200000000), (5, 100000000),
-                         (4, 500000), (3, 10000), (2, 200)]:
-                k = kernels.get(f'{prefix}{n}')
-                if k is not None:
-                    _add_batch_conv(ch, k, w * mult)
+                         (4, 500000), (3, 10000)]:
+                for prefix in ['d', 'ad']:
+                    k = kernels.get(f'{prefix}{n}')
+                    if k is not None:
+                        _add_batch_conv(ch, k, w * mult)
 
-        # === 反向变体 ===
-        for kname, w in [('h4r', 500000), ('h3r', 10000), ('h2r', 200),
-                          ('v4r', 500000), ('v3r', 10000), ('v2r', 200)]:
-            k = kernels.get(kname)
-            if k is not None:
-                _add_batch_conv(ch, k, w * mult)
-
-        # === 间隔跳活核 ===
-        for gname, gw in [('h_gap1', 500000), ('h_gap2', 500000), ('h_gap3', 500000)]:
-            k = kernels.get(gname)
-            if k is not None:
-                _add_batch_conv(ch, k, gw * mult)
-
-        # === 对角线核 ===
-        for n, w in [(7, 500000000), (6, 200000000), (5, 100000000),
-                     (4, 500000), (3, 10000)]:
-            for prefix in ['d', 'ad']:
-                k = kernels.get(f'{prefix}{n}')
-                if k is not None:
-                    _add_batch_conv(ch, k, w * mult)
-
-    # 中心加分（torch向量化）
-    move_tensor = torch.tensor(moves, dtype=torch.float32, device=_device)
-    center_dist = (move_tensor[:, 0] - 9).abs() + (move_tensor[:, 1] - 9).abs()
-    scores.add_(torch.clamp(18 - center_dist, min=0) * 5)
+        # 中心加分（torch向量化）
+        move_tensor = torch.tensor(moves, dtype=torch.float32, device=_device)
+        center_dist = (move_tensor[:, 0] - 9).abs() + (move_tensor[:, 1] - 9).abs()
+        scores.add_(torch.clamp(18 - center_dist, min=0) * 5)
 
     # 结合 CPU 复合棋型评估
     cpu_scores = scores.cpu().numpy()
