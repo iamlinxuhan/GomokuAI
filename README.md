@@ -6,7 +6,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.6.6-brightgreen)
+![Version](https://img.shields.io/badge/version-1.6.7-brightgreen)
 
 ---
 
@@ -268,6 +268,9 @@ AI 每步执行 **PVS depth=4 全盘搜索**（~4000ms/步），紧贴人类落�
 ---
 
 ## 📝 更新日志
+
+### v1.6.7 (2026-06-06)
+- 🐛 **修复 YAML 语法错误**：heredoc 中 `"$@"` 双引号导致 GitHub Actions 解析失败（L211）
 
 ### v1.6.6 (2026-06-06)
 - 📦 **Windows 安装程序**：NSIS 标准 `.exe` 安装包 — 安装向导 + 开始菜单快捷方式 + 桌面图标 + 卸载程序

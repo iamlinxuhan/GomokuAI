@@ -206,10 +206,7 @@ jobs:
           chmod -R 755 "${APP_DIR}"
 
           # 创建启动脚本
-          cat > "${BIN_DIR}/gomoku-ai-cuda" << 'LAUNCHER'
-#!/bin/bash
-exec /opt/gomoku-ai-cuda/gomoku-ai-cuda "$@"
-LAUNCHER
+          printf '%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai-cuda/gomoku-ai-cuda "$@"' > "${BIN_DIR}/gomoku-ai-cuda"
           chmod 755 "${BIN_DIR}/gomoku-ai-cuda"
 
           cat > "${DESK_DIR}/gomoku-ai-cuda.desktop" << 'DESKTOP_EOF'
@@ -295,10 +292,7 @@ CONTROL_EOF
           cp -r dist/gomoku-ai-cpu/* "${APP_DIR}/"
           chmod -R 755 "${APP_DIR}"
 
-          cat > "${BIN_DIR}/gomoku-ai-cpu" << 'LAUNCHER'
-#!/bin/bash
-exec /opt/gomoku-ai-cpu/gomoku-ai-cpu "$@"
-LAUNCHER
+          printf '%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai-cpu/gomoku-ai-cpu "$@"' > "${BIN_DIR}/gomoku-ai-cpu"
           chmod 755 "${BIN_DIR}/gomoku-ai-cpu"
 
           cat > "${DESK_DIR}/gomoku-ai-cpu.desktop" << 'DESKTOP_EOF'
