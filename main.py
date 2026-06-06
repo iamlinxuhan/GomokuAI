@@ -414,10 +414,11 @@ def _cached_evaluate(board, ai_player):
 
 
 def _eval_player_composite(board, player):
-    """专业权重复合适配评估单方局面（底层扫描）"""
+    """专业权重复合适配评估单方局面（每个方向独立评估，避免遗漏交叉威胁）"""
     score = 0
     directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
-    counted = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=bool)
+    # 使用 (r,c,dr,dc) 跟踪已评估的线段，避免同线重复但允许交叉方向
+    line_evaluated = set()
     # 组合计数器
     live4_cnt = rush4_cnt = dead4_cnt = 0
     live3_cnt = sleep3_cnt = 0
@@ -426,37 +427,43 @@ def _eval_player_composite(board, player):
 
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
-            if board[r][c] == player and not counted[r][c]:
-                for dr, dc in directions:
-                    count, open_ends, has_jump = _analyze_line(board, r, c, dr, dc, player)
-                    if count >= 5:
-                        return 100000000
-                    if count >= 1:
-                        s = _get_line_score(count, open_ends, has_jump)
-                        center_dist = abs(r - 9) + abs(c - 9)
-                        center_bonus = max(0, 18 - center_dist) * 0.03
-                        score += int(s * (1 + center_bonus))
+            if board[r][c] != player:
+                continue
+            for dr, dc in directions:
+                # 同一线段、同一方向只评估一次
+                line_key = (r, c, dr, dc)
+                if line_key in line_evaluated:
+                    continue
+                count, open_ends, has_jump = _analyze_line(board, r, c, dr, dc, player)
+                if count >= 5:
+                    return 100000000
+                if count >= 1:
+                    # 标记整条线段上的所有位置（仅当前方向）
+                    for k in range(count):
+                        nr, nc = r + dr * k, c + dc * k
+                        if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE:
+                            line_evaluated.add((nr, nc, dr, dc))
+                    
+                    s = _get_line_score(count, open_ends, has_jump)
+                    center_dist = abs(r - 9) + abs(c - 9)
+                    center_bonus = max(0, 18 - center_dist) * 0.03
+                    score += int(s * (1 + center_bonus))
 
-                        # 统计组合
-                        if count >= 4 and open_ends >= 2:
-                            live4_cnt += 1
-                        elif count >= 4 and open_ends == 1:
-                            rush4_cnt += 1
-                        elif count >= 4 and open_ends == 0:
-                            dead4_cnt += 1
-                        elif count == 3 and open_ends >= 2 and not has_jump:
-                            live3_cnt += 1
-                        elif count == 3 and open_ends >= 2 and has_jump:
-                            jump_live3_cnt += 1
-                        elif count == 3 and open_ends == 1:
-                            sleep3_cnt += 1
-                        elif count == 2 and open_ends >= 2:
-                            live2_cnt += 1
-
-                        for k in range(count):
-                            nr, nc = r + dr * k, c + dc * k
-                            if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE:
-                                counted[nr][nc] = True
+                    # 统计组合
+                    if count >= 4 and open_ends >= 2:
+                        live4_cnt += 1
+                    elif count >= 4 and open_ends == 1:
+                        rush4_cnt += 1
+                    elif count >= 4 and open_ends == 0:
+                        dead4_cnt += 1
+                    elif count == 3 and open_ends >= 2 and not has_jump:
+                        live3_cnt += 1
+                    elif count == 3 and open_ends >= 2 and has_jump:
+                        jump_live3_cnt += 1
+                    elif count == 3 and open_ends == 1:
+                        sleep3_cnt += 1
+                    elif count == 2 and open_ends >= 2:
+                        live2_cnt += 1
 
     # === 组合加成（对手无法同时防守） ===
     # 双活三 → 活四以上级别
@@ -1187,13 +1194,17 @@ def _check_immediate_threat(board, player):
             # 尝试每个防守点
             moves = _generate_moves(board)
             best_defense = None
+            best_def_score = float('-inf')
             for r, c in moves:
                 board[r][c] = player
                 # 检查落子后是否破坏了对手的VCF
                 h = zobrist_hash(board)
                 # 简单策略：下在对手VCF第一步附近
                 board[r][c] = 0
-                if _quick_eval_move(board, r, c, player) > (_quick_eval_move(board, r, c, player) * 0.5):
+                # 比较防守走法 vs 对手VCF威胁：选评分最高的防守点
+                def_score = _quick_eval_move(board, r, c, player)
+                if def_score > best_def_score:
+                    best_def_score = def_score
                     best_defense = (r, c)
             if best_defense:
                 return best_defense
