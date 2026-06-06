@@ -1,13 +1,14 @@
 """
 五子棋游戏 - PyQt5 版本
-AI: Alpha-Beta剪枝 + 评估函数优化 + 启发式排序 + Zobrist哈希置换表
+AI: Alpha-Beta剪枝 + 杀手/历史启发 + PyTorch GPU加速评估 + TSS威胁空间搜索
 """
 import sys
 import random
 import time
 import math
 import numpy as np
-from collections import OrderedDict
+import torch
+import torch.nn.functional as F
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QLabel,
     QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget,
@@ -22,6 +23,48 @@ from PyQt5.QtGui import (
     QLinearGradient, QRadialGradient, QPixmap, QPainterPath,
     QMouseEvent, QFontMetrics
 )
+
+# ==================== PyTorch 设备 ====================
+_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# ==================== PyTorch 模式检测卷积核 ====================
+# 4个方向 (水平, 垂直, 对角线, 反对角线) 的模式内核
+# 用于 GPU 批量检测棋盘上的棋型
+_pattern_kernels_cached = None
+
+def _get_pattern_kernels():
+    """创建/获取模式检测卷积核（延迟创建，避免首次导入开销）"""
+    global _pattern_kernels_cached
+    if _pattern_kernels_cached is not None:
+        return _pattern_kernels_cached
+
+    # 每个方向一组 5x1 卷积核用于检测连续棋子
+    # 水平方向: kernel shape (1,1,1,5) — (out_ch, in_ch, h, w)
+    k_h = torch.tensor([[[[1, 1, 1, 1, 1]]]], dtype=torch.float32)  # 五连
+    k_h4 = torch.tensor([[[[0, 1, 1, 1, 1]]]], dtype=torch.float32)  # 四连
+    k_h3 = torch.tensor([[[[0, 0, 1, 1, 1]]]], dtype=torch.float32)  # 三连
+    k_h2 = torch.tensor([[[[0, 0, 0, 1, 1]]]], dtype=torch.float32)  # 二连
+
+    k_v = k_h.permute(0, 1, 3, 2)   # 垂直方向
+    k_v4 = k_h4.permute(0, 1, 3, 2)
+    k_v3 = k_h3.permute(0, 1, 3, 2)
+    k_v2 = k_h2.permute(0, 1, 3, 2)
+
+    # 对角线用 5x5 对角核
+    k_d = torch.zeros(1, 1, 5, 5, dtype=torch.float32)
+    for i in range(5):
+        k_d[0, 0, i, i] = 1
+
+    k_ad = torch.zeros(1, 1, 5, 5, dtype=torch.float32)  # 反对角线
+    for i in range(5):
+        k_ad[0, 0, i, 4 - i] = 1
+
+    _pattern_kernels_cached = {
+        'h5': k_h.to(_device), 'h4': k_h4.to(_device), 'h3': k_h3.to(_device), 'h2': k_h2.to(_device),
+        'v5': k_v.to(_device), 'v4': k_v4.to(_device), 'v3': k_v3.to(_device), 'v2': k_v2.to(_device),
+        'd5': k_d.to(_device), 'ad5': k_ad.to(_device),
+    }
+    return _pattern_kernels_cached
 
 # ==================== 常量 ====================
 BOARD_SIZE = 19
@@ -45,42 +88,134 @@ COLOR_RED = QColor("#f38ba8")
 COLOR_TEXT = QColor("#cdd6f4")
 COLOR_SUBTEXT = QColor("#a6adc8")
 
-# ==================== Zobrist 哈希 ====================
-# 预计算随机哈希值
-_zobrist_table = np.random.randint(0, 2**63, size=(2, BOARD_SIZE, BOARD_SIZE), dtype=np.uint64)
-_zobrist_black_turn = np.random.randint(0, 2**63, dtype=np.uint64)
+# ==================== PyTorch 棋盘评估引擎 ====================
+def _board_to_torch(board, player):
+    """将 numpy 棋盘转为 PyTorch 张量 (1, 2, 19, 19)
+    channel 0 = player 棋子, channel 1 = 对手棋子"""
+    opp = 1 if player == 2 else 2
+    p_ch = (board == player).astype(np.float32)
+    o_ch = (board == opp).astype(np.float32)
+    t = np.stack([p_ch, o_ch], axis=0)[np.newaxis, ...]  # (1, 2, 19, 19)
+    return torch.from_numpy(t).to(_device)
 
+def _batch_to_torch(boards_p, boards_o):
+    """批量转换：boards_p/boards_o 为 (N, 19, 19) numpy 数组，返回 (N, 2, 19, 19) tensor"""
+    t = np.stack([boards_p, boards_o], axis=1)  # (N, 2, 19, 19)
+    return torch.from_numpy(t.astype(np.float32)).to(_device)
 
-def zobrist_hash(board):
-    """计算当前棋盘的 Zobrist 哈希值"""
-    h = np.uint64(0)
-    for i in range(BOARD_SIZE):
-        for j in range(BOARD_SIZE):
-            if board[i][j] == 1:
-                h ^= _zobrist_table[0][i][j]
-            elif board[i][j] == 2:
-                h ^= _zobrist_table[1][i][j]
-    return h
+@torch.no_grad()
+def _eval_board_torch(board_tensor):
+    """
+    用 GPU 张量运算评估棋盘。
+    board_tensor: (1, 2, 19, 19), channel0=player, channel1=opponent.
+    返回 (player_score, opponent_score) 标量。
+    """
+    kernels = _get_pattern_kernels()
+    p_chan = board_tensor[:, 0:1, :, :]  # (1, 1, 19, 19)
+    o_chan = board_tensor[:, 1:2, :, :]
 
+    def _score_channel(ch):
+        score = 0.0
+        # 水平五连
+        h5 = (F.conv2d(ch, kernels['h5']).squeeze() >= 4.9).float().sum().item()
+        score += h5 * 100000000
+        # 垂直五连
+        v5 = (F.conv2d(ch, kernels['v5']).squeeze() >= 4.9).float().sum().item()
+        score += v5 * 100000000
+        # 对角线五连
+        d5 = (F.conv2d(ch, kernels['d5']).squeeze() >= 4.9).float().sum().item()
+        score += d5 * 100000000
+        # 反对角五连
+        ad5 = (F.conv2d(ch, kernels['ad5']).squeeze() >= 4.9).float().sum().item()
+        score += ad5 * 100000000
 
-# ==================== AI 评估函数（大幅优化） ====================
-# 棋型权重表
-SCORE_MAP = {
-    (5, True, 0): 100000000,   # 成五
-    (4, True, True): 10000000,   # 活四双头
-    (4, True, False): 1000000,   # 活四
-    (4, False, True): 100000,    # 冲四双头
-    (4, False, False): 10000,    # 冲四
-    (3, True, True): 1000000,    # 双活三
-    (3, True, False): 10000,     # 活三
-    (3, False, True): 1000,      # 双眠三
-    (3, False, False): 500,      # 眠三
-    (2, True, True): 1000,       # 双活二
-    (2, True, False): 200,       # 活二
-    (2, False, False): 50,       # 眠二
-    (1, True, False): 10,        # 活一
-    (1, False, False): 1,        # 眠一
-}
+        # 水平四连
+        h4 = (F.conv2d(ch, kernels['h4']).squeeze() >= 3.9).float().sum().item()
+        score += h4 * 500000
+        # 垂直四连
+        v4 = (F.conv2d(ch, kernels['v4']).squeeze() >= 3.9).float().sum().item()
+        score += v4 * 500000
+
+        # 水平三连
+        h3 = (F.conv2d(ch, kernels['h3']).squeeze() >= 2.9).float().sum().item()
+        score += h3 * 10000
+        # 垂直三连
+        v3 = (F.conv2d(ch, kernels['v3']).squeeze() >= 2.9).float().sum().item()
+        score += v3 * 10000
+
+        # 水平二连
+        h2 = (F.conv2d(ch, kernels['h2']).squeeze() >= 1.9).float().sum().item()
+        score += h2 * 200
+        # 垂直二连
+        v2 = (F.conv2d(ch, kernels['v2']).squeeze() >= 1.9).float().sum().item()
+        score += v2 * 200
+
+        return score
+
+    return _score_channel(p_chan), _score_channel(o_chan)
+
+@torch.no_grad()
+def _batch_eval_moves(board, moves, player):
+    """GPU 批量评估所有候选落子的价值，返回 [(score, r, c), ...] 排序"""
+    opp = 1 if player == 2 else 2
+    n = len(moves)
+    if n == 0:
+        return []
+
+    # 构建 N 个棋盘快照
+    boards_p = np.tile((board == player).astype(np.float32), (n, 1, 1))
+    boards_o = np.tile((board == opp).astype(np.float32), (n, 1, 1))
+    for i, (r, c) in enumerate(moves):
+        # 在 player 通道放棋子
+        boards_p[i, r, c] = 1.0
+        boards_o[i, r, c] = 0.0  # 确保该位置被 player 占据
+
+    tensor = _batch_to_torch(boards_p, boards_o)
+
+    # 用 conv2d 批处理
+    kernels = _get_pattern_kernels()
+    scores = torch.zeros(n, dtype=torch.float32, device=_device)
+
+    def _add_batch_conv(ch, k, weight):
+        conv = F.conv2d(ch, k)  # (N, 1, H_out, W_out)
+        # 检查每个 batch item 是否有任意位置满足 5 连
+        max_val = conv.amax(dim=[1, 2, 3])  # (N,)
+        hits = (max_val >= k.numel() - 0.2).float()  # (N,)
+        scores.add_(hits * weight)
+
+    p_ch = tensor[:, 0:1, :, :]
+    o_ch = tensor[:, 1:2, :, :]
+
+    for ch, mult in [(p_ch, 1.0), (o_ch, 0.95)]:
+        # 五连 (水平和垂直)
+        _add_batch_conv(ch, kernels['h5'], 100000000 * mult)
+        _add_batch_conv(ch, kernels['v5'], 100000000 * mult)
+        _add_batch_conv(ch, kernels['d5'], 100000000 * mult)
+        _add_batch_conv(ch, kernels['ad5'], 100000000 * mult)
+        # 四连
+        _add_batch_conv(ch, kernels['h4'], 500000 * mult)
+        _add_batch_conv(ch, kernels['v4'], 500000 * mult)
+        # 三连
+        _add_batch_conv(ch, kernels['h3'], 10000 * mult)
+        _add_batch_conv(ch, kernels['v3'], 10000 * mult)
+        # 二连
+        _add_batch_conv(ch, kernels['h2'], 200 * mult)
+        _add_batch_conv(ch, kernels['v2'], 200 * mult)
+
+    # 中心加分
+    for i, (r, c) in enumerate(moves):
+        dist = abs(r - 9) + abs(c - 9)
+        scores[i] += max(0, 18 - dist) * 5
+
+    # 结合 CPU 复合棋型评估（捕获 GPU 卷积检测不到的活三/冲四等）
+    result = []
+    for i in range(n):
+        r, c = moves[i]
+        quick_score = _quick_eval_move(board, r, c, player)
+        combined = scores[i].item() + quick_score
+        result.append((combined, r, c))
+    result.sort(reverse=True)
+    return result
 
 
 def _analyze_line(board, r, c, dr, dc, player):
@@ -132,7 +267,7 @@ def _analyze_line(board, r, c, dr, dc, player):
 
 
 def evaluate_board(board, ai_player):
-    """评估棋盘局面，正值对AI有利"""
+    """评估棋盘局面，正值对AI有利。使用复合棋型快速评估。"""
     human_player = 1 if ai_player == 2 else 2
 
     # 快速检查五连
@@ -141,20 +276,23 @@ def evaluate_board(board, ai_player):
     if _check_win_fast(board, human_player):
         return -100000000
 
-    # 检查活四（必胜局面）
-    if _find_live_four_moves(board, ai_player):
-        return 50000000
-
-    ai_score = _evaluate_player(board, ai_player)
-    human_score = _evaluate_player(board, human_player)
-
-    # 防守系数：对手的威胁权重 = 0.95（AI进攻 > 对手进攻）
-    # 这个值小于1意味着AI的同等棋型比对手的同等棋型更"值钱"
+    ai_score = _eval_player_composite(board, ai_player)
+    human_score = _eval_player_composite(board, human_player)
     return ai_score - human_score * 0.95
 
 
-def _evaluate_player(board, player):
-    """评估单个玩家的局面"""
+_SCORE_TABLE = {
+    # (count, live, has_jump)
+    (5, True, False): 100000000, (5, False, False): 100000000,
+    (4, True, False): 1000000, (4, False, False): 10000,
+    (3, True, False): 10000, (3, False, False): 500,
+    (2, True, False): 200, (2, False, False): 50,
+    (1, True, False): 10, (1, False, False): 1,
+}
+
+
+def _eval_player_composite(board, player):
+    """用复合棋型评估单方局面（底层扫描）"""
     score = 0
     directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
     counted = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=bool)
@@ -168,13 +306,11 @@ def _evaluate_player(board, player):
                         return 100000000
                     if count >= 1:
                         is_live = (open_ends >= 2)
-                        key = (min(count, 5), is_live, has_jump)
-                        s = SCORE_MAP.get(key, 0)
-                        # 越靠近中心权重越高
+                        key = (min(count, 5), is_live, False)
+                        s = _SCORE_TABLE.get(key, 0)
                         center_dist = abs(r - 9) + abs(c - 9)
                         center_bonus = max(0, 18 - center_dist) * 0.05
                         score += int(s * (1 + center_bonus))
-                        # 标记已计数
                         for k in range(count):
                             nr, nc = r + dr * k, c + dc * k
                             if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE:
@@ -243,42 +379,6 @@ def _get_history(player, r, c):
     """获取历史启发分数（用于排序）"""
     return _history_table[player - 1][r][c]
 
-def _history_move_order(r, c, current_player, depth):
-    """综合杀手+历史评分，用于排序"""
-    score = _get_history(current_player, r, c)
-    if _is_killer(depth, r, c):
-        score += 100000000  # 杀手走法优先
-    return score
-
-# ==================== AI Alpha-Beta + 置换表 ====================
-# 置换表（LRU缓存）
-TT_SIZE = 1 << 20  # 约100万条
-_transposition_table = OrderedDict()
-
-
-def tt_store(hash_key, depth, value, flag, best_move):
-    """存入置换表"""
-    if len(_transposition_table) >= TT_SIZE:
-        _transposition_table.popitem(last=False)
-    _transposition_table[hash_key] = (depth, value, flag, best_move)
-
-
-def tt_lookup(hash_key, depth, alpha, beta):
-    """查询置换表"""
-    if hash_key in _transposition_table:
-        stored_depth, stored_value, flag, best_move = _transposition_table[hash_key]
-        # 移动条目到末尾（LRU）
-        _transposition_table.move_to_end(hash_key)
-        if stored_depth >= depth:
-            if flag == 0:  # EXACT
-                return stored_value, best_move, True
-            elif flag == 1 and stored_value <= alpha:  # UPPERBOUND
-                return stored_value, best_move, True
-            elif flag == 2 and stored_value >= beta:   # LOWERBOUND
-                return stored_value, best_move, True
-        return None, best_move, False
-    return None, None, False
-
 
 def _generate_moves(board, around_only=True):
     """生成候选落子位置，优先考虑已有棋子周围2格"""
@@ -295,7 +395,6 @@ def _generate_moves(board, around_only=True):
         if moves:
             return list(moves)
 
-    # 如果棋盘为空或没有周围空位，返回中心
     moves = []
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
@@ -400,22 +499,18 @@ def _quick_eval_move(board, r, c, player):
     return attack + defense + center_bonus
 
 
-def _order_moves(move_list, board, current_player, depth, hash_key, tt_best_move):
+def _order_moves(move_list, board, current_player, depth):
     """
-    综合排序候选落子：TT最佳 → 杀手 → 历史 → 复合棋型评估。
-    PVS 对排序质量要求极高，好的排序让零窗口搜索大概率成功。
+    排序候选落子：杀手 → 历史启发 → 复合棋型评估。
+    （无 Zobrist / 置换表）
     """
     scored = []
     for r, c in move_list:
-        priority = 0
-        # 1. TT 首选
-        if tt_best_move and (r, c) == tt_best_move:
-            priority = 10000000000
-        # 2. 杀手走法
-        elif _is_killer(depth, r, c):
+        # 1. 杀手走法最高优先
+        if _is_killer(depth, r, c):
             priority = 5000000000
         else:
-            # 3. 历史启发 + 复合棋型评估
+            # 2. 历史启发 + 复合棋型评估
             hist = _get_history(current_player, r, c)
             eval_score = _quick_eval_move(board, r, c, current_player)
             priority = hist + eval_score
@@ -424,26 +519,12 @@ def _order_moves(move_list, board, current_player, depth, hash_key, tt_best_move
     return scored
 
 
-def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, ply=0):
+def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, ply=0):
     """
-    PVS (Principal Variation Search) + 置换表 + 杀手启发 + 历史启发。
-    
-    核心思想：
-    - 第一个分支全窗口搜索 (alpha, beta)
-    - 后续分支先用零窗口 (alpha, alpha+1) 搜索
-    - 如果零窗口搜索发现更好的值（score > alpha 且 score < beta），
-      再用全窗口重新搜索
-    - 这样在排序好的情况下，绝大多数分支都会被零窗口快速剪掉
-    返回 (best_val, best_move) 或直接返回 best_val（非根节点）。
+    标准 Alpha-Beta 剪枝 + 杀手启发 + 历史启发。
+    （无 PVS / Zobrist / 置换表）
     """
     human_player = 1 if ai_player == 2 else 2
-
-    # 置换表查询
-    if hash_key is None:
-        hash_key = zobrist_hash(board)
-    cached_val, cached_move, hit = tt_lookup(hash_key, depth, alpha, beta)
-    if hit and depth > 0:
-        return cached_val
 
     # 终局判断
     if _check_win_fast(board, ai_player):
@@ -453,83 +534,48 @@ def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, 
     if depth == 0:
         return evaluate_board(board, ai_player)
 
-    # 生成并排序候选位置
     all_moves = _generate_moves(board)
     if not all_moves:
         return 0
 
     current_player = ai_player if maximizing else human_player
-    move_scores = _order_moves(all_moves, board, current_player, depth, hash_key, cached_move)
+    move_scores = _order_moves(all_moves, board, current_player, depth)
 
     # 分支限制
     max_branch = 30 if depth <= 1 else 25
     if len(move_scores) > max_branch:
         move_scores = move_scores[:max_branch]
 
-    best_move = None
-    first_child = True
-
     if maximizing:
         best_val = float('-inf')
-        for idx, (_, r, c) in enumerate(move_scores):
+        for _, r, c in move_scores:
             board[r][c] = ai_player
-            new_hash = hash_key ^ _zobrist_table[ai_player - 1][r][c]
-
-            if first_child:
-                # 第一个分支：全窗口搜索
-                val = alpha_beta(board, depth - 1, alpha, beta, False, ai_player, new_hash, ply + 1)
-                first_child = False
-            else:
-                # PVS：先用零窗口 (alpha, alpha+1) 搜索
-                val = alpha_beta(board, depth - 1, alpha, alpha + 1, False, ai_player, new_hash, ply + 1)
-                # 如果零窗口发现更优值 → 全窗口重新搜索
-                if alpha < val < beta:
-                    val = alpha_beta(board, depth - 1, val, beta, False, ai_player, new_hash, ply + 1)
-
+            val = alpha_beta(board, depth - 1, alpha, beta, False, ai_player, ply + 1)
             board[r][c] = 0
 
             if val > best_val:
                 best_val = val
-                best_move = (r, c)
             alpha = max(alpha, val)
             if beta <= alpha:
-                # Beta 截断 → 记录杀手走法和历史启发
                 _record_killer(depth, r, c)
                 _record_history(ai_player, r, c, depth)
                 break
-        flag = 2 if best_val >= beta else (0 if best_val > float('-inf') else 1)
+        return best_val
     else:
         best_val = float('inf')
-        for idx, (_, r, c) in enumerate(move_scores):
+        for _, r, c in move_scores:
             board[r][c] = human_player
-            new_hash = hash_key ^ _zobrist_table[human_player - 1][r][c]
-
-            if first_child:
-                val = alpha_beta(board, depth - 1, alpha, beta, True, ai_player, new_hash, ply + 1)
-                first_child = False
-            else:
-                # PVS 零窗口
-                val = alpha_beta(board, depth - 1, beta - 1, beta, True, ai_player, new_hash, ply + 1)
-                if beta - 1 < val < beta:
-                    val = alpha_beta(board, depth - 1, alpha, val, True, ai_player, new_hash, ply + 1)
-
+            val = alpha_beta(board, depth - 1, alpha, beta, True, ai_player, ply + 1)
             board[r][c] = 0
 
             if val < best_val:
                 best_val = val
-                best_move = (r, c)
             beta = min(beta, val)
             if beta <= alpha:
                 _record_killer(depth, r, c)
                 _record_history(human_player, r, c, depth)
                 break
-        flag = 1 if best_val <= alpha else (0 if best_val < float('inf') else 2)
-
-    # 存入置换表
-    if best_move:
-        tt_store(hash_key, depth, best_val, flag, best_move)
-
-    return best_val
+        return best_val
 
 
 def _count_line(board, r, c, dr, dc, player):
@@ -827,11 +873,12 @@ def _check_immediate_threat(board, player):
 
 def ai_move(board, ai_player, depth):
     """
-    AI 主入口：TSS 威胁检测 + 迭代加深搜索。
-
-    迭代加深流程：
-    1. 从深度 1 开始，逐步增加到目标深度
-    2. 每次迭代把上层搜到的最佳落子作为候选排序的首选
+    AI 主入口：TSS 威胁检测 + PyTorch GPU batch 根评估 + 迭代加深 Alpha-Beta。
+    
+    流程：
+    1. TSS 立即威胁检测（冲四/活四/VCF）
+    2. PyTorch GPU 批量评估所有候选落子
+    3. 迭代加深标准 Alpha-Beta 搜索
     """
 
     # 立即威胁检测（含 TSS）
@@ -850,40 +897,30 @@ def ai_move(board, ai_player, depth):
             return (9, 9)
         return random.choice(moves)
 
-    human_player = 1 if ai_player == 2 else 2
-
     # 根据难度设定目标深度
     if depth == 1:
         target_depth = 1
     elif depth == 2:
         target_depth = 2
     else:
-        target_depth = 4   # 高级模式最多搜到4层
+        target_depth = 4
 
-    # 启发式排序作为初始候选
-    move_scores = []
-    for r, c in moves:
-        attack = _quick_eval_move(board, r, c, ai_player)
-        defense = _quick_eval_move(board, r, c, human_player)
-        move_scores.append((attack * 2 + defense, r, c))
-    move_scores.sort(reverse=True)
+    # === PyTorch GPU 批量评估：对所有候选落子打分排序 ===
+    move_scores = _batch_eval_moves(board, moves, ai_player)
 
-    # 限制顶层分支
+    # 限制顶层分支数
     max_branch_top = 15 if target_depth >= 2 else 10
     if len(move_scores) > max_branch_top:
         move_scores = move_scores[:max_branch_top]
 
-    base_hash = zobrist_hash(board)
-
-    # 迭代加深搜索
+    # === 迭代加深搜索 ===
     best_move = move_scores[0][1], move_scores[0][2]
 
     for cur_depth in range(1, target_depth + 1):
-
         local_best_move = best_move
         best_val = float('-inf')
 
-        # 本次迭代的候选排序：上次最优放第一位
+        # 上次最优放第一位
         iter_moves = []
         for score, r, c in move_scores:
             if (r, c) == best_move:
@@ -893,13 +930,11 @@ def ai_move(board, ai_player, depth):
 
         for _, r, c in iter_moves:
             board[r][c] = ai_player
-            new_hash = base_hash ^ _zobrist_table[ai_player - 1][r][c]
             if _check_win_fast(board, ai_player):
                 board[r][c] = 0
                 return (r, c)
 
-            # PVS 搜索
-            val = alpha_beta(board, cur_depth - 1, float('-inf'), float('inf'), False, ai_player, new_hash, ply=1)
+            val = alpha_beta(board, cur_depth - 1, float('-inf'), float('inf'), False, ai_player, ply=1)
             board[r][c] = 0
 
             if val > best_val:
@@ -908,7 +943,7 @@ def ai_move(board, ai_player, depth):
 
         best_move = local_best_move
 
-        # 如果某次迭代找到了必胜路线，提前结束
+        # 找到必胜路线，提前结束
         if best_val > 9000000:
             break
 
@@ -950,8 +985,8 @@ class LoadingScreen(QWidget):
         self.tips = [
             "正在初始化游戏引擎...",
             "正在加载AI神经网络权重...",
-            "正在构建Zobrist哈希表...",
-            "正在优化Alpha-Beta剪枝参数...",
+            "正在构建PyTorch评估张量...",
+            "正在优化GPU计算图...",
             "正在准备棋盘渲染管线...",
             "正在校准评估函数...",
             "游戏准备完成！"
@@ -990,7 +1025,7 @@ class LoadingScreen(QWidget):
         """)
 
         # 副标题
-        subtitle = QLabel("Gomoku AI · Alpha-Beta Engine")
+        subtitle = QLabel("Gomoku AI · PyTorch Engine")
         subtitle.setAlignment(Qt.AlignCenter)
         subtitle.setStyleSheet("""
             QLabel {
@@ -1042,7 +1077,7 @@ class LoadingScreen(QWidget):
         self.tip_label.setStyleSheet("color: #6c7086; font-size: 13px; font-family: 'Microsoft YaHei';")
 
         # 版权
-        copyright_label = QLabel("基于 Alpha-Beta 剪枝 · Zobrist 哈希 · 迭代加深")
+        copyright_label = QLabel("基于 Alpha-Beta 剪枝 · PyTorch GPU 加速 · 迭代加深")
         copyright_label.setAlignment(Qt.AlignCenter)
         copyright_label.setStyleSheet("color: #45475a; font-size: 11px; font-family: 'Consolas', monospace;")
 
@@ -1573,7 +1608,7 @@ class GomokuGame(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("五子棋 AI · Alpha-Beta Engine")
+        self.setWindowTitle("五子棋 AI · PyTorch Engine")
         self.setFixedSize(WINDOW_W, WINDOW_H)
         self.setStyleSheet(f"background-color: {COLOR_BG.name()};")
 
@@ -1656,9 +1691,10 @@ class GomokuGame(QMainWindow):
         self.ai_first_move_done = False
         self.last_move = None
 
-        # 清置换表
-        global _transposition_table
-        _transposition_table = OrderedDict()
+        # 清空全局状态
+        global _killer_moves, _history_table
+        _killer_moves = [[None, None] for _ in range(MAX_DEPTH)]
+        _history_table = np.zeros((2, BOARD_SIZE, BOARD_SIZE), dtype=np.int32)
 
         # 构建游戏界面
         self._build_game_ui()

@@ -1,11 +1,12 @@
 # 🎮 五子棋 AI (Gomoku AI)
 
-基于 **PyQt5** 的五子棋人机对弈程序，搭载 **PVS (Principal Variation Search) + 杀手/历史启发 + Zobrist 哈希 + 置换表** 的高性能 AI 引擎。支持多种难度级别，UI 精美流畅。
+基于 **PyQt5** 的五子棋人机对弈程序，搭载 **Alpha-Beta 剪枝 + 杀手/历史启发 + TSS 威胁空间搜索 + PyTorch GPU 加速评估** 的高性能 AI 引擎。支持多种难度级别，UI 精美流畅。
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
+![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.3-brightgreen)
+![Version](https://img.shields.io/badge/version-1.4-brightgreen)
 
 ---
 
