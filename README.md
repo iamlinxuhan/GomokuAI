@@ -6,7 +6,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.6.7-brightgreen)
+![Version](https://img.shields.io/badge/version-1.6.8-brightgreen)
 
 ---
 
@@ -268,6 +268,11 @@ AI 每步执行 **PVS depth=4 全盘搜索**（~4000ms/步），紧贴人类落�
 ---
 
 ## 📝 更新日志
+
+### v1.6.8 (2026-06-06)
+- 📦 **CUDA 版改用 7z SFX**：解决 NSIS 单文件 >2GB 硬限制，PyTorch CUDA ~2.7GB 打包无忧
+  - CPU 版仍为 NSIS 安装向导（体积安全）
+  - CUDA 版为 7z 自解压 `.exe`：提取 + 自动创建快捷方式
 
 ### v1.6.7 (2026-06-06)
 - 🐛 **修复 YAML 语法错误**：heredoc 中 `"$@"` 双引号导致 GitHub Actions 解析失败（L211）

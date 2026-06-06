@@ -11,7 +11,7 @@ permissions:
 jobs:
 
   # ============================================================
-  #  Windows CUDA 版 (NVIDIA显卡) — .exe 安装程序 (NSIS)
+  #  Windows CUDA 版 (NVIDIA显卡) — 7z SFX 自解压安装程序 (>2GB OK)
   # ============================================================
   build-windows-cuda:
     runs-on: windows-latest
@@ -22,9 +22,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Install NSIS
-        run: choco install nsis -y --no-progress
 
       - name: Install dependencies (CUDA)
         run: |
@@ -37,45 +34,71 @@ jobs:
         run: |
           pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CUDA" main.py
 
-      - name: Create NSIS installer
+      - name: Create 7z SFX installer
+        shell: pwsh
         run: |
-          $ver = "${{ github.ref_name }}" -replace '^v',''
+          $ver = '${{ github.ref_name }}' -replace '^v',''
           $outName = "GomokuAI_For_Windows(CUDA)_v${ver}_Setup.exe"
+          $appDir = "dist\GomokuAI_CUDA"
 
-          @" | Out-File -Encoding ASCII installer.nsi
-          !include "MUI2.nsh"
+          # ---- 安装后脚本 (PowerShell, 创建快捷方式) ----
+          @'
+          $WshShell = New-Object -ComObject WScript.Shell
+          $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+          $AppExe = Join-Path $InstallDir 'GomokuAI_CUDA.exe'
+          $Programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\五子棋AI (CUDA)'
+          New-Item -ItemType Directory -Force -Path $Programs | Out-Null
 
-          Name "五子棋AI (CUDA)"
-          OutFile "${outName}"
-          InstallDir "`$PROGRAMFILES\GomokuAI_CUDA"
-          RequestExecutionLevel admin
-          !define MUI_ABORTWARNING
-          !insertmacro MUI_PAGE_WELCOME
-          !insertmacro MUI_PAGE_DIRECTORY
-          !insertmacro MUI_PAGE_INSTFILES
-          !insertmacro MUI_PAGE_FINISH
-          !insertmacro MUI_LANGUAGE "SimpChinese"
-          !insertmacro MUI_LANGUAGE "English"
+          $sc = $WshShell.CreateShortcut(([Environment]::GetFolderPath('Desktop') + '\五子棋AI (CUDA).lnk'))
+          $sc.TargetPath = $AppExe; $sc.Save()
+          $sc2 = $WshShell.CreateShortcut((Join-Path $Programs '五子棋AI (CUDA).lnk'))
+          $sc2.TargetPath = $AppExe; $sc2.Save()
+          $sc3 = $WshShell.CreateShortcut((Join-Path $Programs '卸载 五子棋AI (CUDA).lnk'))
+          $sc3.TargetPath = (Join-Path $InstallDir 'uninstall.cmd'); $sc3.Save()
 
-          Section "Install"
-            SetOutPath `$INSTDIR
-            File /r "dist\GomokuAI_CUDA\*"
-            CreateShortCut "`$DESKTOP\五子棋AI (CUDA).lnk" "`$INSTDIR\GomokuAI_CUDA.exe" "" "`$INSTDIR\GomokuAI_CUDA.exe" 0
-            CreateDirectory "`$SMPROGRAMS\五子棋AI (CUDA)"
-            CreateShortCut "`$SMPROGRAMS\五子棋AI (CUDA)\五子棋AI (CUDA).lnk" "`$INSTDIR\GomokuAI_CUDA.exe" "" "`$INSTDIR\GomokuAI_CUDA.exe" 0
-            CreateShortCut "`$SMPROGRAMS\五子棋AI (CUDA)\卸载 五子棋AI (CUDA).lnk" "`$INSTDIR\uninstall.exe"
-            WriteUninstaller "`$INSTDIR\uninstall.exe"
-          SectionEnd
+          Write-Host '五子棋AI (CUDA) 安装完成！'
+          Start-Sleep -Seconds 2
+          '@ | Set-Content -Encoding UTF8 "$appDir\setup.ps1"
 
-          Section "Uninstall"
-            Delete "`$DESKTOP\五子棋AI (CUDA).lnk"
-            RMDir /r "`$SMPROGRAMS\五子棋AI (CUDA)"
-            RMDir /r "`$INSTDIR"
-          SectionEnd
-          "@
+          # ---- 卸载脚本 ----
+          @'
+          @echo off
+          echo ============================================
+          echo   卸载 五子棋AI (CUDA)
+          echo ============================================
+          echo.
+          taskkill /f /im GomokuAI_CUDA.exe >nul 2>&1
+          del /q "%USERPROFILE%\Desktop\五子棋AI (CUDA).lnk" >nul 2>&1
+          rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\五子棋AI (CUDA)" >nul 2>&1
+          echo 快捷方式已删除。
+          echo.
+          echo 安装目录: %~dp0
+          echo 如需完全删除，请手动删除上述文件夹。
+          echo.
+          pause
+          '@ | Set-Content -Encoding ASCII "$appDir\uninstall.cmd"
 
-          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
-          ls -lh "${outName}"
+          # ---- 7z SFX config ----
+          if ($ver -match '^\d') { $displayVer = "v$ver" } else { $displayVer = "$ver" }
+          @"
+          ;!@Install@!UTF-8!
+          Title="五子棋AI (CUDA) $displayVer"
+          BeginPrompt="即将安装 五子棋AI (CUDA) $displayVer，是否继续？"
+          RunProgram="powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%%T\\setup.ps1\""
+          Directory="%%LocalAppData%%\\GomokuAI_CUDA"
+          ;!@InstallEnd@!
+          "@ | Set-Content -Encoding ASCII "sfx_config.txt"
+
+          # ---- 下载 7-Zip Extra (含 7zSD.sfx) ----
+          Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2409-extra.7z" -OutFile "7z-extra.7z"
+          & "C:\Program Files\7-Zip\7z.exe" x 7z-extra.7z -o7z-extra -y
+
+          # ---- 创建 7z 固实压缩 ----
+          & "C:\Program Files\7-Zip\7z.exe" a -mx9 -mfb=273 -md=512m -ms=on "temp.7z" "$appDir\*"
+
+          # ---- 拼接 SFX: 7zSD.sfx + config.txt + archive.7z → Setup.exe ----
+          cmd /c "copy /b 7z-extra\x64\7zSD.sfx + sfx_config.txt + temp.7z `"$outName`""
+          ls -lh "$outName"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
