@@ -6,7 +6,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.6.1-brightgreen)
+![Version](https://img.shields.io/badge/version-1.6.2-brightgreen)
 
 ---
 
@@ -268,6 +268,15 @@ AI 每步执行 **PVS depth=4 全盘搜索**（~4000ms/步），紧贴人类落�
 ---
 
 ## 📝 更新日志
+
+### v1.6.2 (2026-06-06)
+- 📦 **多平台打包**：6个构建产物覆盖全场景
+  - `GomokuAI_For_Windows(CUDA).exe` — Windows + NVIDIA显卡
+  - `GomokuAI_For_Windows(CPU).exe` — Windows + 集成显卡
+  - `GomokuAI_For_Linux(CUDA)_AMD.deb` — Linux x86_64 + NVIDIA显卡
+  - `GomokuAI_For_Linux(CPU)_AMD.deb` — Linux x86_64 + 无独显
+  - `GomokuAI_For_Linux(CUDA)_ARM.pkg` — ARM64 (Jetson/鲲鹏) CUDA版
+  - `GomokuAI_For_Linux(CPU)_ARM.pkg` — ARM64 (树莓派5) CPU版
 
 ### v1.6.1 (2026-06-06)
 - 🔧 **分层TSS威胁响应**：Level-1硬拦截(五连/活四) + Level-2软建议(双活三交给PVS搜索)
