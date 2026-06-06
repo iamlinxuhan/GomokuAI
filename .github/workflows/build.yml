@@ -67,7 +67,16 @@ jobs:
 
       - name: Package .deb
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          # 提取版本号：tag(v1.2.3) → 1.2.3，否则用 YYYYMMDD-HHMMSS 作为默认版本
+          raw="${GITHUB_REF_NAME}"
+          if [[ "$raw" =~ ^v[0-9] ]]; then
+            VERSION="${raw#v}"
+          elif [[ "$raw" =~ ^[0-9] ]]; then
+            VERSION="$raw"
+          else
+            VERSION="0.0.0-$(date -u +%Y%m%d-%H%M%S)"
+          fi
+          echo "VERSION=$VERSION"
           PKG_DIR="deb_build"
 
           mkdir -p "${PKG_DIR}/usr/local/bin"
