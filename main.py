@@ -1248,7 +1248,63 @@ def _check_immediate_threat(board, player):
     if opp_live4:
         return opp_live4[0]
 
-    # ★ 不再做TSS/VCF/双活三检测 — 让主搜索处理深层策略
+    # ★★ 修复速亡：检测2-3步内的必胜/必败棋型 ★★
+    # 这些不是深层TSS（不会返回长路径），而是真正的近端威胁
+    moves = _generate_moves(board)
+
+    # 5. 自己能否形成双活三或冲四+活三（2步内必胜）→ 进攻
+    for r, c in moves:
+        board[r][c] = player
+        live3_dirs = []
+        rush4_dirs = []
+        for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+            count, open_ends, _ = _analyze_line(board, r, c, dr, dc, player)
+            if count == 3 and open_ends >= 2:
+                live3_dirs.append((dr, dc))
+            elif count >= 4:
+                rush4_dirs.append((dr, dc))
+        board[r][c] = 0
+
+        # 双活三 / 双冲四 = 绝对必胜，直接走
+        if len(live3_dirs) >= 2 or len(rush4_dirs) >= 2:
+            return (r, c)
+        # 冲四+活三 = 也几乎必胜
+        if len(rush4_dirs) >= 1 and len(live3_dirs) >= 1:
+            return (r, c)
+
+    # 6. 对手能否形成双活三/冲四+活三 → 必须立即防守！
+    best_defense = None
+    best_def_score = float('-inf')
+    
+    for r, c in moves:
+        board[r][c] = opp
+        o_live3 = []
+        o_rush4 = []
+        for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+            count, open_ends, _ = _analyze_line(board, r, c, dr, dc, opp)
+            if count == 3 and open_ends >= 2:
+                o_live3.append((dr, dc))
+            elif count >= 4:
+                o_rush4.append((dr, dc))
+        board[r][c] = 0
+        
+        threat_level = 0
+        if len(o_live3) >= 2:
+            threat_level = 100      # 双活三：最高危
+        elif len(o_rush4) >= 2:
+            threat_level = 90       # 双冲四：高危
+        elif len(o_rush4) >= 1 and len(o_live3) >= 1:
+            threat_level = 80       # 冲四+活三：高危
+
+        if threat_level > 0:
+            def_score = threat_level * 10000 + _quick_eval_move(board, r, c, player)
+            if def_score > best_def_score:
+                best_def_score = def_score
+                best_defense = (r, c)
+
+    if best_defense and best_def_score >= 800000:
+        return best_defense
+
     return None
 
 
