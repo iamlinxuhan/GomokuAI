@@ -6,7 +6,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.7.1-brightgreen)
+![Version](https://img.shields.io/badge/version-1.7.2-brightgreen)
 
 ---
 
@@ -268,6 +268,11 @@ AI 每步执行 **PVS depth=4 全盘搜索**（~4000ms/步），紧贴人类落�
 ---
 
 ## 📝 更新日志
+
+### v1.7.2 (2026-06-06)
+- 🐛 **修复 ARM 构建超时**：PyQt5 在 ARM 上无预编译 wheel，pip 源码编译导致超时取消
+  - 改为 `apt install python3-pyqt5` + `venv --system-site-packages`，秒级安装
+  - 移除 ARM job 的 `actions/setup-python`，使用系统 Python 3 + venv
 
 ### v1.7.1 (2026-06-06)
 - 📦 **缩减打包体积**：排除 torch 无用大模块（distributed / testing / jit / futures / _dynamo / _inductor），预计减少 30-50% torch 占用
