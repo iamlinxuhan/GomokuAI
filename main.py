@@ -1,14 +1,14 @@
 """
 五子棋游戏 - PyQt5 版本
-AI: PVS+LMR + 固定数组置换表 + 专业权重棋型库 + 增强TSS(攻防) + GPU加速 + 时间控制 + 开局库
+AI: PVS+LMR + 固定数组置换表 + 专业权重棋型库 + 增强TSS(攻防) + GPU加速(可选) + 时间控制 + 开局库
 """
 import sys
 import random
 import time
 import math
 import numpy as np
-import torch
-import torch.nn.functional as F
+# PyTorch 延迟导入（仅在GPU可用时加载，避免无GPU时2-3秒的import开销）
+# 见 _ensure_torch() 函数
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QLabel,
     QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget,
@@ -24,8 +24,31 @@ from PyQt5.QtGui import (
     QMouseEvent, QFontMetrics
 )
 
-# ==================== PyTorch 设备 ====================
-_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# ==================== PyTorch 设备（延迟导入：避免无GPU时的2-3秒import开销） ====================
+_device = None  # 延迟初始化，首次使用时才检测GPU
+_torch_available = False  # 标记torch是否成功导入
+
+
+def _ensure_torch():
+    """延迟导入PyTorch并检测GPU。仅在需要GPU加速时调用。"""
+    global _device, _torch_available
+    if _device is not None:
+        return _torch_available
+    try:
+        import torch as _torch_mod
+        import torch.nn.functional as _F_mod
+        # 将模块注入全局以便其他函数使用
+        import sys
+        sys.modules.setdefault('torch', _torch_mod)
+        sys.modules.setdefault('torch.nn.functional', _F_mod)
+        
+        _torch_available = True
+        _device = _torch_mod.device('cuda' if _torch_mod.cuda.is_available() else 'cpu')
+        return _torch_mod.cuda.is_available()
+    except (ImportError, Exception):
+        _torch_available = False
+        _device = 'cpu'
+        return False
 
 # ==================== PyTorch 模式检测卷积核 ====================
 # 4个方向 (水平, 垂直, 对角线, 反对角线) 的模式内核
@@ -33,14 +56,19 @@ _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 _pattern_kernels_cached = None
 
 def _get_pattern_kernels():
-    """创建/获取模式检测卷积核（延迟创建，避免首次导入开销）
-    
-    只保留有棋型意义的线型核 + 间隔跳活核。
-    已删除无用的3x3/5x5区域核。
-    """
+    """创建/获取模式检测卷积核（延迟创建 + 延迟导入torch）。
+    只在有GPU时才创建GPU张量，否则返回None表示不可用。"""
     global _pattern_kernels_cached
     if _pattern_kernels_cached is not None:
         return _pattern_kernels_cached
+    
+    # 延迟导入：无GPU时直接返回空
+    if not _ensure_torch():
+        _pattern_kernels_cached = {}  # 标记为已尝试但不可用
+        return _pattern_kernels_cached
+    
+    import torch
+    import torch.nn.functional as F
 
     def _make_hk(size):  # 1xN 水平核
         return torch.tensor([[[[1.0] * size]]], dtype=torch.float32)
@@ -156,9 +184,10 @@ def _batch_to_torch(boards_p, boards_o):
 @torch.no_grad()
 def _eval_board_torch(board_tensor):
     """
-    用 GPU 张量运算评估棋盘（方向和间隔核）。
+    用 GPU 张量运算评估棋盘（方向核）。
     board_tensor: (1, 2, 19, 19), channel0=player, channel1=opponent.
     返回 (player_score, opponent_score) 标量。
+    无GPU时回退到CPU评估。
     """
     kernels = _get_pattern_kernels()
     p_chan = board_tensor[:, 0:1, :, :]
@@ -216,8 +245,16 @@ def _eval_board_torch(board_tensor):
 
 @torch.no_grad()
 def _batch_eval_moves(board, moves, player):
-    """GPU 批量评估所有候选落子（方向核 × 2色 × N候选），专注有效棋型""" 
-    opp = 1 if player == 2 else 2
+    """GPU 批量评估所有候选落子（方向核 × 2色 × N候选），专注有效棋型。
+    无GPU时自动回退到CPU排序。""" 
+    # 无torch/GPU时立即回退到纯CPU排序
+    if not _ensure_torch() or _device.type != 'cuda':
+        result = [(_quick_eval_move(board, r, c, player), r, c) for r, c in moves]
+        result.sort(reverse=True)
+        return result
+    
+    import torch
+    import torch.nn.functional as F
     n = len(moves)
     if n == 0:
         return []
@@ -347,6 +384,10 @@ def evaluate_board(board, ai_player):
         return 100000000
     if _check_win_fast(board, human_player):
         return -100000000
+
+    # ★★★ 修复F1: 恢复旧版的活四必胜检测（返回50M，让搜索优先走这条路）★★★
+    if _find_live_four_moves(board, ai_player):
+        return 50000000
 
     ai_score = _eval_player_composite(board, ai_player)
     human_score = _eval_player_composite(board, human_player)
@@ -804,8 +845,9 @@ def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, 
 
     current_player = ai_player if maximizing else human_player
 
-    # === 深层节点使用 GPU 批量评估加速 ===
-    use_gpu_batch = (depth <= 3 and len(all_moves) >= 10 and _device.type == 'cuda')
+    # === 深层节点使用 GPU 批量评估加速（仅当GPU真正可用时） ===
+    use_gpu_batch = (_ensure_torch() and _device.type == 'cuda'
+                     and depth <= 3 and len(all_moves) >= 10)
 
     if use_gpu_batch:
         gpu_scores = _batch_eval_moves(board, all_moves, current_player)
@@ -1311,23 +1353,31 @@ def ai_move(board, ai_player, depth):
             return (9, 9)
         return random.choice(moves)
 
-    # === 时间控制 & 搜索深度（修复：增加时间预算确保搜完目标深度） ===
+    # === 时间控制 & 搜索深度（修复F3: 与旧版对齐，避免过深搜索导致慢） ===
     _time_start = time.time()
-    # 难度 → 最大时间 & 搜索深度
-    # 修复：增加时间预算，PyTorch/GPU初始化有额外开销
+    # 修复：与旧版Alpha-Beta Engine保持一致的深度映射
+    # 旧版: depth=1→搜1层, depth=2→搜2层, depth=3→搜3层（无迭代加深）
+    # 新版用迭代加深但目标深度保持一致，时间预算大幅缩减
     if depth == 1:
-        _time_max = 2.0      # 简单: 2秒
-        target_depth = 2     # 至少搜2层（旧版depth=1只搜1层太浅）
+        _time_max = 1.0      # 简单: 1秒
+        target_depth = 1     # 搜1层（旧版同）
     elif depth == 2:
-        _time_max = 5.0      # 中级: 5秒
-        target_depth = 4     # 搜4层（旧版depth=2只搜2层）
+        _time_max = 2.0      # 中级: 2秒（旧版无时间限制，但只搜2层很快完成）
+        target_depth = 2     # 搜2层（旧版search_depth=2, alpha_beta(depth-1=1)）
     else:
-        _time_max = 10.0     # 高级: 10秒
-        target_depth = 6     # 搜6层
-    _TIME_RESERVE = 0.3      # 缓冲时间减少
+        _time_max = 5.0      # 高级: 5秒
+        target_depth = 4     # 搜4层（比旧版的3层稍深，利用PVS+置换表优势）
+    _TIME_RESERVE = 0.2      # 缓冲时间
 
-    # === 走法排序（使用修复后的 _quick_eval_move） ===
-    move_scores = [(_quick_eval_move(board, r, c, ai_player), r, c) for r, c in moves]
+    # === 走法排序（修复F2: 恢复旧版 attack*2 + defense 双方综合排序策略） ===
+    human_player = 1 if ai_player == 2 else 2
+    move_scores = []
+    for r, c in moves:
+        attack = _quick_eval_move(board, r, c, ai_player)
+        defense = _quick_eval_move(board, r, c, human_player)
+        # ★ 旧版关键策略：进攻权重 2x > 防守权重 1x
+        # 确保"我能赢"的走法排在"堵对手"前面
+        move_scores.append((attack * 2 + defense, r, c))
     move_scores.sort(reverse=True)
     max_branch_top = 15 if depth >= 2 else 12
     if len(move_scores) > max_branch_top:
