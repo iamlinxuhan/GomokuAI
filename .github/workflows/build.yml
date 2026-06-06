@@ -32,7 +32,15 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CUDA" main.py
+          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CUDA" `
+            --exclude-module torch.distributed `
+            --exclude-module torch.testing `
+            --exclude-module torch.jit `
+            --exclude-module torch.futures `
+            --exclude-module torch._dynamo `
+            --exclude-module torch._inductor `
+            --collect-submodules torch `
+            main.py
 
       - name: Create 7z SFX installer
         shell: pwsh
@@ -126,7 +134,15 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CPU" main.py
+          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CPU" `
+            --exclude-module torch.distributed `
+            --exclude-module torch.testing `
+            --exclude-module torch.jit `
+            --exclude-module torch.futures `
+            --exclude-module torch._dynamo `
+            --exclude-module torch._inductor `
+            --collect-submodules torch `
+            main.py
 
       - name: Create NSIS installer
         run: |
@@ -199,7 +215,15 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --name "gomoku-ai-cuda" main.py
+          pyinstaller --onedir --windowed --name "gomoku-ai-cuda" \
+            --exclude-module torch.distributed \
+            --exclude-module torch.testing \
+            --exclude-module torch.jit \
+            --exclude-module torch.futures \
+            --exclude-module torch._dynamo \
+            --exclude-module torch._inductor \
+            --collect-submodules torch \
+            main.py
 
       - name: Package .deb
         run: |
@@ -288,7 +312,15 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --name "gomoku-ai-cpu" main.py
+          pyinstaller --onedir --windowed --name "gomoku-ai-cpu" \
+            --exclude-module torch.distributed \
+            --exclude-module torch.testing \
+            --exclude-module torch.jit \
+            --exclude-module torch.futures \
+            --exclude-module torch._dynamo \
+            --exclude-module torch._inductor \
+            --collect-submodules torch \
+            main.py
 
       - name: Package .deb
         run: |
@@ -376,7 +408,15 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --name "gomoku-ai-cuda-arm" main.py
+          pyinstaller --onedir --windowed --name "gomoku-ai-cuda-arm" \
+            --exclude-module torch.distributed \
+            --exclude-module torch.testing \
+            --exclude-module torch.jit \
+            --exclude-module torch.futures \
+            --exclude-module torch._dynamo \
+            --exclude-module torch._inductor \
+            --collect-submodules torch \
+            main.py
 
       - name: Package .pkg
         run: |
@@ -446,7 +486,15 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --name "gomoku-ai-cpu-arm" main.py
+          pyinstaller --onedir --windowed --name "gomoku-ai-cpu-arm" \
+            --exclude-module torch.distributed \
+            --exclude-module torch.testing \
+            --exclude-module torch.jit \
+            --exclude-module torch.futures \
+            --exclude-module torch._dynamo \
+            --exclude-module torch._inductor \
+            --collect-submodules torch \
+            main.py
 
       - name: Package .pkg
         run: |

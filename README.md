@@ -6,7 +6,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.7.0-brightgreen)
+![Version](https://img.shields.io/badge/version-1.7.1-brightgreen)
 
 ---
 
@@ -268,6 +268,9 @@ AI 每步执行 **PVS depth=4 全盘搜索**（~4000ms/步），紧贴人类落�
 ---
 
 ## 📝 更新日志
+
+### v1.7.1 (2026-06-06)
+- 📦 **缩减打包体积**：排除 torch 无用大模块（distributed / testing / jit / futures / _dynamo / _inductor），预计减少 30-50% torch 占用
 
 ### v1.7.0 (2026-06-06)
 - 🐛 **修复 v1.6.9 构建错误**：
