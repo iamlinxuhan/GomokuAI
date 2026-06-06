@@ -89,12 +89,10 @@ jobs:
           "@
           $sfxCfg | Set-Content -Encoding ASCII "sfx_config.txt"
 
-          # ---- 下载 7-Zip Extra, 压缩, 拼接 SFX ----
-          Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2409-extra.7z" -OutFile "7z-extra.7z"
-          & "C:\Program Files\7-Zip\7z.exe" x 7z-extra.7z -o7z-extra -y
+          # ---- 压缩 (7z.sfx 已内置在 7-Zip 安装目录) + 拼接 SFX ----
           & "C:\Program Files\7-Zip\7z.exe" a -mx9 -mfb=273 -md=512m -ms=on "temp.7z" "$appDir\*"
-          cmd /c "copy /b 7z-extra\x64\7zSD.sfx + sfx_config.txt + temp.7z `"$outName`""
-          ls -lh "$outName"
+          cmd /c "copy /b `"C:\Program Files\7-Zip\7z.sfx`" + sfx_config.txt + temp.7z `"$outName`""
+          Get-ChildItem "$outName" | Select-Object Name, Length
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -165,7 +163,7 @@ jobs:
           "@
           $nsiContent | Out-File -Encoding ASCII installer.nsi
           & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
-          ls -lh "${outName}"
+          Get-ChildItem "${outName}" | Select-Object Name, Length
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
