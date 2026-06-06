@@ -53,6 +53,119 @@ def _ensure_torch():
     """检查 PyTorch/GPU 是否真正可用（torch 已导入，此处仅返回状态）"""
     return _torch_available_final
 
+
+# ==================== 游戏日志系统 ====================
+class GameLogger:
+    """
+    单局游戏日志记录器 — 将每步操作写入 txt 文件便于诊断AI决策。
+    
+    记录内容：
+      - 每步落子：步数、执棋方、坐标(如H8)、决策原因、评分/搜索深度
+      - 威胁检测命中详情
+      - AI搜索参数(target_depth, 实际搜到层数, best_val)
+      - 最终胜负结果
+    
+    用法：
+      logger = GameLogger()           # 创建（自动生成带时间戳的文件名）
+      logger.log_human(step, r, c)    # 记录人类落子
+      logger.log_ai(step, r, c, info) # 记录AI落子+决策元信息
+      logger.log_result(winner)       # 记录结果
+      logger.close()                  # 关闭文件
+    """
+
+    def __init__(self, log_dir=None):
+        import os
+        if log_dir is None:
+            log_dir = os.path.dirname(os.path.abspath(__file__))
+        os.makedirs(log_dir, exist_ok=True)
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        self.filepath = os.path.join(log_dir, f"game_log_{ts}.txt")
+        self.f = open(self.filepath, 'w', encoding='utf-8')
+        self._write_header()
+
+    def _write_header(self):
+        self.f.write("=" * 70 + "\n")
+        self.f.write("  五子棋AI 对局日志\n")
+        self.f.write(f"  生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+        self.f.write(f"  日志文件: {self.filepath}\n")
+        self.f.write("=" * 70 + "\n\n")
+        self.f.write(f"{'步骤':>4} | {'执棋':>4} | {'坐标':>5} | {'决策原因':>20} | {'评分/信息':>25}\n")
+        self.f.write("-" * 75 + "\n")
+        self.f.flush()
+
+    @staticmethod
+    def coord_to_sgf(r, c):
+        """行列号转棋谱坐标 (如 row=7,col=7 -> H8)"""
+        col_letter = chr(ord('A') + c + (1 if c >= 8 else 0))  # 跳过I
+        return f"{col_letter}{r + 1}"
+
+    def log_move(self, step, player, r, c, reason="", detail=""):
+        player_name = "黑*" if player == 1 else "白O"
+        coord = self.coord_to_sgf(r, c)
+        self.f.write(
+            f"{step:>4} | {player_name:>4} | {coord:>5} | {reason:>20} | {detail}\n"
+        )
+        self.f.flush()
+
+    def log_human(self, step, player, r, c, detail=""):
+        self.log_move(step, player, r, c, "人类手动", detail)
+
+    def log_ai(self, step, player, r, c, decision_info):
+        """
+        AI落子 - decision_info 是字典:
+          'reason'/'depth'/'actual_depth'/'best_val'/'time_ms'/'threat_detail'/'top_moves'
+        """
+        reason = decision_info.get('reason', '未知')
+        dp = []
+        if 'best_val' in decision_info:
+            dp.append(f"val={decision_info['best_val']:.0f}")
+        if 'actual_depth' in decision_info:
+            dp.append(f"dep={decision_info['actual_depth']}")
+        if 'time_ms' in decision_info:
+            dp.append(f"{decision_info['time_ms']:.0f}ms")
+        if 'threat_detail' in decision_info:
+            dp.append(f"[{decision_info['threat_detail']}]")
+        detail = ", ".join(dp) if dp else ""
+        self.log_move(step, player, r, c, reason, detail)
+
+        if 'top_moves' in decision_info:
+            self.f.write(f"     候选走法: {decision_info['top_moves']}\n")
+            self.f.flush()
+
+    def log_threat_analysis(self, step, text):
+        self.f.write(f"     [威胁分析@{step}] {text}\n")
+        self.f.flush()
+
+    def log_board_state(self, step, board, note=""):
+        self.f.write(f"\n  --- 棋盘状态 @{step} {note} ---\n")
+        stones = []
+        for r in range(BOARD_SIZE):
+            for c in range(BOARD_SIZE):
+                if board[r][c] != 0:
+                    p = "*" if board[r][c] == 1 else "O"
+                    stones.append(f"{p}{self.coord_to_sgf(r,c)}")
+        self.f.write(f"  棋子({len(stones)}): {' '.join(stones)}\n\n")
+        self.f.flush()
+
+    def log_result(self, winner, total_steps, move_count):
+        self.f.write("\n" + "-" * 75 + "\n")
+        if winner == "ai":
+            result = "[AI 获胜]"
+        elif winner == "human":
+            result = "[人类获胜]"
+        else:
+            result = "[平局]"
+        self.f.write(f"  结果: {result}  |  总回合: {total_steps}  |  总落子: {move_count}\n")
+        self.f.write("=" * 70 + "\n")
+
+    def close(self):
+        if hasattr(self, 'f') and self.f and not self.f.closed:
+            try:
+                self.f.close()
+            except Exception:
+                pass
+
+
 # ==================== PyTorch 模式检测卷积核 ====================
 # 4个方向 (水平, 垂直, 对角线, 反对角线) 的模式内核
 # 用于 GPU 批量检测棋盘上的棋型
@@ -384,13 +497,18 @@ def evaluate_board(board, ai_player):
     if _check_win_fast(board, human_player):
         return -100000000
 
-    # ★★★ 修复F1: 恢复旧版的活四必胜检测（返回50M，让搜索优先走这条路）★★★
-    if _find_live_four_moves(board, ai_player):
-        return 50000000
+    # ★★★ D2修复: 删除盲目的活四50M返回 ★★★
+    # 原代码: if _find_live_four_moves(board, ai_player): return 50000000
+    # 问题: 这让PVS搜索中AI误以为"自己有活四=必胜"，无视对手的VCT反击
+    # 正确做法: 让复合评估(ai_score - human_score * coef)自然处理
+    # 活四在_SCORE_TABLE中已经是10M，远高于其他棋型，无需额外加权
+    # 如果确实必胜（活四+对手无同级威胁），搜索自然会发现
 
     ai_score = _eval_player_composite(board, ai_player)
     human_score = _eval_player_composite(board, human_player)
-    return ai_score - human_score * 0.95
+    # ★ 修复：0.85 替代 0.95，减少AI对自身局面的过度悲观
+    # 配合进攻激励增强，让AI在均势时不再偏向纯防守
+    return ai_score - human_score * 0.85
 
 
 # ==================== 专业棋型权重表（Gomocup参考） ====================
@@ -747,19 +865,19 @@ def _quick_eval_move(board, r, c, player):
         if count >= 5:
             return 100000000  # 直接五连，最高优先级
         if count == 4 and open_ends >= 2:
-            score += 5000000   # 活四（必胜），极高权重
+            score += 7000000   # 活四（必胜），与防守比=2.33x
         elif count == 4 and open_ends == 1:
-            score += 500000    # 冲四
+            score += 700000    # 冲四，与防守比=2.33x
         elif count == 3 and open_ends >= 2:
-            score += 50000     # 活三（下一步就活四），高权重
+            score += 80000     # 活三（下一步就活四），与防守比=2.67x
         elif count == 3 and open_ends == 1:
-            score += 5000      # 眠三
+            score += 7000      # 眠三
         elif count == 2 and open_ends >= 2:
-            score += 1000      # 活二
+            score += 1500      # 活二
         elif count == 2 and open_ends == 1:
-            score += 200       # 眠二
+            score += 300       # 眠二
         elif count == 1 and open_ends >= 2:
-            score += 30        # 活一
+            score += 50        # 活一
 
     # ===== 防守评估（堵对手的棋型） =====
     # 关键修复：防守分数不能超过同级别的进攻分数
@@ -1305,6 +1423,37 @@ def _check_immediate_threat(board, player):
     if best_defense and best_def_score >= 800000:
         return best_defense
 
+    # ★★ D3修复: 多线威胁检测（防"双杀"战术）★★
+    # 人类常用的VCT战术：同时在两条线上发展，AI堵一条另一条就五连了
+    # 检测对手是否有>=2条独立的发展中线路（活三/眠四/活二+开放端）
+    opp_threat_lines = []  # list of (threat_score, blocking_positions)
+    for r, c in moves:
+        board[r][c] = opp
+        line_info = []
+        for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+            count, open_ends, _ = _analyze_line(board, r, c, dr, dc, opp)
+            if count >= 4 and open_ends >= 1:
+                line_info.append(('rush4', 90, dr, dc))
+            elif count == 3 and open_ends >= 2:
+                line_info.append(('live3', 70, dr, dc))
+            elif count == 3 and open_ends == 1:
+                line_info.append(('sleep3', 40, dr, dc))
+            elif count == 2 and open_ends >= 2:
+                line_info.append(('live2', 15, dr, dc))
+        board[r][c] = 0
+        if line_info:
+            max_t = max(li[1] for li in line_info)
+            opp_threat_lines.append((max_t, r, c, line_info))
+
+    # 如果对手有多条高威胁线（双杀前兆），必须拦截最高威胁的
+    if len(opp_threat_lines) >= 2:
+        high_threats = [t for t in opp_threat_lines if t[0] >= 40]
+        if len(high_threats) >= 2:
+            # 对手有>=2条眠三以上的线 → 危险！选最紧急的堵
+            opp_threat_lines.sort(key=lambda x: -x[0])
+            best_block = opp_threat_lines[0]
+            return (best_block[1], best_block[2])
+
     return None
 
 
@@ -1332,34 +1481,164 @@ def _board_to_fen(board):
 
 def ai_move(board, ai_player, depth):
     """
-    AI 主入口（v4 修复版）:
-    1. 开局库命中 → 直接返回
+    AI 主入口（v4 修复版 + 日志诊断）:
+    1. 开局库命中 -> 直接返回
     2. 增强TSS 威胁检测（含防守TSS）
     3. 时间控制 + 迭代加深（确保搜完目标深度）
     4. Zobrist/置换表 + LMR + PVS 搜索
+
+    返回: (r, c, info_dict) — info_dict 包含决策原因/评分/深度等诊断信息
     """
+
+    _t0 = time.time()
+    info = {'reason': 'unknown', 'depth': 0, 'actual_depth': 0,
+            'best_val': 0, 'time_ms': 0}
 
     # === 开局库 ===
     stone_count = np.count_nonzero(board)
     if stone_count <= 6:
         fen = _board_to_fen(board)
         if fen in _OPENING_BOOK:
-            return _OPENING_BOOK[fen]
+            r, c = _OPENING_BOOK[fen]
+            info.update({'reason': '开局库', 'threat_detail': f'fen={fen}'})
+            return (r, c, info)
 
     # === TSS 立即威胁检测 ===
+    # ★★ E2修复：分层威胁响应 ★★
+    # ★★ F2修复：多重威胁检测（解决25步速亡的多线牵制问题）★★
+    #
+    # 问题1（E2已修）: 旧版对所有威胁都early return，PVS整局不执行
+    # 问题2（F2新增）: 即使Level-1只拦截五连/活四，对手仍可制造多个同时威胁
+    #   日志证据(25步速亡): 步22堵K9(堵五连)→漏M12; 步24堵H8(堵五连)→漏N13
+    #   根因: 每次Level-1拦截只堵一个位置，对手用多线牵制让AI顾此失彼
+    #
+    # 新策略:
+    #   Level-1硬拦截（立即返回）：五连、活四 — 但先检查是否存在多重威胁
+    #     如果对手有>=2个五连或>=2个活四 → 常规防守已无效，转为"以攻对攻"
+    #   Level-2软建议（不返回！）：双活三/冲四+活三 — 交给PVS搜索综合判断
     threat = _check_immediate_threat(board, ai_player)
+    threat_hint = None  # E2: Level-2威胁作为建议传给PVS，不跳过搜索
     if threat:
-        return threat
+        r, c = threat
+        my_win = _find_winning_moves(board, ai_player)
+        opp_win = _find_winning_moves(board, 1 if ai_player == 2 else 2)
+        my_live4 = _find_live_four_moves(board, ai_player)
+        opp_live4 = _find_live_four_moves(board, 1 if ai_player == 2 else 2)
+
+        # ★ F2: 多重威胁检测 — 在Level-1拦截前检查是否已被多线牵制
+        # 对手同时有多个必杀位置时，常规防守必然失败
+        multi_threat_crisis = len(opp_win) >= 2 or len(opp_live4) >= 2
+
+        if multi_threat_crisis and my_win:
+            # ★★ 多重威胁危机 + AI能赢 → 先赢为敬！★★
+            info.update({'reason': '威胁检测', 'threat_detail': '多重危机-五连(赢)'})
+            return (my_win[0][0], my_win[0][1], info)
+        if multi_threat_crisis and my_live4:
+            # ★★ 多重威胁危机 + AI有活四 → 走活四必胜路径！★★
+            info.update({'reason': '威胁检测', 'threat_detail': '多重危机-活四(必胜)'})
+            return (my_live4[0][0], my_live4[0][1], info)
+        if multi_threat_crisis:
+            # ★★ 多重威胁危机但AI无必杀 → 放弃防守，转为拼命进攻模式 ★★
+            # 不再early return！让PVS搜索找最佳进攻路线
+            threat_hint = (r, c, '多重危机-放弃防守转进攻')
+            # 不要return！继续走PVS搜索路径
+
+        # Level-1：真正的终局威胁 → 必须立即响应（非多重危机时）
+        elif my_win and (r, c) in my_win:
+            info.update({'reason': '威胁检测', 'threat_detail': '五连(赢)'})
+            return (r, c, info)
+        elif opp_win and (r, c) in opp_win:
+            info.update({'reason': '威胁检测', 'threat_detail': '堵五连'})
+            return (r, c, info)
+        elif my_live4 and (r, c) in my_live4:
+            info.update({'reason': '威胁检测', 'threat_detail': '活四(必胜)'})
+            return (r, c, info)
+        elif opp_live4 and (r, c) in opp_live4:
+            info.update({'reason': '威胁检测', 'threat_detail': '堵活四'})
+            return (r, c, info)
+
+        # Level-2：双活三/冲四+活三等 → 不early return！作为建议给PVS
+        if not threat_hint:
+            threat_hint = (r, c, '双活三/冲四+活三')
 
     moves = _generate_moves(board)
     if not moves:
-        return (9, 9)
+        info['reason'] = '无走法'
+        return (9, 9, info)
 
-    # 第一步优化
+    # === 开局前两手优化 ===
     if stone_count <= 1:
         if board[9][9] == 0:
-            return (9, 9)
-        return random.choice(moves)
+            # 天元空闲 → 抢占中心（AI先手场景）
+            info.update({'reason': '第一步-天元'})
+            return (9, 9, info)
+        else:
+            # 天元已被人类占据 → 必须紧贴人类棋子阻挡
+            # 只评估人类棋子四周8邻位，不跳到远处
+            human_stone = None
+            for rr in range(BOARD_SIZE):
+                for cc in range(BOARD_SIZE):
+                    if board[rr][cc] != 0:
+                        human_stone = (rr, cc)
+                        break
+                if human_stone:
+                    break
+            if human_stone:
+                hr, hc = human_stone
+                nearby = []
+                for dr in range(-1, 2):
+                    for dc in range(-1, 2):
+                        if dr == 0 and dc == 0:
+                            continue
+                        nr, nc = hr + dr, hc + dc
+                        if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE and board[nr][nc] == 0:
+                            s = _quick_eval_move(board, nr, nc, ai_player)
+                            nearby.append((s, nr, nc))
+                if nearby:
+                    nearby.sort(reverse=True)
+                    best_s, r, c = nearby[0]
+                    top3 = [(s, GameLogger.coord_to_sgf(rr, cc)) for s, rr, cc in nearby[:3]]
+                    info.update({'reason': '紧贴人类第一步', 'best_val': best_s,
+                                 'top_moves': top3})
+                    return (r, c, info)
+            # 兜底：评估全部候选走法
+            best = None
+            best_s = float('-inf')
+            for r, c in moves:
+                s = _quick_eval_move(board, r, c, ai_player)
+                if s > best_s:
+                    best_s = s
+                    best = (r, c)
+            if best:
+                info.update({'reason': '响应第一步-最优', 'best_val': best_s})
+            return best
+
+    # 第二步优化：双方各1子后，优先在人类棋子周围而非远处
+    if stone_count == 2:
+        human_player = 1 if ai_player == 2 else 2
+        # 找出人类棋子的8邻位空位
+        human_nearby = set()
+        for r in range(BOARD_SIZE):
+            for c in range(BOARD_SIZE):
+                if board[r][c] == human_player:
+                    for dr in range(-1, 2):
+                        for dc in range(-1, 2):
+                            nr, nc = r + dr, c + dc
+                            if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE and board[nr][nc] == 0:
+                                human_nearby.add((nr, nc))
+        if human_nearby:
+            # 在这些紧邻位置中评估最优
+            best_s = float('-inf')
+            best = None
+            for r, c in human_nearby:
+                s = _quick_eval_move(board, r, c, ai_player)
+                if s > best_s:
+                    best_s = s
+                    best = (r, c)
+            if best and best_s > 0:
+                info.update({'reason': '紧贴人类-第二步', 'best_val': best_s})
+                return (best[0], best[1], info)
+        # 否则正常走搜索流程（fall through）
 
     # === 时间控制 & 搜索深度（修复S2: 加深搜索让AI看到更远的杀棋组合） ===
     _time_start = time.time()
@@ -1376,15 +1655,95 @@ def ai_move(board, ai_player, depth):
         target_depth = 6     # 搜6层
     _TIME_RESERVE = 0.25      # 缓冲时间
 
-    # === 走法排序（修复F2: 恢复旧版 attack*2 + defense 双方综合排序策略） ===
+    # === 走法排序（E2+E3+E4修复: 智能攻防排序） ===
     human_player = 1 if ai_player == 2 else 2
+
+    # D4: 扫描对手的发展中线路数量，动态调整防守权重
+    opp_developing = 0
+    # ★ E3: 记录对手的"发展中长线"（慢建杀线检测）
+    # 问题：J列竖线每颗子单独不触发威胁检测，但整体是杀着
+    # 方法：找出对手所有已有>=3子的方向线，标记其空位延伸点为"高优先拦截点"
+    opp_long_lines = []  # list of (line_strength, set_of_blocking_positions)
+    for r in range(BOARD_SIZE):
+        for c in range(BOARD_SIZE):
+            if board[r][c] == human_player:
+                for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+                    count, open_ends, _ = _analyze_line(board, r, c, dr, dc, human_player)
+                    if count >= 3 and open_ends >= 1:
+                        opp_developing += (count * open_ends)
+                        # E3: 记录这条线的延伸端点（潜在拦截位置）
+                        endpoints = set()
+                        # 向正方向找开放端
+                        nr, nc = r + dr * count, c + dc * count
+                        while 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE and board[nr][nc] == 0:
+                            endpoints.add((nr, nc))
+                            nr, nc = nr + dr, nc + dc
+                            if not (0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE) or board[nr][nc] != 0:
+                                break
+                        # 向反方向找开放端
+                        nr, nc = r - dr * count, c - dc * count
+                        while 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE and board[nr][nc] == 0:
+                            endpoints.add((nr, nc))
+                            nr, nc = nr - dr, nc - dc
+                            if not (0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE) or board[nr][nc] != 0:
+                                break
+                        line_str = count * 10 + open_ends  # 3子双开=32, 4子单开=41, etc.
+                        opp_long_lines.append((line_str, endpoints))
+                    elif count == 2 and open_ends >= 2:
+                        opp_developing += 2
+
+    # 基础进攻权重3x，当对手发展线多时提高防守权重
+    # ★ E4修正：即使强防守模式也保留一定进攻能力（atk_wt最低=2）
+    if opp_developing > 25:
+        atk_wt, def_wt = 2, 4   # E4: 超强防守模式（对手多条高威胁线）
+    elif opp_developing > 20:
+        atk_wt, def_wt = 2, 3   # 强防守模式
+    elif opp_developing > 12:
+        atk_wt, def_wt = 2, 2   # 平衡模式
+    else:
+        atk_wt, def_wt = 3, 1   # 正常进攻模式
+
+    # ★ E4: 反攻候选扫描 — 当对手发展线多时，寻找AI自己的进攻机会
+    # 策略："最好的防守是进攻" — 如果AI能形成活三/冲四，迫使对手防守
+    counter_attack_moves = set()
+    if opp_developing > 15:  # 对手有明显多线发展时才启用反攻
+        for r, c in moves:
+            board[r][c] = ai_player
+            for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+                count, open_ends, _ = _analyze_line(board, r, c, dr, dc, ai_player)
+                # AI落子后能形成活三或更好 → 反攻候选
+                if count >= 3 and open_ends >= 2:
+                    counter_attack_moves.add((r, c))
+                    break
+                elif count >= 4 and open_ends >= 1:
+                    counter_attack_moves.add((r, c))
+                    break
+            board[r][c] = 0
+
+    # 构建E3的高优先拦截点集合
+    high_priority_blocks = set()
+    for _, endpoints in opp_long_lines:
+        high_priority_blocks.update(endpoints)
+
     move_scores = []
     for r, c in moves:
         attack = _quick_eval_move(board, r, c, ai_player)
         defense = _quick_eval_move(board, r, c, human_player)
-        # ★ 旧版关键策略：进攻权重 2x > 防守权重 1x
-        # 确保"我能赢"的走法排在"堵对手"前面
-        move_scores.append((attack * 2 + defense, r, c))
+        score = attack * atk_wt + defense * def_wt
+
+        # ★ E2: threat_hint 加成 — Level-2威胁建议位获得额外加权
+        if threat_hint and (r, c) == (threat_hint[0], threat_hint[1]):
+            score += 500000  # 显著提升但不垄断
+
+        # ★ E3: 发展中长线拦截加成 — 在对手长线延伸点上加分
+        if (r, c) in high_priority_blocks:
+            score += 200000  # 中等加成，防止慢建杀线
+
+        # ★ E4: 反攻候选加成 — 当被牵制时，AI自己的进攻点额外加分
+        if (r, c) in counter_attack_moves:
+            score += 300000  # 高于普通防御但低于必堵
+
+        move_scores.append((score, r, c))
     move_scores.sort(reverse=True)
     max_branch_top = 15 if depth >= 2 else 12
     if len(move_scores) > max_branch_top:
@@ -1422,7 +1781,9 @@ def ai_move(board, ai_player, depth):
             board[r][c] = ai_player
             if _check_win_fast(board, ai_player):
                 board[r][c] = 0
-                return (r, c)
+                info.update({'reason': '搜索-发现必胜', 'actual_depth': cur_depth,
+                            'best_val': 9999999, 'time_ms': (time.time() - _t0) * 1000})
+                return (r, c, info)
 
             new_hash = base_hash ^ _zobrist_table[ai_player - 1][r][c]
             val = alpha_beta(board, cur_depth - 1, float('-inf'), float('inf'), False, ai_player, new_hash, ply=1)
@@ -1433,6 +1794,8 @@ def ai_move(board, ai_player, depth):
                 local_best_move = (r, c)
 
         best_move = local_best_move
+        info['actual_depth'] = cur_depth
+        info['best_val'] = best_val
 
         # 启发式提前停止：仅在较深搜索且值稳定时触发（修复：提高阈值和深度要求）
         if prev_best_val != float('-inf') and abs(best_val - prev_best_val) < 1000 and cur_depth >= 5:
@@ -1441,18 +1804,129 @@ def ai_move(board, ai_player, depth):
 
         prev_best_val = best_val
 
-        # 找到必胜路线（活四以上），提前结束
-        # 修复：阈值与评分表匹配（活四=10M, 此处9M即可判定必胜）
-        if best_val > 9000000:
+        # 找到必胜路线（五连级=100M），提前结束
+        # ★ 修复：阈值从9M提高到95M，防止活四(50M)误触发停止
+        # 只有真正看到五连(100M)或接近五连时才提停，且至少搜2层
+        if best_val > 95000000 and cur_depth >= 2:
             break
 
-    return best_move
+    # 收集前3候选走法用于日志
+    top_moves = [(s, GameLogger.coord_to_sgf(r, c))
+                 for s, r, c in move_scores[:3]]
+
+    elapsed_ms = (time.time() - _t0) * 1000
+
+    # ★ G2+G3: 拼命模式（PVS返回极低分时切换以攻对攻+紧急防守策略）
+    # 日志证据(25步速亡): 步18 PVS返回val=-10000000，AI已知道自己要输了
+    # 但之后步20/22/24仍走被动防守，最终被多线牵制致死
+    #
+    # 日志证据(31步速亡): 步30拼命模式选了M12(纯进攻)，但G7才是人类杀位！
+    # 根因：旧版拼命模式只扫描AI自己的活三/冲四，完全不看对手威胁
+    #
+    # 修复：混合攻防 — 在进攻的同时，必须拦截对手的准杀位
+    DESPERATION_THRESHOLD = -5000000
+    if best_val <= DESPERATION_THRESHOLD:
+        my_win = _find_winning_moves(board, ai_player)
+        my_live4 = _find_live_four_moves(board, ai_player)
+        human = 1 if ai_player == 2 else 2
+
+        if my_win:
+            info.update({'reason': '威胁检测', 'threat_detail': '拼命-五连(赢)',
+                        'depth': target_depth, 'time_ms': elapsed_ms, 'top_moves': top_moves})
+            return (my_win[0][0], my_win[0][1], info)
+        if my_live4:
+            info.update({'reason': '威胁检测', 'threat_detail': '拼命-活四(必胜)',
+                        'depth': target_depth, 'time_ms': elapsed_ms, 'top_moves': top_moves})
+            return (my_live4[0][0], my_live4[0][1], info)
+
+        # ★ G3: 拼命模式中的紧急防守 — 扫描对手的所有准杀位
+        # 准杀位定义：
+        #   1. 对手落子后能形成活四的位置（opp_live4 moves）
+        #   2. 对手落子后能形成五连的位置（opp_win moves）— 最优先！
+        #   3. 对手已有的"发展中长线"(>=3子)的延伸空位
+        opp_win = _find_winning_moves(board, human)
+        opp_live4 = _find_live_four_moves(board, human)
+
+        # 收集对手的准杀位（高优拦截点）
+        critical_blocks = set()
+        if opp_win:
+            critical_blocks.update(opp_win)  # 五连位 — 最高优先级
+        if opp_live4:
+            critical_blocks.update(opp_live4)  # 活四位 — 极高优先级
+
+        # 扫描对手的发展中长线延伸点（同E3逻辑）
+        for r in range(BOARD_SIZE):
+            for c in range(BOARD_SIZE):
+                if board[r][c] == human:
+                    for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+                        cnt, opens, _ = _analyze_line(board, r, c, dr, dc, human)
+                        if cnt >= 3 and opens >= 1:
+                            nr, nc = r + dr * (cnt + 1), c + dc * (cnt + 1)
+                            if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE and board[nr][nc] == 0:
+                                critical_blocks.add((nr, nc))
+                            nr2, nc2 = r - dr, c - dc
+                            if 0 <= nr2 < BOARD_SIZE and 0 <= nc2 < BOARD_SIZE and board[nr2][nc2] == 0:
+                                critical_blocks.add((nr2, nc2))
+
+        # ★ G2: 混合攻防评分 — 进攻+防守综合评估
+        best_desp_val = float('-inf')
+        best_desp_move = best_move
+
+        for r, c in [m[1:] for m in move_scores]:
+            atk_score = _quick_eval_move(board, r, c, ai_player)
+            def_score = _quick_eval_move(board, r, c, human)
+
+            # 进攻检查：AI落子后能否形成强攻击
+            board[r][c] = ai_player
+            has_strong_threat = False
+            for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
+                cnt, opens, _ = _analyze_line(board, r, c, dr, dc, ai_player)
+                if (cnt >= 3 and opens >= 2) or (cnt >= 4 and opens >= 1):
+                    has_strong_threat = True
+                    break
+            board[r][c] = 0
+
+            final_score = atk_score * 2 + def_score * 2  # 攻防并重
+
+            # ★ G3核心：准杀位拦截加成 — 远超普通攻击
+            if (r, c) in critical_blocks:
+                if opp_win and (r, c) in opp_win:
+                    final_score += 100000000  # 堵五连 > 一切
+                elif opp_live4 and (r, c) in opp_live4:
+                    final_score += 80000000  # 堵活四 > 一切
+                else:
+                    final_score += 30000000  # 长线延伸拦截（高优但非绝对）
+
+            if has_strong_threat:
+                final_score += 500000  # 自身攻击加成
+
+            if final_score > best_desp_val:
+                best_desp_val = final_score
+                best_desp_move = (r, c)
+
+        info.update({
+            'reason': 'PVS搜索',
+            'threat_detail': f'拼命模式-攻防混合(PVS={best_val}, blocks={len(critical_blocks)})',
+            'depth': target_depth,
+            'best_val': best_val,
+            'time_ms': elapsed_ms,
+            'top_moves': top_moves,
+        })
+        return (best_desp_move[0], best_desp_move[1], info)
+
+    info.update({
+        'reason': 'PVS搜索',
+        'depth': target_depth,
+        'time_ms': elapsed_ms,
+        'top_moves': top_moves,
+    })
+    return (best_move[0], best_move[1], info)
 
 
 # ==================== AI Worker 线程 ====================
 class AIWorker(QThread):
-    """AI计算线程，避免阻塞UI"""
-    finished = pyqtSignal(int, int)
+    """AI计算线程，避免阻塞UI — 返回 (r, c, info_dict)"""
+    finished = pyqtSignal(int, int, object)  # (row, col, info_dict)
 
     def __init__(self, board, ai_player, depth):
         super().__init__()
@@ -1461,8 +1935,8 @@ class AIWorker(QThread):
         self.depth = depth
 
     def run(self):
-        r, c = ai_move(self.board, self.ai_player, self.depth)
-        self.finished.emit(r, c)
+        r, c, info = ai_move(self.board, self.ai_player, self.depth)
+        self.finished.emit(r, c, info)
 
 
 # ==================== 棋子动画 ====================
@@ -2129,6 +2603,9 @@ class GomokuGame(QMainWindow):
         # AI Worker
         self.ai_worker = None
 
+        # 游戏日志
+        self.logger = None
+
         # 中央容器
         self.central = QStackedWidget()
         self.setCentralWidget(self.central)
@@ -2180,6 +2657,14 @@ class GomokuGame(QMainWindow):
 
     def _start_game(self):
         """初始化游戏"""
+        # 关闭上局日志
+        if self.logger:
+            self.logger.close()
+        self.logger = GameLogger()
+        self.logger.f.write(f"  模式: {'玩家先手(黑)' if self.gamemode == 0 else 'AI先手(黑), 玩家后手(白)'}\n")
+        self.logger.f.write(f"  难度: {self.gamekunnan}级\n\n")
+        self.logger.f.flush()
+
         self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
         self.move_history = []  # 每步落子后保存棋盘快照
         self.gameplayer = 1
@@ -2265,6 +2750,9 @@ class GomokuGame(QMainWindow):
             self.board_widget.set_last_move(9, 9, 1)
             self.move_count += 1
             self.move_history.append(self.board.copy())
+            if self.logger:
+                self.logger.log_ai(self.move_count, 1, 9, 9,
+                    {'reason': 'AI先手-天元', 'detail': 'J10'})
             self._update_panel()
 
     def _on_board_click(self, event: QMouseEvent):
@@ -2294,6 +2782,11 @@ class GomokuGame(QMainWindow):
         self.board_widget.set_last_move(r, c, player_stone)
         self.move_count += 1
         self.move_history.append(self.board.copy())
+        if self.logger:
+            self.logger.log_human(self.move_count, player_stone, r, c)
+            # 每隔约5步记录一次完整棋盘状态
+            if self.move_count % 5 == 1 or self.move_count <= 3:
+                self.logger.log_board_state(self.move_count, self.board)
         self._update_panel()
 
         # 检查玩家是否获胜
@@ -2323,7 +2816,7 @@ class GomokuGame(QMainWindow):
         self.ai_worker.finished.connect(self._on_ai_finished)
         self.ai_worker.start()
 
-    def _on_ai_finished(self, r, c):
+    def _on_ai_finished(self, r, c, info=None):
         """AI落子完成"""
         self.ai_thinking = False
         self.game_panel.show_thinking(False)
@@ -2340,6 +2833,17 @@ class GomokuGame(QMainWindow):
         self.board_widget.set_last_move(r, c, ai_stone)
         self.move_count += 1
         self.move_history.append(self.board.copy())
+
+        # 记录AI决策日志
+        if self.logger:
+            if info is None:
+                info = {'reason': '未知'}
+            self.logger.log_ai(self.move_count, ai_stone, r, c, info)
+            # 每隔约5步记录棋盘状态（与人类步数错开）
+            if self.move_count % 5 == 0 or info.get('reason') in ('威胁检测', '搜索-发现必胜'):
+                self.logger.log_board_state(self.move_count, self.board,
+                    f"AI={info.get('reason','')}")
+
         self._update_panel()
 
         # 检查AI是否获胜
@@ -2397,10 +2901,18 @@ class GomokuGame(QMainWindow):
         if self.ai_worker and self.ai_worker.isRunning():
             self.ai_worker.terminate()
             self.ai_worker.wait()
+        if self.logger:
+            print(f"[日志] 对局日志已保存: {self.logger.filepath}")
+            self.logger.close()
         self._show_color_selection()
 
     def _on_quit(self):
         """退出"""
+        if self.logger:
+            try:
+                self.logger.close()
+            except Exception:
+                pass
         self.close()
 
     def _update_panel(self):
@@ -2427,11 +2939,21 @@ class GomokuGame(QMainWindow):
 
         is_win = (self.gamerule == 2)
         if self.gamerule == 2:
-            text = "🎉 你赢了！"
+            text = "你赢了！"
+            winner_str = "human"
         elif self.gamerule == 1:
-            text = "😞 你输了！"
+            text = "你输了！"
+            winner_str = "ai"
         else:
-            text = "🤝 平局！"
+            text = "平局！"
+            winner_str = "draw"
+
+        # 记录对局结果到日志
+        if self.logger:
+            self.logger.log_result(winner_str,
+                total_steps=self.move_count, move_count=self.move_count)
+            # 记录终局完整棋盘
+            self.logger.log_board_state(self.move_count, self.board, "[终局]")
 
         overlay = GameOverOverlay(text, is_win)
         overlay.restart_clicked.connect(self._on_restart)

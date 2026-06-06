@@ -67,7 +67,7 @@ jobs:
 
       - name: Package .deb
         run: |
-          # 提取版本号：tag(v1.2.3) → 1.2.3，否则用 YYYYMMDD-HHMMSS 作为默认版本
+          # 提取版本号：tag(v1.2.5) → 1.2.5，否则用 YYYYMMDD-HHMMSS 作为默认版本
           raw="${GITHUB_REF_NAME}"
           if [[ "$raw" =~ ^v[0-9] ]]; then
             VERSION="${raw#v}"
@@ -126,8 +126,10 @@ jobs:
 
 
   # ==================== GitHub Release ====================
+  # 仅在tag推送时创建Release（修复 softprops/action-gh-release 缺少tag报错）
   release:
     needs: [build-windows, build-linux]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
