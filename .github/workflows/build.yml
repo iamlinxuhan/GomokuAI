@@ -1,6 +1,9 @@
 name: Build and Release
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
