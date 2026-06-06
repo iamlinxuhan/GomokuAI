@@ -354,48 +354,42 @@ def evaluate_board(board, ai_player):
 
 
 # ==================== 专业棋型权重表（Gomocup参考） ====================
+# 棋型权重表（与旧版Alpha-Beta Engine保持一致的量级）
+# 关键：活四必须 >> 冲四 >> 活三 >> 眠三，量级差距决定搜索正确性
 _SCORE_TABLE = {
-    # (count, open_ends, has_jump) → 基础分
-    # 连五 / 超过5连
-    (5, 2, False): 100000000, (5, 1, False): 100000000, (5, 0, False): 100000000,
-    # 活四 (两端空) → 必胜
-    (4, 2, False): 1000000,
-    # 冲四 (一端空) → 强威胁
-    (4, 1, False): 100000,
-    # 眠四 (两端堵死) → 弱威胁
-    (4, 0, False): 1000,
-    # 活三 (两端空)
-    (3, 2, False): 5000,
-    (3, 2, True): 3500,    # 跳活三 (有跳但两端空)
-    # 眠三 (一端空)
-    (3, 1, False): 200,
-    (3, 1, True): 150,      # 跳眠三
-    # 死三 (两端堵)
-    (3, 0, False): 20,
-    # 活二
-    (2, 2, False): 50,
-    (2, 2, True): 35,
-    # 眠二
-    (2, 1, False): 10,
-    (2, 0, False): 3,
-    # 单子
-    (1, 2, False): 5,
-    (1, 1, False): 2,
-    (1, 0, False): 1,
+    # 连五 / 成五
+    (5, True, 0): 100000000,   # 成五
+    (4, True, True): 10000000,   # 活四(双头) = 10M ★ 与旧版一致
+    (4, True, False): 10000000,  # 活四 = 10M ★ 旧版同
+    (4, False, True): 100000,    # 冲四(双头) = 100K ★ 旧版同
+    (4, False, False): 10000,    # 冲四 = 10K ★ 旧版同
+    (3, True, True): 1000000,    # 双活三 = 1M ★ 必胜级
+    (3, True, False): 10000,     # 活三 = 10K ★ 旧版同
+    (3, False, True): 1000,      # 双眠三 = 1K ★ 旧版同
+    (3, False, False): 500,      # 眠三 = 500 ★ 旧版同
+    (2, True, True): 1000,       # 双活二
+    (2, True, False): 200,       # 活二 ★ 旧版同
+    (2, False, False): 50,       # 眠二 ★ 旧版同
+    (1, True, False): 10,        # 活一 ★ 旧版同
+    (1, False, False): 1,        # 眠一 ★ 旧版同
 }
 
 
 def _get_line_score(count, open_ends, has_jump):
-    """根据标准棋型返回单线分值"""
+    """根据标准棋型返回单线分值（与旧版SCORE_MAP键格式一致）"""
     cnt = min(count, 5)
-    oe = min(open_ends, 2) if open_ends >= 0 else 0
-    key = (cnt, oe, has_jump)
+    is_live = (open_ends >= 2)  # 两端空 = 活
+    key = (cnt, is_live, has_jump)
     if key in _SCORE_TABLE:
         return _SCORE_TABLE[key]
-    # 回退
+    # 回退：尝试非跳棋型
+    fallback = (cnt, is_live, False)
+    if fallback in _SCORE_TABLE:
+        return _SCORE_TABLE[fallback]
+    # 最终回退
     if cnt >= 5:
         return 100000000
-    return _SCORE_TABLE.get((cnt, oe, False), 0)
+    return _SCORE_TABLE.get((cnt, False, False), 0)
 
 
 # ==================== 静态评估缓存 (eval_cache) ====================
@@ -465,25 +459,25 @@ def _eval_player_composite(board, player):
                     elif count == 2 and open_ends >= 2:
                         live2_cnt += 1
 
-    # === 组合加成（对手无法同时防守） ===
-    # 双活三 → 活四以上级别
+    # === 组合加成（对手无法同时防守）— 与新评分表量级一致 ===
+    # 双活三 → 必胜级（1M）
     if live3_cnt + jump_live3_cnt >= 2:
-        score += 100000  # 双活三必胜
-    # 冲四 + 活三 → 必胜
+        score += 1000000  # 双活三必胜
+    # 冲四 + 活三 → 必胜级（5M）
     if rush4_cnt >= 1 and (live3_cnt + jump_live3_cnt) >= 1:
-        score += 80000
-    # 双冲四
+        score += 5000000
+    # 双冲四 → 高危
     if rush4_cnt >= 2:
-        score += 150000
+        score += 5000000
     # 双眠三
     if sleep3_cnt >= 2:
-        score += 500
+        score += 2000
     # 活三 + 眠三
     if (live3_cnt + jump_live3_cnt) >= 1 and sleep3_cnt >= 1:
-        score += 3000
+        score += 15000
     # 冲四 + 活二
     if rush4_cnt >= 1 and live2_cnt >= 1:
-        score += 5000
+        score += 50000
 
     return score
 
@@ -614,14 +608,9 @@ def _generate_moves(board, around_only=True):
 
 def _composite_eval(board, r, c, player):
     """
-    专业棋型组合评估（Gomocup参考权重）:
+    棋型组合评估（评分与_SCORE_TABLE/旧版保持一致量级）:
     检测落子后在所有方向上的棋型组合。
-    包含: 活四/冲四/眠四/活三/眠三/跳活三/活二 及组合加成。
-    
-    关键组合:
-    - 双活三 → 100000 (对手无法双防)
-    - 冲四+活三 → 80000 (必胜)
-    - 双冲四 → 150000
+    修复：活四=10M级，冲四=100K级，活三=10K级
     """
     directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
     live4_cnt = rush4_cnt = dead4_cnt = 0
@@ -652,79 +641,108 @@ def _composite_eval(board, r, c, player):
     if win:
         return 100000000
 
-    # === 专业权重评分 ===
+    # === 权重评分（与新 _SCORE_TABLE 一致） ===
     score = 0
 
-    # 活四: 1e6
+    # 活四: 10M（必胜级）
     if live4_cnt >= 1:
-        score += 1000000
+        score += 10000000
     if live4_cnt >= 2:
         score += 50000000  # 双活四
 
-    # 冲四: 1e5
+    # 冲四: 10K~100K
     if rush4_cnt >= 1:
-        score += 100000
+        score += 10000
     if rush4_cnt >= 2:
         score += 150000   # 双冲四
 
-    # 眠四: 1000
+    # 眠四: 10K
     if dead4_cnt >= 1:
-        score += 1000
+        score += 10000
 
-    # 活三: 5000，跳活三: 3500
+    # 活三: 10K，跳活三: 同级
     if live3_cnt >= 1:
-        score += 5000
+        score += 10000
     if jump_live3_cnt >= 1:
-        score += 3500
+        score += 8000
 
-    # 双活三 (含跳活三): 1e5 (必胜级)
+    # 双活三 (含跳活三): 1M（必胜级）
     total_live3 = live3_cnt + jump_live3_cnt
     if total_live3 >= 2:
-        score += 100000
+        score += 1000000
 
-    # 冲四 + 活三 组合: 80000
+    # 冲四 + 活三 组合: 必胜
     if rush4_cnt >= 1 and total_live3 >= 1:
-        score += 80000
+        score += 5000000
 
-    # 眠三: 200
+    # 眠三: 500
     if sleep3_cnt >= 1:
-        score += 200
+        score += 500
     if sleep3_cnt >= 2:
-        score += 500   # 双眠三
+        score += 1000   # 双眠三
 
-    # 活二: 50
+    # 活二: 200
     if live2_cnt >= 1:
-        score += 50
-    if live2_cnt >= 2:
         score += 200
+    if live2_cnt >= 2:
+        score += 1000   # 双活二
 
     # 冲四 + 活二
     if rush4_cnt >= 1 and live2_cnt >= 1:
-        score += 5000
+        score += 50000
 
     return score
 
 
 def _quick_eval_move(board, r, c, player):
-    """快速评估单个落子的价值（用于启发式排序），含复合棋型"""
-    board[r][c] = player
-
-    # 进攻评估
-    attack = _composite_eval(board, r, c, player)
-
-    # 防守评估
+    """快速评估单个落子的价值（用于启发式排序），进攻权重 > 防守权重。
+    恢复旧版显式棋型评分逻辑，确保走法排序质量。"""
+    score = 0
+    directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
     opp = 1 if player == 2 else 2
-    defense = _composite_eval(board, r, c, opp)
-    # 防守分折算
-    defense = defense // 2
 
-    board[r][c] = 0
+    # ===== 进攻评估（自己的棋型） =====
+    for dr, dc in directions:
+        count, open_ends, has_jump = _analyze_line(board, r, c, dr, dc, player)
+        if count >= 5:
+            return 100000000  # 直接五连，最高优先级
+        if count == 4 and open_ends >= 2:
+            score += 5000000   # 活四（必胜），极高权重
+        elif count == 4 and open_ends == 1:
+            score += 500000    # 冲四
+        elif count == 3 and open_ends >= 2:
+            score += 50000     # 活三（下一步就活四），高权重
+        elif count == 3 and open_ends == 1:
+            score += 5000      # 眠三
+        elif count == 2 and open_ends >= 2:
+            score += 1000      # 活二
+        elif count == 2 and open_ends == 1:
+            score += 200       # 眠二
+        elif count == 1 and open_ends >= 2:
+            score += 30        # 活一
+
+    # ===== 防守评估（堵对手的棋型） =====
+    # 关键修复：防守分数不能超过同级别的进攻分数
+    for dr, dc in directions:
+        count, open_ends, has_jump = _analyze_line(board, r, c, dr, dc, opp)
+        if count >= 5:
+            score += 90000000   # 堵对手五连（仅次于自己五连）
+        elif count == 4 and open_ends >= 2:
+            score += 3000000    # 堵对手活四
+        elif count == 4 and open_ends == 1:
+            score += 300000     # 堵对手冲四
+        elif count == 3 and open_ends >= 2:
+            score += 30000      # 堵对手活三（低于自己活三的50000）
+        elif count == 3 and open_ends == 1:
+            score += 3000       # 堵对手眠三
+        elif count == 2 and open_ends >= 2:
+            score += 500        # 堵对手活二
 
     # 中心位置加分
     center_dist = abs(r - 9) + abs(c - 9)
-    center_bonus = max(0, 18 - center_dist) * 5
+    score += max(0, 18 - center_dist) * 5
 
-    return attack + defense + center_bonus
+    return score
 
 
 def _order_moves(move_list, board, current_player, depth, hash_key=None, tt_best_move=None):
@@ -791,22 +809,22 @@ def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, 
 
     if use_gpu_batch:
         gpu_scores = _batch_eval_moves(board, all_moves, current_player)
-        max_branch = 30
+        max_branch = 15   # GPU分支因子也收紧
         if len(gpu_scores) > max_branch:
             gpu_scores = gpu_scores[:max_branch]
         move_scores = gpu_scores
     else:
         move_scores = _order_moves(all_moves, board, current_player, depth, hash_key, cached_move)
-        max_branch = 30 if depth <= 1 else 25
+        max_branch = 20 if depth <= 1 else 15   # 修复：与旧版一致
         if len(move_scores) > max_branch:
             move_scores = move_scores[:max_branch]
 
-    # === LMR 参数 ===
-    LMR_FULL_DEPTH_MOVES = 3   # 前3个走法不减深度
-    LMR_REDUCTION_1 = 1        # 4~8减1
-    LMR_REDUCTION_2 = 2        # 9+减2
-    LMR_THRESHOLD_1 = 8        # 第8个后加大减幅
-    LMR_MIN_DEPTH = 3          # 深度 >= 3 才启用 LMR
+    # === LMR 参数（修复：对浅层搜索更保守） ===
+    # 五子棋搜索深度较浅，LMR 过激会导致大部分走法几乎不搜
+    LMR_FULL_DEPTH_MOVES = 5   # 前5个走法不减深度（增加从3→5）
+    LMR_REDUCTION_1 = 1        # 后续走法最多减1层（移除减2层）
+    LMR_THRESHOLD_1 = 999      # 不再区分更多减幅（统一只减1）
+    LMR_MIN_DEPTH = 5          # 深度 >= 5 才启用LMR（从3→5，浅层不做LMR）
 
     best_move = None
     first_child = True
@@ -818,16 +836,14 @@ def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, 
             board[r][c] = ai_player
             new_hash = hash_key ^ _zobrist_table[ai_player - 1][r][c]
 
-            # === LMR: Late Move Reduction ===
+            # === LMR: Late Move Reduction（修复：统一只减1层） ===
             if not first_child and depth >= LMR_MIN_DEPTH and move_index >= LMR_FULL_DEPTH_MOVES:
-                # 计算缩减量
+                # 统一减1层（不再区分更多减幅）
                 reduction = LMR_REDUCTION_1
-                if move_index >= LMR_THRESHOLD_1:
-                    reduction = LMR_REDUCTION_2
-                # 历史分数高的走法减幅减半（好棋值得深搜）
+                # 历史分数高的走法减幅豁免（好棋值得深搜）
                 hist = _get_history(ai_player, r, c)
                 if hist > 50 * depth:
-                    reduction = max(0, reduction - 1)
+                    reduction = 0
                 reduced_depth = max(1, depth - 1 - reduction)
 
                 # 零窗口 + 降深度搜索
@@ -866,11 +882,9 @@ def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, 
             # === LMR: Late Move Reduction (minimizing side) ===
             if not first_child and depth >= LMR_MIN_DEPTH and move_index >= LMR_FULL_DEPTH_MOVES:
                 reduction = LMR_REDUCTION_1
-                if move_index >= LMR_THRESHOLD_1:
-                    reduction = LMR_REDUCTION_2
                 hist = _get_history(human_player, r, c)
                 if hist > 50 * depth:
-                    reduction = max(0, reduction - 1)
+                    reduction = 0
                 reduced_depth = max(1, depth - 1 - reduction)
 
                 val = alpha_beta(board, reduced_depth, beta - 1, beta, True, ai_player, new_hash, ply + 1)
@@ -1268,10 +1282,10 @@ def _board_to_fen(board):
 
 def ai_move(board, ai_player, depth):
     """
-    AI 主入口（v3 版本）:
+    AI 主入口（v4 修复版）:
     1. 开局库命中 → 直接返回
     2. 增强TSS 威胁检测（含防守TSS）
-    3. 时间控制 + 迭代加深自适应
+    3. 时间控制 + 迭代加深（确保搜完目标深度）
     4. Zobrist/置换表 + LMR + PVS 搜索
     """
 
@@ -1297,23 +1311,25 @@ def ai_move(board, ai_player, depth):
             return (9, 9)
         return random.choice(moves)
 
-    # === 时间控制 ===
+    # === 时间控制 & 搜索深度（修复：增加时间预算确保搜完目标深度） ===
     _time_start = time.time()
     # 难度 → 最大时间 & 搜索深度
+    # 修复：增加时间预算，PyTorch/GPU初始化有额外开销
     if depth == 1:
-        _time_max = 1.0
-        target_depth = 1
+        _time_max = 2.0      # 简单: 2秒
+        target_depth = 2     # 至少搜2层（旧版depth=1只搜1层太浅）
     elif depth == 2:
-        _time_max = 3.0
-        target_depth = 2
+        _time_max = 5.0      # 中级: 5秒
+        target_depth = 4     # 搜4层（旧版depth=2只搜2层）
     else:
-        _time_max = 5.0   # 高级模式 5 秒上限
-        target_depth = 3
-    _TIME_RESERVE = 0.5   # 至少留 0.5 秒缓冲
+        _time_max = 10.0     # 高级: 10秒
+        target_depth = 6     # 搜6层
+    _TIME_RESERVE = 0.3      # 缓冲时间减少
 
-    # === GPU 批量评估 ===
-    move_scores = _batch_eval_moves(board, moves, ai_player)
-    max_branch_top = 20 if target_depth >= 6 else 15
+    # === 走法排序（使用修复后的 _quick_eval_move） ===
+    move_scores = [(_quick_eval_move(board, r, c, ai_player), r, c) for r, c in moves]
+    move_scores.sort(reverse=True)
+    max_branch_top = 15 if depth >= 2 else 12
     if len(move_scores) > max_branch_top:
         move_scores = move_scores[:max_branch_top]
 
@@ -1325,7 +1341,7 @@ def ai_move(board, ai_player, depth):
     prev_best_val = float('-inf')
 
     for cur_depth in range(1, target_depth + 1):
-        # 时间检查：剩余时间不足时提前停止加深
+        # 时间检查：剩余时间不足时提前停止加深（但至少完成第1层）
         elapsed = time.time() - _time_start
         if elapsed > _time_max - _TIME_RESERVE and cur_depth > 1:
             break
@@ -1333,7 +1349,7 @@ def ai_move(board, ai_player, depth):
         local_best_move = best_move
         best_val = float('-inf')
 
-        # 上次最优放第一位
+        # 上次最优放第一位（迭代加深最佳实践）
         iter_moves = []
         for score, r, c in move_scores:
             if (r, c) == best_move:
@@ -1361,14 +1377,15 @@ def ai_move(board, ai_player, depth):
 
         best_move = local_best_move
 
-        # 启发式提前停止：连续两轮最优值变化很小
-        if prev_best_val != float('-inf') and abs(best_val - prev_best_val) < 100 and cur_depth >= 4:
-            if time.time() - _time_start > _time_max * 0.5:
+        # 启发式提前停止：仅在较深搜索且值稳定时触发（修复：提高阈值和深度要求）
+        if prev_best_val != float('-inf') and abs(best_val - prev_best_val) < 1000 and cur_depth >= 5:
+            if time.time() - _time_start > _time_max * 0.7:
                 break
 
         prev_best_val = best_val
 
-        # 找到必胜路线，提前结束
+        # 找到必胜路线（活四以上），提前结束
+        # 修复：阈值与评分表匹配（活四=10M, 此处9M即可判定必胜）
         if best_val > 9000000:
             break
 
