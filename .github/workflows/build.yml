@@ -11,7 +11,7 @@ permissions:
 jobs:
 
   # ============================================================
-  #  Windows CUDA 版 (NVIDIA显卡) — --onedir + .zip
+  #  Windows CUDA 版 (NVIDIA显卡) — .exe 安装程序 (NSIS)
   # ============================================================
   build-windows-cuda:
     runs-on: windows-latest
@@ -23,6 +23,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+
       - name: Install dependencies (CUDA)
         run: |
           python -m pip install --upgrade pip
@@ -32,21 +35,57 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_For_Windows(CUDA)" main.py
+          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CUDA" main.py
 
-      - name: Package .zip
+      - name: Create NSIS installer
         run: |
-          Compress-Archive -Path "dist/GomokuAI_For_Windows(CUDA)/*" -DestinationPath "GomokuAI_For_Windows(CUDA).zip"
+          $ver = "${{ github.ref_name }}" -replace '^v',''
+          $outName = "GomokuAI_For_Windows(CUDA)_v${ver}_Setup.exe"
+
+          @" | Out-File -Encoding ASCII installer.nsi
+          !include "MUI2.nsh"
+
+          Name "五子棋AI (CUDA)"
+          OutFile "${outName}"
+          InstallDir "`$PROGRAMFILES\GomokuAI_CUDA"
+          RequestExecutionLevel admin
+          !define MUI_ABORTWARNING
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_PAGE_FINISH
+          !insertmacro MUI_LANGUAGE "SimpChinese"
+          !insertmacro MUI_LANGUAGE "English"
+
+          Section "Install"
+            SetOutPath `$INSTDIR
+            File /r "dist\GomokuAI_CUDA\*"
+            CreateShortCut "`$DESKTOP\五子棋AI (CUDA).lnk" "`$INSTDIR\GomokuAI_CUDA.exe" "" "`$INSTDIR\GomokuAI_CUDA.exe" 0
+            CreateDirectory "`$SMPROGRAMS\五子棋AI (CUDA)"
+            CreateShortCut "`$SMPROGRAMS\五子棋AI (CUDA)\五子棋AI (CUDA).lnk" "`$INSTDIR\GomokuAI_CUDA.exe" "" "`$INSTDIR\GomokuAI_CUDA.exe" 0
+            CreateShortCut "`$SMPROGRAMS\五子棋AI (CUDA)\卸载 五子棋AI (CUDA).lnk" "`$INSTDIR\uninstall.exe"
+            WriteUninstaller "`$INSTDIR\uninstall.exe"
+          SectionEnd
+
+          Section "Uninstall"
+            Delete "`$DESKTOP\五子棋AI (CUDA).lnk"
+            RMDir /r "`$SMPROGRAMS\五子棋AI (CUDA)"
+            RMDir /r "`$INSTDIR"
+          SectionEnd
+          "@
+
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+          ls -lh "${outName}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GomokuAI_For_Windows(CUDA)
-          path: GomokuAI_For_Windows(CUDA).zip
+          path: GomokuAI_For_Windows(CUDA)_v*_Setup.exe
 
 
   # ============================================================
-  #  Windows CPU 版 (无NVIDIA显卡 / Intel/AMD集显) — --onedir + .zip
+  #  Windows CPU 版 (无NVIDIA显卡) — .exe 安装程序 (NSIS)
   # ============================================================
   build-windows-cpu:
     runs-on: windows-latest
@@ -58,6 +97,9 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+
       - name: Install dependencies (CPU)
         run: |
           python -m pip install --upgrade pip
@@ -67,17 +109,53 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_For_Windows(CPU)" main.py
+          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CPU" main.py
 
-      - name: Package .zip
+      - name: Create NSIS installer
         run: |
-          Compress-Archive -Path "dist/GomokuAI_For_Windows(CPU)/*" -DestinationPath "GomokuAI_For_Windows(CPU).zip"
+          $ver = "${{ github.ref_name }}" -replace '^v',''
+          $outName = "GomokuAI_For_Windows(CPU)_v${ver}_Setup.exe"
+
+          @" | Out-File -Encoding ASCII installer.nsi
+          !include "MUI2.nsh"
+
+          Name "五子棋AI (CPU)"
+          OutFile "${outName}"
+          InstallDir "`$PROGRAMFILES\GomokuAI_CPU"
+          RequestExecutionLevel admin
+          !define MUI_ABORTWARNING
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_PAGE_FINISH
+          !insertmacro MUI_LANGUAGE "SimpChinese"
+          !insertmacro MUI_LANGUAGE "English"
+
+          Section "Install"
+            SetOutPath `$INSTDIR
+            File /r "dist\GomokuAI_CPU\*"
+            CreateShortCut "`$DESKTOP\五子棋AI (CPU).lnk" "`$INSTDIR\GomokuAI_CPU.exe" "" "`$INSTDIR\GomokuAI_CPU.exe" 0
+            CreateDirectory "`$SMPROGRAMS\五子棋AI (CPU)"
+            CreateShortCut "`$SMPROGRAMS\五子棋AI (CPU)\五子棋AI (CPU).lnk" "`$INSTDIR\GomokuAI_CPU.exe" "" "`$INSTDIR\GomokuAI_CPU.exe" 0
+            CreateShortCut "`$SMPROGRAMS\五子棋AI (CPU)\卸载 五子棋AI (CPU).lnk" "`$INSTDIR\uninstall.exe"
+            WriteUninstaller "`$INSTDIR\uninstall.exe"
+          SectionEnd
+
+          Section "Uninstall"
+            Delete "`$DESKTOP\五子棋AI (CPU).lnk"
+            RMDir /r "`$SMPROGRAMS\五子棋AI (CPU)"
+            RMDir /r "`$INSTDIR"
+          SectionEnd
+          "@
+
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+          ls -lh "${outName}"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: GomokuAI_For_Windows(CPU)
-          path: GomokuAI_For_Windows(CPU).zip
+          path: GomokuAI_For_Windows(CPU)_v*_Setup.exe
 
 
   # ============================================================
