@@ -6,7 +6,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.6-brightgreen)
+![Version](https://img.shields.io/badge/version-1.6.1-brightgreen)
 
 ---
 
@@ -106,7 +106,7 @@ pyinstaller --onefile --windowed --icon="五子棋.ico" --name "五子棋AI" mai
 
 ## 📝 更新日志
 
-### v1.6 (2026-06-06)
+### v1.6.1 (2026-06-06)
 - 🔧 **分层TSS威胁响应**：Level-1硬拦截(五连/活四) + Level-2软建议(双活三交给PVS搜索)
 - 🔧 **多线防守**：检测对手≥2个同时威胁 → 放弃被动防守，转为以攻对攻
 - 🔧 **拼命模式**：PVS判必败时切换攻防混合评分，扫描对手准杀位(堵五连+1亿/堵活四+8000万) + 自身强攻击
