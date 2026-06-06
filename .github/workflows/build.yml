@@ -11,7 +11,7 @@ permissions:
 jobs:
 
   # ============================================================
-  #  Windows CUDA 版 (NVIDIA显卡) — 7z SFX 自解压安装程序 (>2GB OK)
+  #  Windows CUDA 版 — 7z SFX 自解压安装程序 (>2GB OK)
   # ============================================================
   build-windows-cuda:
     runs-on: windows-latest
@@ -41,27 +41,26 @@ jobs:
           $outName = "GomokuAI_For_Windows(CUDA)_v${ver}_Setup.exe"
           $appDir = "dist\GomokuAI_CUDA"
 
-          # ---- 安装后脚本 (PowerShell, 创建快捷方式) ----
-          @'
+          # ---- setup.ps1 (安装后创建快捷方式) ----
+          $setupPs = @'
           $WshShell = New-Object -ComObject WScript.Shell
           $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
           $AppExe = Join-Path $InstallDir 'GomokuAI_CUDA.exe'
           $Programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\五子棋AI (CUDA)'
           New-Item -ItemType Directory -Force -Path $Programs | Out-Null
-
           $sc = $WshShell.CreateShortcut(([Environment]::GetFolderPath('Desktop') + '\五子棋AI (CUDA).lnk'))
           $sc.TargetPath = $AppExe; $sc.Save()
           $sc2 = $WshShell.CreateShortcut((Join-Path $Programs '五子棋AI (CUDA).lnk'))
           $sc2.TargetPath = $AppExe; $sc2.Save()
           $sc3 = $WshShell.CreateShortcut((Join-Path $Programs '卸载 五子棋AI (CUDA).lnk'))
           $sc3.TargetPath = (Join-Path $InstallDir 'uninstall.cmd'); $sc3.Save()
-
           Write-Host '五子棋AI (CUDA) 安装完成！'
           Start-Sleep -Seconds 2
-          '@ | Set-Content -Encoding UTF8 "$appDir\setup.ps1"
+          '@
+          $setupPs | Set-Content -Encoding UTF8 "$appDir\setup.ps1"
 
-          # ---- 卸载脚本 ----
-          @'
+          # ---- uninstall.cmd ----
+          $uninstCmd = @'
           @echo off
           echo ============================================
           echo   卸载 五子棋AI (CUDA)
@@ -71,32 +70,29 @@ jobs:
           del /q "%USERPROFILE%\Desktop\五子棋AI (CUDA).lnk" >nul 2>&1
           rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\五子棋AI (CUDA)" >nul 2>&1
           echo 快捷方式已删除。
-          echo.
           echo 安装目录: %~dp0
           echo 如需完全删除，请手动删除上述文件夹。
           echo.
           pause
-          '@ | Set-Content -Encoding ASCII "$appDir\uninstall.cmd"
+          '@
+          $uninstCmd | Set-Content -Encoding ASCII "$appDir\uninstall.cmd"
 
-          # ---- 7z SFX config ----
+          # ---- sfx_config.txt ----
           if ($ver -match '^\d') { $displayVer = "v$ver" } else { $displayVer = "$ver" }
-          @"
+          $sfxCfg = @"
           ;!@Install@!UTF-8!
           Title="五子棋AI (CUDA) $displayVer"
           BeginPrompt="即将安装 五子棋AI (CUDA) $displayVer，是否继续？"
           RunProgram="powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%%T\\setup.ps1\""
           Directory="%%LocalAppData%%\\GomokuAI_CUDA"
           ;!@InstallEnd@!
-          "@ | Set-Content -Encoding ASCII "sfx_config.txt"
+          "@
+          $sfxCfg | Set-Content -Encoding ASCII "sfx_config.txt"
 
-          # ---- 下载 7-Zip Extra (含 7zSD.sfx) ----
+          # ---- 下载 7-Zip Extra, 压缩, 拼接 SFX ----
           Invoke-WebRequest -Uri "https://www.7-zip.org/a/7z2409-extra.7z" -OutFile "7z-extra.7z"
           & "C:\Program Files\7-Zip\7z.exe" x 7z-extra.7z -o7z-extra -y
-
-          # ---- 创建 7z 固实压缩 ----
           & "C:\Program Files\7-Zip\7z.exe" a -mx9 -mfb=273 -md=512m -ms=on "temp.7z" "$appDir\*"
-
-          # ---- 拼接 SFX: 7zSD.sfx + config.txt + archive.7z → Setup.exe ----
           cmd /c "copy /b 7z-extra\x64\7zSD.sfx + sfx_config.txt + temp.7z `"$outName`""
           ls -lh "$outName"
 
@@ -108,7 +104,7 @@ jobs:
 
 
   # ============================================================
-  #  Windows CPU 版 (无NVIDIA显卡) — .exe 安装程序 (NSIS)
+  #  Windows CPU 版 — NSIS .exe 安装程序
   # ============================================================
   build-windows-cpu:
     runs-on: windows-latest
@@ -139,9 +135,8 @@ jobs:
           $ver = "${{ github.ref_name }}" -replace '^v',''
           $outName = "GomokuAI_For_Windows(CPU)_v${ver}_Setup.exe"
 
-          @" | Out-File -Encoding ASCII installer.nsi
+          $nsiContent = @"
           !include "MUI2.nsh"
-
           Name "五子棋AI (CPU)"
           OutFile "${outName}"
           InstallDir "`$PROGRAMFILES\GomokuAI_CPU"
@@ -153,7 +148,6 @@ jobs:
           !insertmacro MUI_PAGE_FINISH
           !insertmacro MUI_LANGUAGE "SimpChinese"
           !insertmacro MUI_LANGUAGE "English"
-
           Section "Install"
             SetOutPath `$INSTDIR
             File /r "dist\GomokuAI_CPU\*"
@@ -163,14 +157,13 @@ jobs:
             CreateShortCut "`$SMPROGRAMS\五子棋AI (CPU)\卸载 五子棋AI (CPU).lnk" "`$INSTDIR\uninstall.exe"
             WriteUninstaller "`$INSTDIR\uninstall.exe"
           SectionEnd
-
           Section "Uninstall"
             Delete "`$DESKTOP\五子棋AI (CPU).lnk"
             RMDir /r "`$SMPROGRAMS\五子棋AI (CPU)"
             RMDir /r "`$INSTDIR"
           SectionEnd
           "@
-
+          $nsiContent | Out-File -Encoding ASCII installer.nsi
           & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
           ls -lh "${outName}"
 
@@ -182,7 +175,7 @@ jobs:
 
 
   # ============================================================
-  #  Linux AMD64 CUDA .deb (NVIDIA显卡) — --onedir → /opt/
+  #  Linux AMD64 CUDA .deb — onedir → /opt/
   # ============================================================
   build-linux-cuda-amd:
     runs-on: ubuntu-latest
@@ -224,35 +217,36 @@ jobs:
           DESK_DIR="${PKG_DIR}/usr/share/applications"
           mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESK_DIR}" "${PKG_DIR}/DEBIAN"
 
-          # 复制整个 onedir 到 /opt/
           cp -r dist/gomoku-ai-cuda/* "${APP_DIR}/"
           chmod -R 755 "${APP_DIR}"
 
-          # 创建启动脚本
-          printf '%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai-cuda/gomoku-ai-cuda "$@"' > "${BIN_DIR}/gomoku-ai-cuda"
+          # 启动脚本 (printf 替代 heredoc)
+          printf '%s\n%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai-cuda/gomoku-ai-cuda "$@"' > "${BIN_DIR}/gomoku-ai-cuda"
           chmod 755 "${BIN_DIR}/gomoku-ai-cuda"
 
-          cat > "${DESK_DIR}/gomoku-ai-cuda.desktop" << 'DESKTOP_EOF'
-[Desktop Entry]
-Name=五子棋AI (CUDA)
-Name[zh_CN]=五子棋AI (CUDA)
-Comment=Gomoku AI - PVS+LMR+MultiLine Defense+Desperation Mode
-Exec=/usr/local/bin/gomoku-ai-cuda
-Terminal=false
-Type=Application
-Categories=Game;BoardGame;
-DESKTOP_EOF
+          # .desktop 文件
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            '[Desktop Entry]' \
+            'Name=五子棋AI (CUDA)' \
+            'Name[zh_CN]=五子棋AI (CUDA)' \
+            'Comment=Gomoku AI - PVS+LMR+MultiLine Defense+Desperation Mode' \
+            'Exec=/usr/local/bin/gomoku-ai-cuda' \
+            'Terminal=false' \
+            'Type=Application' \
+            'Categories=Game;BoardGame;' \
+            > "${DESK_DIR}/gomoku-ai-cuda.desktop"
 
-          cat > "${PKG_DIR}/DEBIAN/control" << CONTROL_EOF
-Package: gomoku-ai-cuda
-Version: ${VERSION}
-Section: games
-Priority: optional
-Architecture: amd64
-Maintainer: iamlinxuhan
-Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0
-Description: 五子棋AI CUDA版 - PVS+LMR+多线防守+拼命模式+GPU加速
-CONTROL_EOF
+          # DEBIAN/control
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            "Package: gomoku-ai-cuda" \
+            "Version: ${VERSION}" \
+            "Section: games" \
+            "Priority: optional" \
+            "Architecture: amd64" \
+            "Maintainer: iamlinxuhan" \
+            "Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0" \
+            "Description: 五子棋AI CUDA版 - PVS+LMR+多线防守+拼命模式+GPU加速" \
+            > "${PKG_DIR}/DEBIAN/control"
 
           dpkg-deb --build "${PKG_DIR}" "GomokuAI_For_Linux(CUDA)_AMD.deb"
           ls -lh "GomokuAI_For_Linux(CUDA)_AMD.deb"
@@ -265,7 +259,7 @@ CONTROL_EOF
 
 
   # ============================================================
-  #  Linux AMD64 CPU .deb (无NVIDIA显卡) — --onedir → /opt/
+  #  Linux AMD64 CPU .deb — onedir → /opt/
   # ============================================================
   build-linux-cpu-amd:
     runs-on: ubuntu-latest
@@ -315,30 +309,30 @@ CONTROL_EOF
           cp -r dist/gomoku-ai-cpu/* "${APP_DIR}/"
           chmod -R 755 "${APP_DIR}"
 
-          printf '%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai-cpu/gomoku-ai-cpu "$@"' > "${BIN_DIR}/gomoku-ai-cpu"
+          printf '%s\n%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai-cpu/gomoku-ai-cpu "$@"' > "${BIN_DIR}/gomoku-ai-cpu"
           chmod 755 "${BIN_DIR}/gomoku-ai-cpu"
 
-          cat > "${DESK_DIR}/gomoku-ai-cpu.desktop" << 'DESKTOP_EOF'
-[Desktop Entry]
-Name=五子棋AI (CPU)
-Name[zh_CN]=五子棋AI (CPU)
-Comment=Gomoku AI - PVS+LMR+MultiLine Defense+Desperation Mode
-Exec=/usr/local/bin/gomoku-ai-cpu
-Terminal=false
-Type=Application
-Categories=Game;BoardGame;
-DESKTOP_EOF
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            '[Desktop Entry]' \
+            'Name=五子棋AI (CPU)' \
+            'Name[zh_CN]=五子棋AI (CPU)' \
+            'Comment=Gomoku AI - PVS+LMR+MultiLine Defense+Desperation Mode' \
+            'Exec=/usr/local/bin/gomoku-ai-cpu' \
+            'Terminal=false' \
+            'Type=Application' \
+            'Categories=Game;BoardGame;' \
+            > "${DESK_DIR}/gomoku-ai-cpu.desktop"
 
-          cat > "${PKG_DIR}/DEBIAN/control" << CONTROL_EOF
-Package: gomoku-ai-cpu
-Version: ${VERSION}
-Section: games
-Priority: optional
-Architecture: amd64
-Maintainer: iamlinxuhan
-Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0
-Description: 五子棋AI CPU版 - PVS+LMR+多线防守+拼命模式(不需要NVIDIA显卡)
-CONTROL_EOF
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            "Package: gomoku-ai-cpu" \
+            "Version: ${VERSION}" \
+            "Section: games" \
+            "Priority: optional" \
+            "Architecture: amd64" \
+            "Maintainer: iamlinxuhan" \
+            "Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0" \
+            "Description: 五子棋AI CPU版 - PVS+LMR+多线防守+拼命模式(不需要NVIDIA显卡)" \
+            > "${PKG_DIR}/DEBIAN/control"
 
           dpkg-deb --build "${PKG_DIR}" "GomokuAI_For_Linux(CPU)_AMD.deb"
           ls -lh "GomokuAI_For_Linux(CPU)_AMD.deb"
@@ -351,9 +345,7 @@ CONTROL_EOF
 
 
   # ============================================================
-  #  Linux ARM64 CUDA .pkg (Jetson / ARM服务器)
-  #  GitHub ARM runner 无 GPU，实际使用 CPU PyTorch
-  #  --onedir → 整体打包目录
+  #  Linux ARM64 CUDA .pkg — onedir + tar.gz
   # ============================================================
   build-linux-cuda-arm:
     runs-on: ubuntu-24.04-arm
@@ -376,7 +368,7 @@ CONTROL_EOF
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies (CPU PyTorch for ARM)
+      - name: Install Python dependencies (ARM)
         run: |
           python -m pip install --upgrade pip
           pip install "sip<7" "PyQt5-sip<13"
@@ -388,28 +380,27 @@ CONTROL_EOF
         run: |
           pyinstaller --onedir --windowed --name "gomoku-ai-cuda-arm" main.py
 
-      - name: Package .pkg (tar.gz)
+      - name: Package .pkg
         run: |
           PKG_NAME="GomokuAI_For_Linux(CUDA)_ARM"
           PKG_DIR="${PKG_NAME}/gomoku-ai-cuda-arm"
           mkdir -p "${PKG_DIR}"
-
-          # 复制整个 onedir
           cp -r dist/gomoku-ai-cuda-arm/* "${PKG_DIR}/"
           chmod -R 755 "${PKG_DIR}"
 
-          cat > "${PKG_NAME}/install.sh" << 'INSTALL_EOF'
-#!/bin/bash
-# 五子棋AI ARM64 CUDA 版安装脚本
-set -e
-APP_DIR="/opt/gomoku-ai-cuda-arm"
-echo "Installing GomokuAI (CUDA ARM)..."
-sudo mkdir -p "${APP_DIR}"
-sudo cp -r gomoku-ai-cuda-arm/* "${APP_DIR}/"
-sudo chmod -R 755 "${APP_DIR}"
-sudo ln -sf "${APP_DIR}/gomoku-ai-cuda-arm" /usr/local/bin/gomoku-ai
-echo "Done! Run: gomoku-ai"
-INSTALL_EOF
+          # install.sh (printf 替代 heredoc)
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            '#!/bin/bash' \
+            '# 五子棋AI ARM64 CUDA 版安装脚本' \
+            'set -e' \
+            'APP_DIR="/opt/gomoku-ai-cuda-arm"' \
+            'echo "Installing GomokuAI (CUDA ARM)..."' \
+            'sudo mkdir -p "${APP_DIR}"' \
+            'sudo cp -r gomoku-ai-cuda-arm/* "${APP_DIR}/"' \
+            'sudo chmod -R 755 "${APP_DIR}"' \
+            'sudo ln -sf "${APP_DIR}/gomoku-ai-cuda-arm" /usr/local/bin/gomoku-ai' \
+            'echo "Done! Run: gomoku-ai"' \
+            > "${PKG_NAME}/install.sh"
           chmod 755 "${PKG_NAME}/install.sh"
 
           tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
@@ -424,7 +415,7 @@ INSTALL_EOF
 
 
   # ============================================================
-  #  Linux ARM64 CPU .pkg (树莓派5 / ARM SBC) — --onedir
+  #  Linux ARM64 CPU .pkg — onedir + tar.gz
   # ============================================================
   build-linux-cpu-arm:
     runs-on: ubuntu-24.04-arm
@@ -447,7 +438,7 @@ INSTALL_EOF
         with:
           python-version: '3.11'
 
-      - name: Install Python dependencies (CPU)
+      - name: Install Python dependencies (ARM)
         run: |
           python -m pip install --upgrade pip
           pip install "sip<7" "PyQt5-sip<13"
@@ -459,27 +450,26 @@ INSTALL_EOF
         run: |
           pyinstaller --onedir --windowed --name "gomoku-ai-cpu-arm" main.py
 
-      - name: Package .pkg (tar.gz)
+      - name: Package .pkg
         run: |
           PKG_NAME="GomokuAI_For_Linux(CPU)_ARM"
           PKG_DIR="${PKG_NAME}/gomoku-ai-cpu-arm"
           mkdir -p "${PKG_DIR}"
-
           cp -r dist/gomoku-ai-cpu-arm/* "${PKG_DIR}/"
           chmod -R 755 "${PKG_DIR}"
 
-          cat > "${PKG_NAME}/install.sh" << 'INSTALL_EOF'
-#!/bin/bash
-# 五子棋AI ARM64 CPU 版安装脚本
-set -e
-APP_DIR="/opt/gomoku-ai-cpu-arm"
-echo "Installing GomokuAI (CPU ARM)..."
-sudo mkdir -p "${APP_DIR}"
-sudo cp -r gomoku-ai-cpu-arm/* "${APP_DIR}/"
-sudo chmod -R 755 "${APP_DIR}"
-sudo ln -sf "${APP_DIR}/gomoku-ai-cpu-arm" /usr/local/bin/gomoku-ai
-echo "Done! Run: gomoku-ai"
-INSTALL_EOF
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            '#!/bin/bash' \
+            '# 五子棋AI ARM64 CPU 版安装脚本' \
+            'set -e' \
+            'APP_DIR="/opt/gomoku-ai-cpu-arm"' \
+            'echo "Installing GomokuAI (CPU ARM)..."' \
+            'sudo mkdir -p "${APP_DIR}"' \
+            'sudo cp -r gomoku-ai-cpu-arm/* "${APP_DIR}/"' \
+            'sudo chmod -R 755 "${APP_DIR}"' \
+            'sudo ln -sf "${APP_DIR}/gomoku-ai-cpu-arm" /usr/local/bin/gomoku-ai' \
+            'echo "Done! Run: gomoku-ai"' \
+            > "${PKG_NAME}/install.sh"
           chmod 755 "${PKG_NAME}/install.sh"
 
           tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"

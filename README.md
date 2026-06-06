@@ -6,7 +6,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.6.8-brightgreen)
+![Version](https://img.shields.io/badge/version-1.6.9-brightgreen)
 
 ---
 
@@ -268,6 +268,9 @@ AI 每步执行 **PVS depth=4 全盘搜索**（~4000ms/步），紧贴人类落�
 ---
 
 ## 📝 更新日志
+
+### v1.6.9 (2026-06-06)
+- 🐛 **彻底修复 YAML 语法**：全部 heredocs 替换为 `printf`（`[Desktop Entry]`、`$@`、多行内容均会破坏 YAML 解析）
 
 ### v1.6.8 (2026-06-06)
 - 📦 **CUDA 版改用 7z SFX**：解决 NSIS 单文件 >2GB 硬限制，PyTorch CUDA ~2.7GB 打包无忧
