@@ -1,0 +1,143 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+
+  # ==================== Windows 打包 .exe ====================
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy PyQt5
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install pyinstaller
+
+      - name: Build .exe
+        run: |
+          pyinstaller --onefile --windowed --icon="五子棋.ico" --name "五子棋AI" main.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 五子棋AI-win64
+          path: dist/五子棋AI.exe
+
+
+  # ==================== Linux Docker 打包 + .deb ====================
+  build-linux:
+    runs-on: ubuntu-latest
+    container:
+      image: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends \
+            libgl1-mesa-glx libglib2.0-0 libxkbcommon-x11-0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xkb1 libxkbcommon0 \
+            libegl1 libfontconfig1 libdbus-1-3
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy PyQt5 pyinstaller
+
+      - name: Build Linux binary
+        run: |
+          pyinstaller --onefile --windowed --name "gomoku-ai" main.py
+          ls -lh dist/gomoku-ai
+
+      - name: Package .deb
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          PKG_DIR="deb_build"
+
+          mkdir -p "${PKG_DIR}/usr/local/bin"
+          mkdir -p "${PKG_DIR}/usr/share/applications"
+          mkdir -p "${PKG_DIR}/usr/share/icons/hicolor/128x128/apps"
+          mkdir -p "${PKG_DIR}/DEBIAN"
+
+          cp dist/gomoku-ai "${PKG_DIR}/usr/local/bin/"
+          chmod 755 "${PKG_DIR}/usr/local/bin/gomoku-ai"
+
+          cat > "${PKG_DIR}/usr/share/applications/gomoku-ai.desktop" << 'DESKTOP_EOF'
+          [Desktop Entry]
+          Name=五子棋AI
+          Name[zh_CN]=五子棋AI
+          Comment=Gomoku AI with PVS+LMR engine
+          Comment[zh_CN]=基于PVS+LMR+专业棋型权重的高性能五子棋AI
+          Exec=/usr/local/bin/gomoku-ai
+          Icon=gomoku-ai
+          Terminal=false
+          Type=Application
+          Categories=Game;BoardGame;
+          DESKTOP_EOF
+
+          cat > "${PKG_DIR}/DEBIAN/control" << CONTROL_EOF
+          Package: gomoku-ai
+          Version: ${VERSION}
+          Section: games
+          Priority: optional
+          Architecture: amd64
+          Maintainer: iamlinxuhan
+          Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0
+          Description: 五子棋AI - 人机对战五子棋程序
+           高性能五子棋AI引擎：PVS+LMR搜索 + 固定数组置换表
+           + 专业棋型权重 + 增强TSS攻防 + GPU加速 + 开局库。
+          CONTROL_EOF
+
+          dpkg-deb --build "${PKG_DIR}" "gomoku-ai_${VERSION}_amd64.deb"
+          ls -lh "gomoku-ai_${VERSION}_amd64.deb"
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gomoku-ai-linux
+          path: |
+            dist/gomoku-ai
+            gomoku-ai_*.deb
+
+
+  # ==================== GitHub Release ====================
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release/
+          merge-multiple: true
+
+      - name: List release files
+        run: ls -lah release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "${{ github.ref_name }}"
+          files: release/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

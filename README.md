@@ -6,7 +6,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-2.6-brightgreen)
+![Version](https://img.shields.io/badge/version-1.5-brightgreen)
 
 ---
 
