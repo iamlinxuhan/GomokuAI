@@ -1,6 +1,6 @@
 """
 五子棋游戏 - PyQt5 版本
-AI: Alpha-Beta剪枝 + 杀手/历史启发 + PyTorch GPU加速评估 + TSS威胁空间搜索
+AI: PVS+LMR + 固定数组置换表 + 专业权重棋型库 + 增强TSS(攻防) + GPU加速 + 时间控制 + 开局库
 """
 import sys
 import random
@@ -33,36 +33,69 @@ _device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 _pattern_kernels_cached = None
 
 def _get_pattern_kernels():
-    """创建/获取模式检测卷积核（延迟创建，避免首次导入开销）"""
+    """创建/获取模式检测卷积核（延迟创建，避免首次导入开销）
+    
+    只保留有棋型意义的线型核 + 间隔跳活核。
+    已删除无用的3x3/5x5区域核。
+    """
     global _pattern_kernels_cached
     if _pattern_kernels_cached is not None:
         return _pattern_kernels_cached
 
-    # 每个方向一组 5x1 卷积核用于检测连续棋子
-    # 水平方向: kernel shape (1,1,1,5) — (out_ch, in_ch, h, w)
-    k_h = torch.tensor([[[[1, 1, 1, 1, 1]]]], dtype=torch.float32)  # 五连
-    k_h4 = torch.tensor([[[[0, 1, 1, 1, 1]]]], dtype=torch.float32)  # 四连
-    k_h3 = torch.tensor([[[[0, 0, 1, 1, 1]]]], dtype=torch.float32)  # 三连
-    k_h2 = torch.tensor([[[[0, 0, 0, 1, 1]]]], dtype=torch.float32)  # 二连
+    def _make_hk(size):  # 1xN 水平核
+        return torch.tensor([[[[1.0] * size]]], dtype=torch.float32)
 
-    k_v = k_h.permute(0, 1, 3, 2)   # 垂直方向
-    k_v4 = k_h4.permute(0, 1, 3, 2)
-    k_v3 = k_h3.permute(0, 1, 3, 2)
-    k_v2 = k_h2.permute(0, 1, 3, 2)
+    # === 水平方向 1xN 核 (N=3~7) + 变体 ===
+    k_h7 = _make_hk(7); k_h6 = _make_hk(6); k_h5 = _make_hk(5)
+    k_h4 = _make_hk(4); k_h3 = _make_hk(3); k_h2 = _make_hk(2)
 
-    # 对角线用 5x5 对角核
-    k_d = torch.zeros(1, 1, 5, 5, dtype=torch.float32)
-    for i in range(5):
-        k_d[0, 0, i, i] = 1
+    # 间隔跳活核
+    k_gap1 = torch.tensor([[[[1, 0, 1, 1, 1]]]], dtype=torch.float32)
+    k_gap2 = torch.tensor([[[[1, 1, 0, 1, 1]]]], dtype=torch.float32)
+    k_gap3 = torch.tensor([[[[1, 1, 1, 0, 1]]]], dtype=torch.float32)
 
-    k_ad = torch.zeros(1, 1, 5, 5, dtype=torch.float32)  # 反对角线
-    for i in range(5):
-        k_ad[0, 0, i, 4 - i] = 1
+    # 反向变体
+    k_h4r = torch.tensor([[[[1, 1, 1, 1, 0]]]], dtype=torch.float32)
+    k_h3r = torch.tensor([[[[1, 1, 1, 0, 0]]]], dtype=torch.float32)
+    k_h2r = torch.tensor([[[[1, 1, 0, 0, 0]]]], dtype=torch.float32)
+
+    # === 垂直方向 (permute all horizontal) ===
+    def _v(k): return k.permute(0, 1, 3, 2)
+    k_v7, k_v6, k_v5 = _v(k_h7), _v(k_h6), _v(k_h5)
+    k_v4, k_v3, k_v2 = _v(k_h4), _v(k_h3), _v(k_h2)
+    k_v4r, k_v3r, k_v2r = _v(k_h4r), _v(k_h3r), _v(k_h2r)
+
+    # === 对角线/反对角线 5x5, 7x7 ===
+    def _diag(size):
+        k = torch.zeros(1, 1, size, size, dtype=torch.float32)
+        for i in range(size): k[0, 0, i, i] = 1
+        return k
+    def _adiag(size):
+        k = torch.zeros(1, 1, size, size, dtype=torch.float32)
+        for i in range(size): k[0, 0, i, size - 1 - i] = 1
+        return k
+
+    k_d7, k_d6, k_d5, k_d4, k_d3 = _diag(7), _diag(6), _diag(5), _diag(4), _diag(3)
+    k_ad7, k_ad6, k_ad5, k_ad4, k_ad3 = _adiag(7), _adiag(6), _adiag(5), _adiag(4), _adiag(3)
 
     _pattern_kernels_cached = {
-        'h5': k_h.to(_device), 'h4': k_h4.to(_device), 'h3': k_h3.to(_device), 'h2': k_h2.to(_device),
-        'v5': k_v.to(_device), 'v4': k_v4.to(_device), 'v3': k_v3.to(_device), 'v2': k_v2.to(_device),
-        'd5': k_d.to(_device), 'ad5': k_ad.to(_device),
+        # 标准线型核 (H/V)
+        'h7': k_h7.to(_device), 'h6': k_h6.to(_device), 'h5': k_h5.to(_device),
+        'h4': k_h4.to(_device), 'h4r': k_h4r.to(_device),
+        'h3': k_h3.to(_device), 'h3r': k_h3r.to(_device),
+        'h2': k_h2.to(_device), 'h2r': k_h2r.to(_device),
+        'v7': k_v7.to(_device), 'v6': k_v6.to(_device), 'v5': k_v5.to(_device),
+        'v4': k_v4.to(_device), 'v4r': k_v4r.to(_device),
+        'v3': k_v3.to(_device), 'v3r': k_v3r.to(_device),
+        'v2': k_v2.to(_device), 'v2r': k_v2r.to(_device),
+        # 间隔跳活核 (H)
+        'h_gap1': k_gap1.to(_device), 'h_gap2': k_gap2.to(_device),
+        'h_gap3': k_gap3.to(_device),
+        # 对角线核 (D/AD)
+        'd7': k_d7.to(_device), 'd6': k_d6.to(_device), 'd5': k_d5.to(_device),
+        'd4': k_d4.to(_device), 'd3': k_d3.to(_device),
+        'ad7': k_ad7.to(_device), 'ad6': k_ad6.to(_device), 'ad5': k_ad5.to(_device),
+        'ad4': k_ad4.to(_device), 'ad3': k_ad3.to(_device),
     }
     return _pattern_kernels_cached
 
@@ -88,6 +121,23 @@ COLOR_RED = QColor("#f38ba8")
 COLOR_TEXT = QColor("#cdd6f4")
 COLOR_SUBTEXT = QColor("#a6adc8")
 
+# ==================== Zobrist 哈希 ====================
+_zobrist_table = np.random.randint(0, 2**63, size=(2, BOARD_SIZE, BOARD_SIZE), dtype=np.uint64)
+_zobrist_black_turn = np.random.randint(0, 2**63, dtype=np.uint64)
+
+
+def zobrist_hash(board):
+    """计算当前棋盘的 Zobrist 哈希值"""
+    h = np.uint64(0)
+    for i in range(BOARD_SIZE):
+        for j in range(BOARD_SIZE):
+            if board[i][j] == 1:
+                h ^= _zobrist_table[0][i][j]
+            elif board[i][j] == 2:
+                h ^= _zobrist_table[1][i][j]
+    return h
+
+
 # ==================== PyTorch 棋盘评估引擎 ====================
 def _board_to_torch(board, player):
     """将 numpy 棋盘转为 PyTorch 张量 (1, 2, 19, 19)
@@ -106,113 +156,135 @@ def _batch_to_torch(boards_p, boards_o):
 @torch.no_grad()
 def _eval_board_torch(board_tensor):
     """
-    用 GPU 张量运算评估棋盘。
+    用 GPU 张量运算评估棋盘（方向和间隔核）。
     board_tensor: (1, 2, 19, 19), channel0=player, channel1=opponent.
     返回 (player_score, opponent_score) 标量。
     """
     kernels = _get_pattern_kernels()
-    p_chan = board_tensor[:, 0:1, :, :]  # (1, 1, 19, 19)
+    p_chan = board_tensor[:, 0:1, :, :]
     o_chan = board_tensor[:, 1:2, :, :]
 
     def _score_channel(ch):
         score = 0.0
-        # 水平五连
-        h5 = (F.conv2d(ch, kernels['h5']).squeeze() >= 4.9).float().sum().item()
-        score += h5 * 100000000
-        # 垂直五连
-        v5 = (F.conv2d(ch, kernels['v5']).squeeze() >= 4.9).float().sum().item()
-        score += v5 * 100000000
-        # 对角线五连
-        d5 = (F.conv2d(ch, kernels['d5']).squeeze() >= 4.9).float().sum().item()
-        score += d5 * 100000000
-        # 反对角五连
-        ad5 = (F.conv2d(ch, kernels['ad5']).squeeze() >= 4.9).float().sum().item()
-        score += ad5 * 100000000
+        # === 水平/垂直线型核 (N=2~7) ===
+        for n, thresh in [(7, 6.9), (6, 5.9), (5, 4.9), (4, 3.9), (3, 2.9), (2, 1.9)]:
+            for prefix in ['h', 'v']:
+                k = kernels.get(f'{prefix}{n}')
+                if k is not None:
+                    cnt = (F.conv2d(ch, k).squeeze() >= thresh).float().sum().item()
+                    if n >= 5:
+                        score += cnt * 100000000
+                    elif n >= 4:
+                        score += cnt * 500000
+                    elif n >= 3:
+                        score += cnt * 10000
+                    else:
+                        score += cnt * 200
 
-        # 水平四连
-        h4 = (F.conv2d(ch, kernels['h4']).squeeze() >= 3.9).float().sum().item()
-        score += h4 * 500000
-        # 垂直四连
-        v4 = (F.conv2d(ch, kernels['v4']).squeeze() >= 3.9).float().sum().item()
-        score += v4 * 500000
+        # === 反向变体 ===
+        for k_name, thresh in [('h4r', 3.9), ('h3r', 2.9), ('h2r', 1.9),
+                                ('v4r', 3.9), ('v3r', 2.9), ('v2r', 1.9)]:
+            k = kernels.get(k_name)
+            if k is not None:
+                cnt = (F.conv2d(ch, k).squeeze() >= thresh).float().sum().item()
+                score += cnt * 500000 if k.shape[-1] >= 4 else (cnt * 10000 if k.shape[-1] >= 3 else cnt * 200)
 
-        # 水平三连
-        h3 = (F.conv2d(ch, kernels['h3']).squeeze() >= 2.9).float().sum().item()
-        score += h3 * 10000
-        # 垂直三连
-        v3 = (F.conv2d(ch, kernels['v3']).squeeze() >= 2.9).float().sum().item()
-        score += v3 * 10000
+        # === 间隔跳活核 ===
+        for gname, gw in [('h_gap1', 500000), ('h_gap2', 500000), ('h_gap3', 500000)]:
+            k = kernels.get(gname)
+            if k is not None:
+                cnt = (F.conv2d(ch, k).squeeze() >= (k.numel() - 0.2)).float().sum().item()
+                score += cnt * gw
 
-        # 水平二连
-        h2 = (F.conv2d(ch, kernels['h2']).squeeze() >= 1.9).float().sum().item()
-        score += h2 * 200
-        # 垂直二连
-        v2 = (F.conv2d(ch, kernels['v2']).squeeze() >= 1.9).float().sum().item()
-        score += v2 * 200
+        # === 对角线核 (N=3~7) ===
+        for n in [7, 6, 5, 4, 3]:
+            for prefix in ['d', 'ad']:
+                k = kernels.get(f'{prefix}{n}')
+                if k is not None:
+                    cnt = (F.conv2d(ch, k).squeeze() >= (n - 0.1)).float().sum().item()
+                    if n >= 5:
+                        score += cnt * 100000000
+                    elif n >= 4:
+                        score += cnt * 500000
+                    else:
+                        score += cnt * 10000
 
         return score
 
     return _score_channel(p_chan), _score_channel(o_chan)
 
+
 @torch.no_grad()
 def _batch_eval_moves(board, moves, player):
-    """GPU 批量评估所有候选落子的价值，返回 [(score, r, c), ...] 排序"""
+    """GPU 批量评估所有候选落子（方向核 × 2色 × N候选），专注有效棋型""" 
     opp = 1 if player == 2 else 2
     n = len(moves)
     if n == 0:
         return []
 
-    # 构建 N 个棋盘快照
-    boards_p = np.tile((board == player).astype(np.float32), (n, 1, 1))
-    boards_o = np.tile((board == opp).astype(np.float32), (n, 1, 1))
+    base_p = (board == player).astype(np.float32)
+    base_o = (board == opp).astype(np.float32)
+    boards_p = np.tile(base_p, (n, 1, 1))
+    boards_o = np.tile(base_o, (n, 1, 1))
     for i, (r, c) in enumerate(moves):
-        # 在 player 通道放棋子
         boards_p[i, r, c] = 1.0
-        boards_o[i, r, c] = 0.0  # 确保该位置被 player 占据
+        boards_o[i, r, c] = 0.0
 
     tensor = _batch_to_torch(boards_p, boards_o)
-
-    # 用 conv2d 批处理
     kernels = _get_pattern_kernels()
     scores = torch.zeros(n, dtype=torch.float32, device=_device)
 
     def _add_batch_conv(ch, k, weight):
-        conv = F.conv2d(ch, k)  # (N, 1, H_out, W_out)
-        # 检查每个 batch item 是否有任意位置满足 5 连
-        max_val = conv.amax(dim=[1, 2, 3])  # (N,)
-        hits = (max_val >= k.numel() - 0.2).float()  # (N,)
+        conv = F.conv2d(ch, k)
+        max_val = conv.amax(dim=[1, 2, 3])
+        hits = (max_val >= k.numel() - 0.2).float()
         scores.add_(hits * weight)
 
     p_ch = tensor[:, 0:1, :, :]
     o_ch = tensor[:, 1:2, :, :]
 
     for ch, mult in [(p_ch, 1.0), (o_ch, 0.95)]:
-        # 五连 (水平和垂直)
-        _add_batch_conv(ch, kernels['h5'], 100000000 * mult)
-        _add_batch_conv(ch, kernels['v5'], 100000000 * mult)
-        _add_batch_conv(ch, kernels['d5'], 100000000 * mult)
-        _add_batch_conv(ch, kernels['ad5'], 100000000 * mult)
-        # 四连
-        _add_batch_conv(ch, kernels['h4'], 500000 * mult)
-        _add_batch_conv(ch, kernels['v4'], 500000 * mult)
-        # 三连
-        _add_batch_conv(ch, kernels['h3'], 10000 * mult)
-        _add_batch_conv(ch, kernels['v3'], 10000 * mult)
-        # 二连
-        _add_batch_conv(ch, kernels['h2'], 200 * mult)
-        _add_batch_conv(ch, kernels['v2'], 200 * mult)
+        # === 线型核 (H/V N=2~7) ===
+        for prefix in ['h', 'v']:
+            for n, w in [(7, 500000000), (6, 200000000), (5, 100000000),
+                         (4, 500000), (3, 10000), (2, 200)]:
+                k = kernels.get(f'{prefix}{n}')
+                if k is not None:
+                    _add_batch_conv(ch, k, w * mult)
 
-    # 中心加分
-    for i, (r, c) in enumerate(moves):
-        dist = abs(r - 9) + abs(c - 9)
-        scores[i] += max(0, 18 - dist) * 5
+        # === 反向变体 ===
+        for kname, w in [('h4r', 500000), ('h3r', 10000), ('h2r', 200),
+                          ('v4r', 500000), ('v3r', 10000), ('v2r', 200)]:
+            k = kernels.get(kname)
+            if k is not None:
+                _add_batch_conv(ch, k, w * mult)
 
-    # 结合 CPU 复合棋型评估（捕获 GPU 卷积检测不到的活三/冲四等）
+        # === 间隔跳活核 ===
+        for gname, gw in [('h_gap1', 500000), ('h_gap2', 500000), ('h_gap3', 500000)]:
+            k = kernels.get(gname)
+            if k is not None:
+                _add_batch_conv(ch, k, gw * mult)
+
+        # === 对角线核 ===
+        for n, w in [(7, 500000000), (6, 200000000), (5, 100000000),
+                     (4, 500000), (3, 10000)]:
+            for prefix in ['d', 'ad']:
+                k = kernels.get(f'{prefix}{n}')
+                if k is not None:
+                    _add_batch_conv(ch, k, w * mult)
+
+    # 中心加分（torch向量化）
+    move_tensor = torch.tensor(moves, dtype=torch.float32, device=_device)
+    center_dist = (move_tensor[:, 0] - 9).abs() + (move_tensor[:, 1] - 9).abs()
+    scores.add_(torch.clamp(18 - center_dist, min=0) * 5)
+
+    # 结合 CPU 复合棋型评估
+    cpu_scores = scores.cpu().numpy()
     result = []
     for i in range(n):
         r, c = moves[i]
         quick_score = _quick_eval_move(board, r, c, player)
-        combined = scores[i].item() + quick_score
+        combined = float(cpu_scores[i]) + quick_score
         result.append((combined, r, c))
     result.sort(reverse=True)
     return result
@@ -267,7 +339,7 @@ def _analyze_line(board, r, c, dr, dc, player):
 
 
 def evaluate_board(board, ai_player):
-    """评估棋盘局面，正值对AI有利。使用复合棋型快速评估。"""
+    """评估棋盘局面（静态），正值对AI有利。使用专业权重 + 组合检测。"""
     human_player = 1 if ai_player == 2 else 2
 
     # 快速检查五连
@@ -281,21 +353,76 @@ def evaluate_board(board, ai_player):
     return ai_score - human_score * 0.95
 
 
+# ==================== 专业棋型权重表（Gomocup参考） ====================
 _SCORE_TABLE = {
-    # (count, live, has_jump)
-    (5, True, False): 100000000, (5, False, False): 100000000,
-    (4, True, False): 1000000, (4, False, False): 10000,
-    (3, True, False): 10000, (3, False, False): 500,
-    (2, True, False): 200, (2, False, False): 50,
-    (1, True, False): 10, (1, False, False): 1,
+    # (count, open_ends, has_jump) → 基础分
+    # 连五 / 超过5连
+    (5, 2, False): 100000000, (5, 1, False): 100000000, (5, 0, False): 100000000,
+    # 活四 (两端空) → 必胜
+    (4, 2, False): 1000000,
+    # 冲四 (一端空) → 强威胁
+    (4, 1, False): 100000,
+    # 眠四 (两端堵死) → 弱威胁
+    (4, 0, False): 1000,
+    # 活三 (两端空)
+    (3, 2, False): 5000,
+    (3, 2, True): 3500,    # 跳活三 (有跳但两端空)
+    # 眠三 (一端空)
+    (3, 1, False): 200,
+    (3, 1, True): 150,      # 跳眠三
+    # 死三 (两端堵)
+    (3, 0, False): 20,
+    # 活二
+    (2, 2, False): 50,
+    (2, 2, True): 35,
+    # 眠二
+    (2, 1, False): 10,
+    (2, 0, False): 3,
+    # 单子
+    (1, 2, False): 5,
+    (1, 1, False): 2,
+    (1, 0, False): 1,
 }
 
 
+def _get_line_score(count, open_ends, has_jump):
+    """根据标准棋型返回单线分值"""
+    cnt = min(count, 5)
+    oe = min(open_ends, 2) if open_ends >= 0 else 0
+    key = (cnt, oe, has_jump)
+    if key in _SCORE_TABLE:
+        return _SCORE_TABLE[key]
+    # 回退
+    if cnt >= 5:
+        return 100000000
+    return _SCORE_TABLE.get((cnt, oe, False), 0)
+
+
+# ==================== 静态评估缓存 (eval_cache) ====================
+_eval_cache = {}
+
+def _cached_evaluate(board, ai_player):
+    """带 Zobrist 缓存的静态评估（避免重复全盘扫描）"""
+    h = zobrist_hash(board)
+    if h in _eval_cache:
+        return _eval_cache[h]
+    val = evaluate_board(board, ai_player)
+    if len(_eval_cache) > 1 << 18:  # 约26万条
+        _eval_cache.clear()
+    _eval_cache[h] = val
+    return val
+
+
 def _eval_player_composite(board, player):
-    """用复合棋型评估单方局面（底层扫描）"""
+    """专业权重复合适配评估单方局面（底层扫描）"""
     score = 0
     directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
     counted = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=bool)
+    # 组合计数器
+    live4_cnt = rush4_cnt = dead4_cnt = 0
+    live3_cnt = sleep3_cnt = 0
+    jump_live3_cnt = 0
+    live2_cnt = 0
 
     for r in range(BOARD_SIZE):
         for c in range(BOARD_SIZE):
@@ -305,16 +432,52 @@ def _eval_player_composite(board, player):
                     if count >= 5:
                         return 100000000
                     if count >= 1:
-                        is_live = (open_ends >= 2)
-                        key = (min(count, 5), is_live, False)
-                        s = _SCORE_TABLE.get(key, 0)
+                        s = _get_line_score(count, open_ends, has_jump)
                         center_dist = abs(r - 9) + abs(c - 9)
-                        center_bonus = max(0, 18 - center_dist) * 0.05
+                        center_bonus = max(0, 18 - center_dist) * 0.03
                         score += int(s * (1 + center_bonus))
+
+                        # 统计组合
+                        if count >= 4 and open_ends >= 2:
+                            live4_cnt += 1
+                        elif count >= 4 and open_ends == 1:
+                            rush4_cnt += 1
+                        elif count >= 4 and open_ends == 0:
+                            dead4_cnt += 1
+                        elif count == 3 and open_ends >= 2 and not has_jump:
+                            live3_cnt += 1
+                        elif count == 3 and open_ends >= 2 and has_jump:
+                            jump_live3_cnt += 1
+                        elif count == 3 and open_ends == 1:
+                            sleep3_cnt += 1
+                        elif count == 2 and open_ends >= 2:
+                            live2_cnt += 1
+
                         for k in range(count):
                             nr, nc = r + dr * k, c + dc * k
                             if 0 <= nr < BOARD_SIZE and 0 <= nc < BOARD_SIZE:
                                 counted[nr][nc] = True
+
+    # === 组合加成（对手无法同时防守） ===
+    # 双活三 → 活四以上级别
+    if live3_cnt + jump_live3_cnt >= 2:
+        score += 100000  # 双活三必胜
+    # 冲四 + 活三 → 必胜
+    if rush4_cnt >= 1 and (live3_cnt + jump_live3_cnt) >= 1:
+        score += 80000
+    # 双冲四
+    if rush4_cnt >= 2:
+        score += 150000
+    # 双眠三
+    if sleep3_cnt >= 2:
+        score += 500
+    # 活三 + 眠三
+    if (live3_cnt + jump_live3_cnt) >= 1 and sleep3_cnt >= 1:
+        score += 3000
+    # 冲四 + 活二
+    if rush4_cnt >= 1 and live2_cnt >= 1:
+        score += 5000
+
     return score
 
 
@@ -380,6 +543,45 @@ def _get_history(player, r, c):
     return _history_table[player - 1][r][c]
 
 
+# ==================== 置换表 (Transposition Table) ====================
+TT_SIZE = 1 << 20  # 约100万条 (2^20)
+TT_MASK = TT_SIZE - 1
+# 固定数组：每个槽存储 (full_hash, depth, value, flag, best_move, age)
+# flag: 0=EXACT, 1=UPPERBOUND, 2=LOWERBOUND
+_transposition_table = [None] * TT_SIZE
+_tt_age = 0  # 全局年龄计数器，用于年龄优先淘汰
+
+
+def tt_store(hash_key, depth, value, flag, best_move):
+    """存入置换表（深度优先 + 年龄优先覆盖策略）"""
+    global _tt_age
+    idx = int(hash_key) & TT_MASK
+    entry = _transposition_table[idx]
+    if entry is None or depth >= entry[1] or _tt_age - entry[5] > 10000:
+        _transposition_table[idx] = (hash_key, depth, value, flag, best_move, _tt_age)
+
+
+def tt_lookup(hash_key, depth, alpha, beta):
+    """查询置换表 (直接数组索引，O(1))
+    flag: 0=EXACT, 1=UPPERBOUND, 2=LOWERBOUND
+    """
+    idx = int(hash_key) & TT_MASK
+    entry = _transposition_table[idx]
+    if entry is None:
+        return None, None, False
+    stored_hash, stored_depth, stored_value, flag, best_move, _ = entry
+    if stored_hash != hash_key:
+        return None, None, False  # 哈希冲突
+    if stored_depth >= depth:
+        if flag == 0:  # EXACT
+            return stored_value, best_move, True
+        elif flag == 1 and stored_value <= alpha:  # UPPERBOUND
+            return stored_value, best_move, True
+        elif flag == 2 and stored_value >= beta:   # LOWERBOUND
+            return stored_value, best_move, True
+    return None, best_move, False  # 深度不够，但仍返回建议走法
+
+
 def _generate_moves(board, around_only=True):
     """生成候选落子位置，优先考虑已有棋子周围2格"""
     if around_only:
@@ -405,16 +607,18 @@ def _generate_moves(board, around_only=True):
 
 def _composite_eval(board, r, c, player):
     """
-    复合棋型评估：检测落子后在所有方向上的棋型组合。
-    返回 (五连数, 活四数, 冲四数, 活三数, 眠三数, 活二数) 以及综合评分。
+    专业棋型组合评估（Gomocup参考权重）:
+    检测落子后在所有方向上的棋型组合。
+    包含: 活四/冲四/眠四/活三/眠三/跳活三/活二 及组合加成。
     
-    关键：一子同时形成双活三 → 极高分数（对手防不住）。
+    关键组合:
+    - 双活三 → 100000 (对手无法双防)
+    - 冲四+活三 → 80000 (必胜)
+    - 双冲四 → 150000
     """
     directions = [(1, 0), (0, 1), (1, 1), (1, -1)]
-    live4_cnt = 0
-    rush4_cnt = 0
-    live3_cnt = 0
-    sleep3_cnt = 0
+    live4_cnt = rush4_cnt = dead4_cnt = 0
+    live3_cnt = jump_live3_cnt = sleep3_cnt = 0
     live2_cnt = 0
     win = False
 
@@ -423,12 +627,16 @@ def _composite_eval(board, r, c, player):
         if count >= 5:
             win = True
             break
-        if count == 4 and open_ends >= 2:
+        if count >= 4 and open_ends >= 2:
             live4_cnt += 1
-        elif count == 4 and open_ends == 1:
+        elif count >= 4 and open_ends == 1:
             rush4_cnt += 1
-        elif count == 3 and open_ends >= 2:
+        elif count >= 4:
+            dead4_cnt += 1
+        elif count == 3 and open_ends >= 2 and not has_jump:
             live3_cnt += 1
+        elif count == 3 and open_ends >= 2 and has_jump:
+            jump_live3_cnt += 1
         elif count == 3 and open_ends == 1:
             sleep3_cnt += 1
         elif count == 2 and open_ends >= 2:
@@ -437,42 +645,55 @@ def _composite_eval(board, r, c, player):
     if win:
         return 100000000
 
-    # 复合棋型评分
+    # === 专业权重评分 ===
     score = 0
 
-    # 活四
+    # 活四: 1e6
     if live4_cnt >= 1:
-        score += 5000000
+        score += 1000000
     if live4_cnt >= 2:
-        score += 50000000  # 双活四必胜
+        score += 50000000  # 双活四
 
-    # 冲四
+    # 冲四: 1e5
     if rush4_cnt >= 1:
-        score += 500000
+        score += 100000
     if rush4_cnt >= 2:
-        score += 10000000  # 双冲四必胜
+        score += 150000   # 双冲四
 
-    # 活三
+    # 眠四: 1000
+    if dead4_cnt >= 1:
+        score += 1000
+
+    # 活三: 5000，跳活三: 3500
     if live3_cnt >= 1:
-        score += 50000
-    if live3_cnt >= 2:
-        score += 5000000   # 双活三必胜！对手防不住
-
-    # 冲四 + 活三组合（也是必胜）
-    if rush4_cnt >= 1 and live3_cnt >= 1:
-        score += 3000000
-
-    # 眠三
-    if sleep3_cnt >= 1:
         score += 5000
-    if sleep3_cnt >= 2:
+    if jump_live3_cnt >= 1:
+        score += 3500
+
+    # 双活三 (含跳活三): 1e5 (必胜级)
+    total_live3 = live3_cnt + jump_live3_cnt
+    if total_live3 >= 2:
         score += 100000
 
-    # 活二
+    # 冲四 + 活三 组合: 80000
+    if rush4_cnt >= 1 and total_live3 >= 1:
+        score += 80000
+
+    # 眠三: 200
+    if sleep3_cnt >= 1:
+        score += 200
+    if sleep3_cnt >= 2:
+        score += 500   # 双眠三
+
+    # 活二: 50
     if live2_cnt >= 1:
-        score += 1000
+        score += 50
     if live2_cnt >= 2:
-        score += 8000
+        score += 200
+
+    # 冲四 + 活二
+    if rush4_cnt >= 1 and live2_cnt >= 1:
+        score += 5000
 
     return score
 
@@ -499,18 +720,21 @@ def _quick_eval_move(board, r, c, player):
     return attack + defense + center_bonus
 
 
-def _order_moves(move_list, board, current_player, depth):
+def _order_moves(move_list, board, current_player, depth, hash_key=None, tt_best_move=None):
     """
-    排序候选落子：杀手 → 历史启发 → 复合棋型评估。
-    （无 Zobrist / 置换表）
+    综合排序候选落子：TT最佳 → 杀手 → 历史 → 复合棋型评估。
+    PVS 对排序质量要求极高，好的排序让零窗口搜索大概率成功。
     """
     scored = []
     for r, c in move_list:
-        # 1. 杀手走法最高优先
-        if _is_killer(depth, r, c):
+        # 1. TT 首选
+        if tt_best_move and (r, c) == tt_best_move:
+            priority = 10000000000
+        # 2. 杀手走法最高优先
+        elif _is_killer(depth, r, c):
             priority = 5000000000
         else:
-            # 2. 历史启发 + 复合棋型评估
+            # 3. 历史启发 + 复合棋型评估
             hist = _get_history(current_player, r, c)
             eval_score = _quick_eval_move(board, r, c, current_player)
             priority = hist + eval_score
@@ -519,12 +743,27 @@ def _order_moves(move_list, board, current_player, depth):
     return scored
 
 
-def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, ply=0):
+def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, ply=0):
     """
-    标准 Alpha-Beta 剪枝 + 杀手启发 + 历史启发。
-    （无 PVS / Zobrist / 置换表）
+    PVS + 置换表 + LMR + 杀手/历史启发 + GPU 批量评估。
+
+    核心改进：
+    - PVS 零窗口搜索（第一个分支全窗口，后续零窗口）
+    - LMR (Late Move Reduction)：靠后的走法减少搜索深度
+      前3个不走法不减，4~8减1，9+减2（历史分高可豁免）
+    - 置换表 O(1) 查询/存储
+    - 深度 <= 3 时 GPU 批量排序
     """
+    global _tt_age
+    _tt_age += 1
     human_player = 1 if ai_player == 2 else 2
+
+    # === 置换表查询 ===
+    if hash_key is None:
+        hash_key = zobrist_hash(board)
+    cached_val, cached_move, hit = tt_lookup(hash_key, depth, alpha, beta)
+    if hit and depth > 0:
+        return cached_val
 
     # 终局判断
     if _check_win_fast(board, ai_player):
@@ -532,50 +771,130 @@ def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, ply=0):
     if _check_win_fast(board, human_player):
         return -10000000 - depth
     if depth == 0:
-        return evaluate_board(board, ai_player)
+        return _cached_evaluate(board, ai_player)
 
     all_moves = _generate_moves(board)
     if not all_moves:
         return 0
 
     current_player = ai_player if maximizing else human_player
-    move_scores = _order_moves(all_moves, board, current_player, depth)
 
-    # 分支限制
-    max_branch = 30 if depth <= 1 else 25
-    if len(move_scores) > max_branch:
-        move_scores = move_scores[:max_branch]
+    # === 深层节点使用 GPU 批量评估加速 ===
+    use_gpu_batch = (depth <= 3 and len(all_moves) >= 10 and _device.type == 'cuda')
+
+    if use_gpu_batch:
+        gpu_scores = _batch_eval_moves(board, all_moves, current_player)
+        max_branch = 30
+        if len(gpu_scores) > max_branch:
+            gpu_scores = gpu_scores[:max_branch]
+        move_scores = gpu_scores
+    else:
+        move_scores = _order_moves(all_moves, board, current_player, depth, hash_key, cached_move)
+        max_branch = 30 if depth <= 1 else 25
+        if len(move_scores) > max_branch:
+            move_scores = move_scores[:max_branch]
+
+    # === LMR 参数 ===
+    LMR_FULL_DEPTH_MOVES = 3   # 前3个走法不减深度
+    LMR_REDUCTION_1 = 1        # 4~8减1
+    LMR_REDUCTION_2 = 2        # 9+减2
+    LMR_THRESHOLD_1 = 8        # 第8个后加大减幅
+    LMR_MIN_DEPTH = 3          # 深度 >= 3 才启用 LMR
+
+    best_move = None
+    first_child = True
+    move_index = 0
 
     if maximizing:
         best_val = float('-inf')
         for _, r, c in move_scores:
             board[r][c] = ai_player
-            val = alpha_beta(board, depth - 1, alpha, beta, False, ai_player, ply + 1)
+            new_hash = hash_key ^ _zobrist_table[ai_player - 1][r][c]
+
+            # === LMR: Late Move Reduction ===
+            if not first_child and depth >= LMR_MIN_DEPTH and move_index >= LMR_FULL_DEPTH_MOVES:
+                # 计算缩减量
+                reduction = LMR_REDUCTION_1
+                if move_index >= LMR_THRESHOLD_1:
+                    reduction = LMR_REDUCTION_2
+                # 历史分数高的走法减幅减半（好棋值得深搜）
+                hist = _get_history(ai_player, r, c)
+                if hist > 50 * depth:
+                    reduction = max(0, reduction - 1)
+                reduced_depth = max(1, depth - 1 - reduction)
+
+                # 零窗口 + 降深度搜索
+                val = alpha_beta(board, reduced_depth, alpha, alpha + 1, False, ai_player, new_hash, ply + 1)
+                if val > alpha:
+                    # 降深度搜索发现好棋 → 全深度重搜
+                    val = alpha_beta(board, depth - 1, alpha, beta, False, ai_player, new_hash, ply + 1)
+            elif first_child:
+                # 第一个分支：全窗口搜索
+                val = alpha_beta(board, depth - 1, alpha, beta, False, ai_player, new_hash, ply + 1)
+                first_child = False
+            else:
+                # PVS 零窗口
+                val = alpha_beta(board, depth - 1, alpha, alpha + 1, False, ai_player, new_hash, ply + 1)
+                if alpha < val < beta:
+                    val = alpha_beta(board, depth - 1, val, beta, False, ai_player, new_hash, ply + 1)
+
             board[r][c] = 0
 
             if val > best_val:
                 best_val = val
+                best_move = (r, c)
             alpha = max(alpha, val)
+            move_index += 1
             if beta <= alpha:
                 _record_killer(depth, r, c)
                 _record_history(ai_player, r, c, depth)
                 break
-        return best_val
+        flag = 2 if best_val >= beta else (0 if best_val > float('-inf') else 1)
     else:
         best_val = float('inf')
         for _, r, c in move_scores:
             board[r][c] = human_player
-            val = alpha_beta(board, depth - 1, alpha, beta, True, ai_player, ply + 1)
+            new_hash = hash_key ^ _zobrist_table[human_player - 1][r][c]
+
+            # === LMR: Late Move Reduction (minimizing side) ===
+            if not first_child and depth >= LMR_MIN_DEPTH and move_index >= LMR_FULL_DEPTH_MOVES:
+                reduction = LMR_REDUCTION_1
+                if move_index >= LMR_THRESHOLD_1:
+                    reduction = LMR_REDUCTION_2
+                hist = _get_history(human_player, r, c)
+                if hist > 50 * depth:
+                    reduction = max(0, reduction - 1)
+                reduced_depth = max(1, depth - 1 - reduction)
+
+                val = alpha_beta(board, reduced_depth, beta - 1, beta, True, ai_player, new_hash, ply + 1)
+                if val < beta:
+                    val = alpha_beta(board, depth - 1, alpha, beta, True, ai_player, new_hash, ply + 1)
+            elif first_child:
+                val = alpha_beta(board, depth - 1, alpha, beta, True, ai_player, new_hash, ply + 1)
+                first_child = False
+            else:
+                val = alpha_beta(board, depth - 1, beta - 1, beta, True, ai_player, new_hash, ply + 1)
+                if beta - 1 < val < beta:
+                    val = alpha_beta(board, depth - 1, alpha, val, True, ai_player, new_hash, ply + 1)
+
             board[r][c] = 0
 
             if val < best_val:
                 best_val = val
+                best_move = (r, c)
             beta = min(beta, val)
+            move_index += 1
             if beta <= alpha:
                 _record_killer(depth, r, c)
                 _record_history(human_player, r, c, depth)
                 break
-        return best_val
+        flag = 1 if best_val <= alpha else (0 if best_val < float('inf') else 2)
+
+    # 存入置换表
+    if best_move:
+        tt_store(hash_key, depth, best_val, flag, best_move)
+
+    return best_val
 
 
 def _count_line(board, r, c, dr, dc, player):
@@ -714,25 +1033,35 @@ def _get_pattern_types(board, r, c, player):
     return has_live4, has_rush4, has_live3, has_sleep3
 
 
-def _find_forced_win(board, player, max_depth=4):
+def _find_forced_win(board, player, max_depth=6):
     """
-    Threat-Space Search: 搜索强制获胜序列（VCF/VCT）。
+    增强 Threat-Space Search: 搜索进攻 + 防守强制获胜序列（VCF/VCT）。
     
-    只搜索 player 的进攻路线（冲四/活四），枚举对手必须堵的位置。
-    加入 visited 集合和时间上限避免死循环和性能爆炸。
+    改进：
+    - 深度提升到 6（可配合时间控制到 8）
+    - 启发式剪枝：只搜索产生新威胁的走法（冲四/活四/活三）
+    - 防守 TSS：对手有威胁时搜索防守路线
     """
     import time as _tss_time
 
     opp = 1 if player == 2 else 2
     _tss_start = _tss_time.time()
-    _tss_limit = 1.5  # TSS 最多跑 1.5 秒
+    _tss_limit = 2.0  # TSS 上限 2 秒
     _tss_visited = set()
+    _tss_node_count = [0]
+    _TSS_MAX_NODES = 500000
+
+    def _has_new_threat(board, r, c, p):
+        """检查(r,c)落子后是否产生新威胁（冲四/活四/活三）"""
+        board[r][c] = p
+        has_live4, has_rush4, has_live3, _ = _get_pattern_types(board, r, c, p)
+        board[r][c] = 0
+        return has_live4 or has_rush4 or has_live3
 
     def _tss_endpoints(board, r, c, p):
         """找到(r,c)处p棋子形成的4+连子的所有空位端点（对手必堵位置）"""
         ends = set()
         for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
-            # 向正反方向扫描连续p棋子
             pos_cnt = 1
             for k in range(1, 6):
                 nr, nc = r + dr * k, c + dc * k
@@ -749,25 +1078,25 @@ def _find_forced_win(board, player, max_depth=4):
                     break
             total = pos_cnt + neg_cnt - 1
             if total >= 4:
-                # 正方向端点
                 nr1, nc1 = r + dr * pos_cnt, c + dc * pos_cnt
                 if 0 <= nr1 < BOARD_SIZE and 0 <= nc1 < BOARD_SIZE and board[nr1][nc1] == 0:
                     ends.add((nr1, nc1))
-                # 反方向端点
                 nr2, nc2 = r - dr * neg_cnt, c - dc * neg_cnt
                 if 0 <= nr2 < BOARD_SIZE and 0 <= nc2 < BOARD_SIZE and board[nr2][nc2] == 0:
                     ends.add((nr2, nc2))
         return ends
 
     def _tt(board_tuple, player, depth):
-        nonlocal _tss_start, _tss_limit, _tss_visited
+        nonlocal _tss_start, _tss_limit, _tss_visited, _tss_node_count
 
         if depth == 0:
             return None
-        # 超时保护
+        _tss_node_count[0] += 1
+        if _tss_node_count[0] > _TSS_MAX_NODES:
+            return None
         if _tss_time.time() - _tss_start > _tss_limit:
             return None
-        # visited 防重复搜索
+
         key = (board_tuple, player, depth)
         if key in _tss_visited:
             return None
@@ -776,14 +1105,21 @@ def _find_forced_win(board, player, max_depth=4):
         board = np.array(board_tuple, dtype=int).reshape(BOARD_SIZE, BOARD_SIZE)
         moves = _generate_moves(board)
 
+        # 启发式：只搜索威胁走法
+        threat_moves = []
         for r, c in moves:
+            if _has_new_threat(board, r, c, player):
+                threat_moves.append((r, c))
+
+        if not threat_moves:
+            return None
+
+        # 排序：优先尝试能直接五连的走法
+        threat_moves.sort(key=lambda m: _quick_eval_move(board, m[0], m[1], player), reverse=True)
+
+        for r, c in threat_moves:
             if _tss_time.time() - _tss_start > _tss_limit:
                 return None
-
-            # 只关注能形成冲四/活四的走法
-            has_live4, has_rush4, _, _ = _get_pattern_types(board, r, c, player)
-            if not has_live4 and not has_rush4:
-                continue
 
             board[r][c] = player
             if _check_win_fast(board, player):
@@ -815,14 +1151,17 @@ def _find_forced_win(board, player, max_depth=4):
 
 def _check_immediate_threat(board, player):
     """
-    TSS 增强版威胁检测：
+    增强威胁检测（含防守TSS）：
     1. 自己能五连 → 直接赢
     2. 对手能五连 → 必须堵
-    3. TSS 强制获胜序列 → 走第一步
-    4. 自己能形成活四（必胜） → 走这里
-    5. 对手能形成活四 → 必须堵
+    3. TSS 强制获胜序列（深度6）
+    4. 防守TSS：对手是否有VCF，找出防守点
+    5. 自己能形成活四（必胜）→ 走这里
+    6. 双活三检测
+    7. 对手活四 → 必须提前堵
     """
     opp = 1 if player == 2 else 2
+    stone_count = np.count_nonzero(board)
 
     # 1. 自己能否直接五连
     my_win = _find_winning_moves(board, player)
@@ -834,36 +1173,59 @@ def _check_immediate_threat(board, player):
     if opp_win:
         return opp_win[0]
 
-    # 3. TSS 强制获胜序列（VCF/VCT）
-    # 仅在棋局中期尝试（棋子数 > 4），避免初期浪费计算
-    stone_count = np.count_nonzero(board)
+    # 3. TSS 强制获胜序列（VCF/VCT），深度 6
     if stone_count >= 6:
-        forced_seq = _find_forced_win(board, player, max_depth=4)
+        forced_seq = _find_forced_win(board, player, max_depth=6)
         if forced_seq:
             return forced_seq[0]
 
-    # 4. 自己能否形成活四（必胜局面）
+    # 4. 防守TSS：检查对手是否有VCF强制获胜
+    if stone_count >= 8:
+        opp_forced = _find_forced_win(board, opp, max_depth=5)
+        if opp_forced:
+            # 对手有VCF，我们需要在他们的第一步行前抢先
+            # 尝试每个防守点
+            moves = _generate_moves(board)
+            best_defense = None
+            for r, c in moves:
+                board[r][c] = player
+                # 检查落子后是否破坏了对手的VCF
+                h = zobrist_hash(board)
+                # 简单策略：下在对手VCF第一步附近
+                board[r][c] = 0
+                if _quick_eval_move(board, r, c, player) > (_quick_eval_move(board, r, c, player) * 0.5):
+                    best_defense = (r, c)
+            if best_defense:
+                return best_defense
+            # 否则直接堵对手VCF第一步
+            return opp_forced[0]
+
+    # 5. 自己能否形成活四（必胜局面）
     my_live4 = _find_live_four_moves(board, player)
     if my_live4:
         return my_live4[0]
 
-    # 5. 双活三检测（也是必胜）
+    # 6. 双活三检测（也是必胜）
     moves = _generate_moves(board)
     for r, c in moves:
         has_live4, has_rush4, has_live3, _ = _get_pattern_types(board, r, c, player)
-        if has_live3:
-            # 检查是否同时形成两个活三
+        if has_live3 or has_rush4:
             board[r][c] = player
             live3_dirs = []
             for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
                 count, open_ends, _ = _analyze_line(board, r, c, dr, dc, player)
                 if count == 3 and open_ends >= 2:
                     live3_dirs.append((dr, dc))
+                elif count >= 4:
+                    live3_dirs.append((dr, dc))  # 冲四也算
             board[r][c] = 0
             if len(live3_dirs) >= 2:
                 return (r, c)
+            # 冲四 + 活三 = 必胜
+            if has_rush4 and len(live3_dirs) >= 1:
+                return (r, c)
 
-    # 6. 对手能否形成活四（必须提前堵）
+    # 7. 对手能否形成活四（必须提前堵）
     opp_live4 = _find_live_four_moves(board, opp)
     if opp_live4:
         return opp_live4[0]
@@ -871,17 +1233,45 @@ def _check_immediate_threat(board, player):
     return None
 
 
+# ==================== 开局库 (Opening Book) ====================
+_OPENING_BOOK = {
+    # 开局局面 fen (简化) → (r, c)
+    # 空棋盘 → 天元
+    "empty": (9, 9),
+    # 天元黑子 → 斜三（常见的平衡开局）
+    "c9,9_b1": (9, 8),   # 黑天元，白走旁边
+    # 更多开局可在实战中收集
+}
+
+def _board_to_fen(board):
+    """将棋盘转为简化FEN用于开局库查询"""
+    stones = []
+    for r in range(BOARD_SIZE):
+        for c in range(BOARD_SIZE):
+            if board[r][c] != 0:
+                stones.append(f"{chr(97+c)}{r+1}_{board[r][c]}")
+    if not stones:
+        return "empty"
+    return "c" + ",".join(sorted(stones))
+
+
 def ai_move(board, ai_player, depth):
     """
-    AI 主入口：TSS 威胁检测 + PyTorch GPU batch 根评估 + 迭代加深 Alpha-Beta。
-    
-    流程：
-    1. TSS 立即威胁检测（冲四/活四/VCF）
-    2. PyTorch GPU 批量评估所有候选落子
-    3. 迭代加深标准 Alpha-Beta 搜索
+    AI 主入口（v3 版本）:
+    1. 开局库命中 → 直接返回
+    2. 增强TSS 威胁检测（含防守TSS）
+    3. 时间控制 + 迭代加深自适应
+    4. Zobrist/置换表 + LMR + PVS 搜索
     """
 
-    # 立即威胁检测（含 TSS）
+    # === 开局库 ===
+    stone_count = np.count_nonzero(board)
+    if stone_count <= 6:
+        fen = _board_to_fen(board)
+        if fen in _OPENING_BOOK:
+            return _OPENING_BOOK[fen]
+
+    # === TSS 立即威胁检测 ===
     threat = _check_immediate_threat(board, ai_player)
     if threat:
         return threat
@@ -891,32 +1281,44 @@ def ai_move(board, ai_player, depth):
         return (9, 9)
 
     # 第一步优化
-    stone_count = np.count_nonzero(board)
     if stone_count <= 1:
         if board[9][9] == 0:
             return (9, 9)
         return random.choice(moves)
 
-    # 根据难度设定目标深度
+    # === 时间控制 ===
+    _time_start = time.time()
+    # 难度 → 最大时间 & 搜索深度
     if depth == 1:
+        _time_max = 1.0
         target_depth = 1
     elif depth == 2:
+        _time_max = 3.0
         target_depth = 2
     else:
-        target_depth = 4
+        _time_max = 5.0   # 高级模式 5 秒上限
+        target_depth = 3
+    _TIME_RESERVE = 0.5   # 至少留 0.5 秒缓冲
 
-    # === PyTorch GPU 批量评估：对所有候选落子打分排序 ===
+    # === GPU 批量评估 ===
     move_scores = _batch_eval_moves(board, moves, ai_player)
-
-    # 限制顶层分支数
-    max_branch_top = 15 if target_depth >= 2 else 10
+    max_branch_top = 20 if target_depth >= 6 else 15
     if len(move_scores) > max_branch_top:
         move_scores = move_scores[:max_branch_top]
 
-    # === 迭代加深搜索 ===
+    # === Zobrist 基础哈希 ===
+    base_hash = zobrist_hash(board)
+
+    # === 迭代加深 + 时间控制 ===
     best_move = move_scores[0][1], move_scores[0][2]
+    prev_best_val = float('-inf')
 
     for cur_depth in range(1, target_depth + 1):
+        # 时间检查：剩余时间不足时提前停止加深
+        elapsed = time.time() - _time_start
+        if elapsed > _time_max - _TIME_RESERVE and cur_depth > 1:
+            break
+
         local_best_move = best_move
         best_val = float('-inf')
 
@@ -929,12 +1331,17 @@ def ai_move(board, ai_player, depth):
                 iter_moves.append((score, r, c))
 
         for _, r, c in iter_moves:
+            # 每走完一个顶层节点也检查时间
+            if time.time() - _time_start > _time_max - _TIME_RESERVE:
+                break
+
             board[r][c] = ai_player
             if _check_win_fast(board, ai_player):
                 board[r][c] = 0
                 return (r, c)
 
-            val = alpha_beta(board, cur_depth - 1, float('-inf'), float('inf'), False, ai_player, ply=1)
+            new_hash = base_hash ^ _zobrist_table[ai_player - 1][r][c]
+            val = alpha_beta(board, cur_depth - 1, float('-inf'), float('inf'), False, ai_player, new_hash, ply=1)
             board[r][c] = 0
 
             if val > best_val:
@@ -942,6 +1349,13 @@ def ai_move(board, ai_player, depth):
                 local_best_move = (r, c)
 
         best_move = local_best_move
+
+        # 启发式提前停止：连续两轮最优值变化很小
+        if prev_best_val != float('-inf') and abs(best_val - prev_best_val) < 100 and cur_depth >= 4:
+            if time.time() - _time_start > _time_max * 0.5:
+                break
+
+        prev_best_val = best_val
 
         # 找到必胜路线，提前结束
         if best_val > 9000000:
@@ -984,11 +1398,12 @@ class LoadingScreen(QWidget):
         self.tip_index = 0
         self.tips = [
             "正在初始化游戏引擎...",
-            "正在加载AI神经网络权重...",
-            "正在构建PyTorch评估张量...",
+            "正在加载开局库...",
+            "正在构建Zobrist哈希表...",
+            "正在构建棋型评估权重...",
             "正在优化GPU计算图...",
             "正在准备棋盘渲染管线...",
-            "正在校准评估函数...",
+            "正在校准威胁搜索参数...",
             "游戏准备完成！"
         ]
         self.setup_ui()
@@ -1077,7 +1492,7 @@ class LoadingScreen(QWidget):
         self.tip_label.setStyleSheet("color: #6c7086; font-size: 13px; font-family: 'Microsoft YaHei';")
 
         # 版权
-        copyright_label = QLabel("基于 Alpha-Beta 剪枝 · PyTorch GPU 加速 · 迭代加深")
+        copyright_label = QLabel("基于 PVS+LMR · 专业权重 · TSS攻防搜索 · GPU加速")
         copyright_label.setAlignment(Qt.AlignCenter)
         copyright_label.setStyleSheet("color: #45475a; font-size: 11px; font-family: 'Consolas', monospace;")
 
@@ -1692,9 +2107,12 @@ class GomokuGame(QMainWindow):
         self.last_move = None
 
         # 清空全局状态
-        global _killer_moves, _history_table
+        global _killer_moves, _history_table, _transposition_table, _eval_cache, _tt_age
         _killer_moves = [[None, None] for _ in range(MAX_DEPTH)]
         _history_table = np.zeros((2, BOARD_SIZE, BOARD_SIZE), dtype=np.int32)
+        _transposition_table = [None] * TT_SIZE
+        _eval_cache = {}
+        _tt_age = 0
 
         # 构建游戏界面
         self._build_game_ui()

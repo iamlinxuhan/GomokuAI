@@ -6,3 +6,11 @@ __pycache__/
 *.pyc
 *.pyo
 *.exe
+*.deb
+output/
+
+# 临时脚本 / 虚拟环境
+wsl_build.sh
+wsl_install.sh
+wuziqi_copy/
+wuziqi_env/

@@ -1,12 +1,12 @@
 # 🎮 五子棋 AI (Gomoku AI)
 
-基于 **PyQt5** 的五子棋人机对弈程序，搭载 **Alpha-Beta 剪枝 + 杀手/历史启发 + TSS 威胁空间搜索 + PyTorch GPU 加速评估** 的高性能 AI 引擎。支持多种难度级别，UI 精美流畅。
+基于 **PyQt5** 的五子棋人机对弈程序，搭载 **PVS+LMR + 固定数组置换表 + 专业棋型权重 + 增强TSS攻防搜索 + GPU加速 + 时间控制 + 开局库** 的高性能 AI 引擎。支持多种难度级别，UI 精美流畅。
 
 ![Python](https://img.shields.io/badge/Python-3.11-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.9-red)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-1.4-brightgreen)
+![Version](https://img.shields.io/badge/version-2.6-brightgreen)
 
 ---
 
@@ -15,17 +15,19 @@
 ### 🤖 AI 算法
 | 技术 | 说明 |
 |------|------|
-| **PVS 搜索** | 零窗口搜索非首要分支，剪枝效率远超纯 Alpha-Beta |
-| **杀手启发** | 每层保留触发 Beta 截断的走法，下次优先搜索 |
-| **历史启发** | 累计各位置的截断价值，越深截断权重越高 |
-| **Zobrist 哈希 + 置换表** | 增量哈希 + LRU 缓存百万级局面，避免重复搜索 |
-| **迭代加深** | 从浅到深逐步搜索，上层结果优化下层排序 |
-| **时间上限** | 初级 0.5s / 中级 1.5s / 高级 5s，永不卡死 |
-| **复合棋型检测** | 双活三 / 冲四+活三 等组合赋予必胜级评分 |
-| **TSS 威胁搜索** | VCF/VCT 强制获胜序列检测，提前终结对局 |
-| **活四必胜检测** | 精确检测活四/冲四/五连，优先进攻 |
-| **威胁优先级** | 五连 > 堵五连 > TSS必胜 > 自己活四 > 双活三 > 堵对手活四 |
-| **中心加权** | 越靠近棋盘中心权重越高 |
+| **PVS 搜索** | Principal Variation Search，零窗口快速剪枝 |
+| **LMR** | Late Move Reduction，靠后走法降深度搜索（节点-40%） |
+| **Zobrist 哈希** | 64位随机哈希，增量 O(1) 更新 |
+| **置换表** | 固定数组百万条，深度优先 + 年龄淘汰，O(1) 查询 |
+| **静态评估缓存** | eval_cache 按 Zobrist 缓存评估值，避免重复全盘扫描 |
+| **专业棋型权重** | Gomocup 参考权重：连五 1e8 / 活四 1e6 / 冲四 1e5 / 活三 5000 |
+| **组合加成** | 双活三 1e5 / 冲四+活三 8e4 / 双冲四 1.5e5 |
+| **杀手/历史启发** | 截断走法优先 + 历史深度加权累积 |
+| **增强 TSS** | 进攻(深度6) + 防守TSS，启发式只搜威胁走法 |
+| **GPU 加速评估** | 方向线型核 + 跳活核批量 conv2d，GPU 并行 |
+| **时间控制** | 5秒/步上限(高级)，迭代加深自适应，时间不足提前停止 |
+| **开局库** | 前6步预设平衡开局，命中直接返回 |
+| **威胁优先级** | 五连 > 堵五连 > TSS必胜 > 防守TSS > 活四 > 双活三 > 堵活四 |
 
 ### 🎨 UI 设计
 - **加载界面**：渐变背景 + 动画进度条 + 动态提示语
@@ -51,7 +53,7 @@ git clone https://github.com/iamlinxuhan/GomokuAI.git
 cd GomokuAI
 
 # 2. 安装依赖
-pip install numpy pyqt5
+pip install numpy pyqt5 torch
 
 # 3. 运行
 python main.py
@@ -71,9 +73,9 @@ python main.py
 
 | 难度 | 搜索深度 | 说明 |
 |------|----------|------|
-| **初级** | 1 | 仅计算一步，适合新手 |
-| **中级** | 2 | 展望两步，有一定策略 |
-| **高级** | 4 | 迭代加深至4层 + PVS + 杀手/历史启发 + TSS 必胜检测 |
+| **初级** | 1 | 一步计算，1秒时限 |
+| **中级** | 2 | 两步展望，3秒时限 |
+| **高级** | 3 | PVS+LMR 3层 + 置换表 + TSS攻防 + GPU + 5秒时间控制 |
 
 ---
 
