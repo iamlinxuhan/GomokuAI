@@ -1213,17 +1213,20 @@ def _find_forced_win(board, player, max_depth=6):
 
 def _check_immediate_threat(board, player):
     """
-    增强威胁检测（含防守TSS）：
-    1. 自己能五连 → 直接赢
-    2. 对手能五连 → 必须堵
-    3. TSS 强制获胜序列（深度6）
-    4. 防守TSS：对手是否有VCF，找出防守点
-    5. 自己能形成活四（必胜）→ 走这里
-    6. 双活三检测
-    7. 对手活四 → 必须提前堵
+    紧急威胁检测（修复S1: 与旧版对齐，只处理真正imminent的威胁）：
+    
+    旧版只有4项检测，新版之前有7项(含深层TSS)，TSS抢先触发导致AI走低效的长路径。
+    
+    现在的策略：
+    1. 自己能五连 → 直接赢（总是正确）
+    2. 对手能五连 → 必须堵（总是正确）
+    3. 自己能形成活四（必胜局面，2步内赢）→ 走这里
+    4. 对手能形成活四 → 必须堵（必须防守）
+    
+    注意：TSS/VCF/双活三等深层策略交给主搜索(alpha_beta)处理，
+         不在威胁检测阶段抢先返回，避免走低效长路径。
     """
     opp = 1 if player == 2 else 2
-    stone_count = np.count_nonzero(board)
 
     # 1. 自己能否直接五连
     my_win = _find_winning_moves(board, player)
@@ -1235,67 +1238,17 @@ def _check_immediate_threat(board, player):
     if opp_win:
         return opp_win[0]
 
-    # 3. TSS 强制获胜序列（VCF/VCT），深度 6
-    if stone_count >= 6:
-        forced_seq = _find_forced_win(board, player, max_depth=6)
-        if forced_seq:
-            return forced_seq[0]
-
-    # 4. 防守TSS：检查对手是否有VCF强制获胜
-    if stone_count >= 8:
-        opp_forced = _find_forced_win(board, opp, max_depth=5)
-        if opp_forced:
-            # 对手有VCF，我们需要在他们的第一步行前抢先
-            # 尝试每个防守点
-            moves = _generate_moves(board)
-            best_defense = None
-            best_def_score = float('-inf')
-            for r, c in moves:
-                board[r][c] = player
-                # 检查落子后是否破坏了对手的VCF
-                h = zobrist_hash(board)
-                # 简单策略：下在对手VCF第一步附近
-                board[r][c] = 0
-                # 比较防守走法 vs 对手VCF威胁：选评分最高的防守点
-                def_score = _quick_eval_move(board, r, c, player)
-                if def_score > best_def_score:
-                    best_def_score = def_score
-                    best_defense = (r, c)
-            if best_defense:
-                return best_defense
-            # 否则直接堵对手VCF第一步
-            return opp_forced[0]
-
-    # 5. 自己能否形成活四（必胜局面）
+    # 3. 自己能否形成活四（必胜局面，下一步成五）
     my_live4 = _find_live_four_moves(board, player)
     if my_live4:
         return my_live4[0]
 
-    # 6. 双活三检测（也是必胜）
-    moves = _generate_moves(board)
-    for r, c in moves:
-        has_live4, has_rush4, has_live3, _ = _get_pattern_types(board, r, c, player)
-        if has_live3 or has_rush4:
-            board[r][c] = player
-            live3_dirs = []
-            for dr, dc in [(1, 0), (0, 1), (1, 1), (1, -1)]:
-                count, open_ends, _ = _analyze_line(board, r, c, dr, dc, player)
-                if count == 3 and open_ends >= 2:
-                    live3_dirs.append((dr, dc))
-                elif count >= 4:
-                    live3_dirs.append((dr, dc))  # 冲四也算
-            board[r][c] = 0
-            if len(live3_dirs) >= 2:
-                return (r, c)
-            # 冲四 + 活三 = 必胜
-            if has_rush4 and len(live3_dirs) >= 1:
-                return (r, c)
-
-    # 7. 对手能否形成活四（必须提前堵）
+    # 4. 对手能否形成活四（必须提前堵，否则对手下一步成五）
     opp_live4 = _find_live_four_moves(board, opp)
     if opp_live4:
         return opp_live4[0]
 
+    # ★ 不再做TSS/VCF/双活三检测 — 让主搜索处理深层策略
     return None
 
 
@@ -1352,21 +1305,20 @@ def ai_move(board, ai_player, depth):
             return (9, 9)
         return random.choice(moves)
 
-    # === 时间控制 & 搜索深度（修复F3: 与旧版对齐，避免过深搜索导致慢） ===
+    # === 时间控制 & 搜索深度（修复S2: 加深搜索让AI看到更远的杀棋组合） ===
     _time_start = time.time()
-    # 修复：与旧版Alpha-Beta Engine保持一致的深度映射
-    # 旧版: depth=1→搜1层, depth=2→搜2层, depth=3→搜3层（无迭代加深）
-    # 新版用迭代加深但目标深度保持一致，时间预算大幅缩减
+    # S2修复：增加搜索深度，利用迭代加深+PVS+置换表优势
+    # 目标：depth=2时搜4层，能看到"活三→活四→五连"的完整威胁链
     if depth == 1:
-        _time_max = 1.0      # 简单: 1秒
-        target_depth = 1     # 搜1层（旧版同）
+        _time_max = 1.5      # 简单: 1.5秒
+        target_depth = 2     # 搜2层
     elif depth == 2:
-        _time_max = 2.0      # 中级: 2秒（旧版无时间限制，但只搜2层很快完成）
-        target_depth = 2     # 搜2层（旧版search_depth=2, alpha_beta(depth-1=1)）
+        _time_max = 3.5      # 中级: 3.5秒（S2加深：原2层→4层）
+        target_depth = 4     # 搜4层（能看到活三→冲四→五连的威胁链）
     else:
-        _time_max = 5.0      # 高级: 5秒
-        target_depth = 4     # 搜4层（比旧版的3层稍深，利用PVS+置换表优势）
-    _TIME_RESERVE = 0.2      # 缓冲时间
+        _time_max = 8.0      # 高级: 8秒（S2加深：原4层→6层）
+        target_depth = 6     # 搜6层
+    _TIME_RESERVE = 0.25      # 缓冲时间
 
     # === 走法排序（修复F2: 恢复旧版 attack*2 + defense 双方综合排序策略） ===
     human_player = 1 if ai_player == 2 else 2
