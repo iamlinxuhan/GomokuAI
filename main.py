@@ -7,8 +7,28 @@ import random
 import time
 import math
 import numpy as np
-# PyTorch 延迟导入（仅在GPU可用时加载，避免无GPU时2-3秒的import开销）
-# 见 _ensure_torch() 函数
+# PyTorch 可选依赖：尝试导入，不可用时创建占位模块
+try:
+    import torch
+    import torch.nn.functional as F
+except (ImportError, Exception):
+    import types
+    torch = types.ModuleType('torch')
+    def _dummy_no_grad(fn=None):
+        """无 torch 时 @torch.no_grad() 只是透传"""
+        if fn is not None:
+            return fn
+        class _Ctx:
+            def __enter__(self): pass
+            def __exit__(self, *a): pass
+        return _Ctx()
+    torch.no_grad = _dummy_no_grad
+    F = types.ModuleType('torch.nn.functional')
+    _device = 'cpu'
+    _torch_available_final = False
+else:
+    _torch_available_final = torch.cuda.is_available()
+    _device = torch.device('cuda' if _torch_available_final else 'cpu')
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QLabel,
     QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget,
@@ -24,31 +44,14 @@ from PyQt5.QtGui import (
     QMouseEvent, QFontMetrics
 )
 
-# ==================== PyTorch 设备（延迟导入：避免无GPU时的2-3秒import开销） ====================
-_device = None  # 延迟初始化，首次使用时才检测GPU
-_torch_available = False  # 标记torch是否成功导入
+# ==================== PyTorch 设备 ====================
+_device = None  # 由 try/except 设置
+_torch_available_final = False
 
 
 def _ensure_torch():
-    """延迟导入PyTorch并检测GPU。仅在需要GPU加速时调用。"""
-    global _device, _torch_available
-    if _device is not None:
-        return _torch_available
-    try:
-        import torch as _torch_mod
-        import torch.nn.functional as _F_mod
-        # 将模块注入全局以便其他函数使用
-        import sys
-        sys.modules.setdefault('torch', _torch_mod)
-        sys.modules.setdefault('torch.nn.functional', _F_mod)
-        
-        _torch_available = True
-        _device = _torch_mod.device('cuda' if _torch_mod.cuda.is_available() else 'cpu')
-        return _torch_mod.cuda.is_available()
-    except (ImportError, Exception):
-        _torch_available = False
-        _device = 'cpu'
-        return False
+    """检查 PyTorch/GPU 是否真正可用（torch 已导入，此处仅返回状态）"""
+    return _torch_available_final
 
 # ==================== PyTorch 模式检测卷积核 ====================
 # 4个方向 (水平, 垂直, 对角线, 反对角线) 的模式内核
@@ -62,13 +65,10 @@ def _get_pattern_kernels():
     if _pattern_kernels_cached is not None:
         return _pattern_kernels_cached
     
-    # 延迟导入：无GPU时直接返回空
+    # 无GPU时直接返回空
     if not _ensure_torch():
         _pattern_kernels_cached = {}  # 标记为已尝试但不可用
         return _pattern_kernels_cached
-    
-    import torch
-    import torch.nn.functional as F
 
     def _make_hk(size):  # 1xN 水平核
         return torch.tensor([[[[1.0] * size]]], dtype=torch.float32)
@@ -253,8 +253,7 @@ def _batch_eval_moves(board, moves, player):
         result.sort(reverse=True)
         return result
     
-    import torch
-    import torch.nn.functional as F
+    opp = 1 if player == 2 else 2
     n = len(moves)
     if n == 0:
         return []
