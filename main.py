@@ -8,6 +8,7 @@ import time
 import math
 import numpy as np
 # PyTorch 可选依赖：尝试导入，不可用时创建占位模块
+# 自动检测 GPU 类型：NVIDIA CUDA → Intel XPU → CPU 回退
 try:
     import torch
     import torch.nn.functional as F
@@ -26,9 +27,32 @@ except (ImportError, Exception):
     F = types.ModuleType('torch.nn.functional')
     _device = 'cpu'
     _torch_available_final = False
+    _gpu_type = 'cpu'
 else:
-    _torch_available_final = torch.cuda.is_available()
-    _device = torch.device('cuda' if _torch_available_final else 'cpu')
+    _gpu_type = 'cpu'
+    _torch_available_final = False
+    # 1) 优先检测 NVIDIA CUDA
+    if torch.cuda.is_available():
+        _gpu_type = 'cuda'
+        _torch_available_final = True
+    # 2) 其次检测 Intel GPU (XPU) — 需要安装 intel-extension-for-pytorch
+    else:
+        try:
+            import intel_extension_for_pytorch as ipex  # noqa: F811
+            if hasattr(torch, 'xpu') and torch.xpu.is_available():
+                _gpu_type = 'xpu'
+                _torch_available_final = True
+        except ImportError:
+            pass
+    # 3) 后续可扩展 AMD ROCm (需 torch 编译时开启 ROCm 支持)
+    #    if hasattr(torch, 'cuda') and torch.cuda.is_available():  # ROCm 在 PyTorch 中也走 cuda 接口
+
+    if _gpu_type == 'cuda':
+        _device = torch.device('cuda')
+    elif _gpu_type == 'xpu':
+        _device = torch.device('xpu')
+    else:
+        _device = torch.device('cpu')
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QPushButton, QLabel,
     QVBoxLayout, QHBoxLayout, QGridLayout, QStackedWidget,
@@ -47,11 +71,17 @@ from PyQt5.QtGui import (
 # ==================== PyTorch 设备 ====================
 _device = None  # 由 try/except 设置
 _torch_available_final = False
+_gpu_type = 'cpu'  # 'cuda' | 'xpu' | 'cpu'
 
 
 def _ensure_torch():
     """检查 PyTorch/GPU 是否真正可用（torch 已导入，此处仅返回状态）"""
     return _torch_available_final
+
+
+def get_gpu_type():
+    """返回当前 GPU 类型：'cuda', 'xpu', 或 'cpu'"""
+    return _gpu_type
 
 
 # ==================== 游戏日志系统 ====================
@@ -360,7 +390,7 @@ def _batch_eval_moves(board, moves, player):
     """GPU 批量评估所有候选落子（方向核 × 2色 × N候选），专注有效棋型。
     无GPU时自动回退到CPU排序。""" 
     # 无torch/GPU时立即回退到纯CPU排序
-    if not _ensure_torch() or _device.type != 'cuda':
+    if not _ensure_torch() or _device.type not in ('cuda', 'xpu'):
         result = [(_quick_eval_move(board, r, c, player), r, c) for r, c in moves]
         result.sort(reverse=True)
         return result
@@ -963,7 +993,7 @@ def alpha_beta(board, depth, alpha, beta, maximizing, ai_player, hash_key=None, 
     current_player = ai_player if maximizing else human_player
 
     # === 深层节点使用 GPU 批量评估加速（仅当GPU真正可用时） ===
-    use_gpu_batch = (_ensure_torch() and _device.type == 'cuda'
+    use_gpu_batch = (_ensure_torch() and _device.type in ('cuda', 'xpu')
                      and depth <= 3 and len(all_moves) >= 10)
 
     if use_gpu_batch:
@@ -1955,12 +1985,20 @@ class LoadingScreen(QWidget):
         self.progress = 0
         self.dot_count = 0
         self.tip_index = 0
+        # 根据实际 GPU 类型动态生成提示
+        gpu_type = get_gpu_type()
+        if gpu_type == 'cuda':
+            gpu_tip = "正在优化NVIDIA CUDA计算图..."
+        elif gpu_type == 'xpu':
+            gpu_tip = "正在优化Intel XPU计算图..."
+        else:
+            gpu_tip = "正在优化CPU计算引擎..."
         self.tips = [
             "正在初始化游戏引擎...",
             "正在加载开局库...",
             "正在构建Zobrist哈希表...",
             "正在构建棋型评估权重...",
-            "正在优化GPU计算图...",
+            gpu_tip,
             "正在准备棋盘渲染管线...",
             "正在校准威胁搜索参数...",
             "游戏准备完成！"
@@ -2051,7 +2089,8 @@ class LoadingScreen(QWidget):
         self.tip_label.setStyleSheet("color: #6c7086; font-size: 13px; font-family: 'Microsoft YaHei';")
 
         # 版权
-        copyright_label = QLabel("基于 PVS+LMR · 专业权重 · TSS攻防搜索 · GPU加速")
+        gpu_label = {"cuda": "NVIDIA CUDA", "xpu": "Intel XPU", "cpu": "CPU"}.get(get_gpu_type(), "CPU")
+        copyright_label = QLabel(f"基于 PVS+LMR · 专业权重 · TSS攻防搜索 · {gpu_label}加速")
         copyright_label.setAlignment(Qt.AlignCenter)
         copyright_label.setStyleSheet("color: #45475a; font-size: 11px; font-family: 'Consolas', monospace;")
 

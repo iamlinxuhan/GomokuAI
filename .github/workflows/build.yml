@@ -11,9 +11,10 @@ permissions:
 jobs:
 
   # ============================================================
-  #  Windows CUDA 版 — 7z SFX 自解压安装程序 (>2GB OK)
+  #  Windows 统一版 — 7z SFX 自解压安装程序
+  #  同时打包 PyTorch CUDA + Intel XPU，运行时自动检测 GPU 类型
   # ============================================================
-  build-windows-cuda:
+  build-windows-unified:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,16 +24,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies (CUDA)
+      - name: Install dependencies (CUDA + XPU)
         run: |
           python -m pip install --upgrade pip
           pip install numpy PyQt5
+          # CUDA 版 PyTorch (NVIDIA GPU)
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+          # Intel XPU 扩展 (Intel GPU)
+          pip install intel-extension-for-pytorch
           pip install pyinstaller
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CUDA" `
+          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
             --exclude-module torch.distributed `
             --exclude-module torch.testing `
             --exclude-module torch.jit `
@@ -40,29 +44,30 @@ jobs:
             --exclude-module torch._dynamo `
             --exclude-module torch._inductor `
             --collect-submodules torch `
+            --collect-submodules intel_extension_for_pytorch `
             main.py
 
       - name: Create 7z SFX installer
         shell: pwsh
         run: |
           $ver = '${{ github.ref_name }}' -replace '^v',''
-          $outName = "GomokuAI_For_Windows(CUDA)_v${ver}_Setup.exe"
-          $appDir = "dist\GomokuAI_CUDA"
+          $outName = "GomokuAI_For_Windows_v${ver}_Setup.exe"
+          $appDir = "dist\GomokuAI"
 
           # ---- setup.ps1 (安装后创建快捷方式) ----
           $setupPs = @'
           $WshShell = New-Object -ComObject WScript.Shell
           $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-          $AppExe = Join-Path $InstallDir 'GomokuAI_CUDA.exe'
-          $Programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\五子棋AI (CUDA)'
+          $AppExe = Join-Path $InstallDir 'GomokuAI.exe'
+          $Programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\五子棋AI'
           New-Item -ItemType Directory -Force -Path $Programs | Out-Null
-          $sc = $WshShell.CreateShortcut(([Environment]::GetFolderPath('Desktop') + '\五子棋AI (CUDA).lnk'))
+          $sc = $WshShell.CreateShortcut(([Environment]::GetFolderPath('Desktop') + '\五子棋AI.lnk'))
           $sc.TargetPath = $AppExe; $sc.Save()
-          $sc2 = $WshShell.CreateShortcut((Join-Path $Programs '五子棋AI (CUDA).lnk'))
+          $sc2 = $WshShell.CreateShortcut((Join-Path $Programs '五子棋AI.lnk'))
           $sc2.TargetPath = $AppExe; $sc2.Save()
-          $sc3 = $WshShell.CreateShortcut((Join-Path $Programs '卸载 五子棋AI (CUDA).lnk'))
+          $sc3 = $WshShell.CreateShortcut((Join-Path $Programs '卸载 五子棋AI.lnk'))
           $sc3.TargetPath = (Join-Path $InstallDir 'uninstall.cmd'); $sc3.Save()
-          Write-Host '五子棋AI (CUDA) 安装完成！'
+          Write-Host '五子棋AI 安装完成！(支持NVIDIA CUDA / Intel XPU / CPU自动检测)'
           Start-Sleep -Seconds 2
           '@
           $setupPs | Set-Content -Encoding UTF8 "$appDir\setup.ps1"
@@ -71,12 +76,12 @@ jobs:
           $uninstCmd = @'
           @echo off
           echo ============================================
-          echo   卸载 五子棋AI (CUDA)
+          echo   卸载 五子棋AI
           echo ============================================
           echo.
-          taskkill /f /im GomokuAI_CUDA.exe >nul 2>&1
-          del /q "%USERPROFILE%\Desktop\五子棋AI (CUDA).lnk" >nul 2>&1
-          rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\五子棋AI (CUDA)" >nul 2>&1
+          taskkill /f /im GomokuAI.exe >nul 2>&1
+          del /q "%USERPROFILE%\Desktop\五子棋AI.lnk" >nul 2>&1
+          rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\五子棋AI" >nul 2>&1
           echo 快捷方式已删除。
           echo 安装目录: %~dp0
           echo 如需完全删除，请手动删除上述文件夹。
@@ -89,10 +94,10 @@ jobs:
           if ($ver -match '^\d') { $displayVer = "v$ver" } else { $displayVer = "$ver" }
           $sfxCfg = @"
           ;!@Install@!UTF-8!
-          Title="五子棋AI (CUDA) $displayVer"
-          BeginPrompt="即将安装 五子棋AI (CUDA) $displayVer，是否继续？"
+          Title="五子棋AI $displayVer (NVIDIA/Intel/CPU)"
+          BeginPrompt="即将安装 五子棋AI $displayVer，是否继续？(支持NVIDIA CUDA / Intel XPU / CPU自动检测)"
           RunProgram="powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%%T\\setup.ps1\""
-          Directory="%%LocalAppData%%\\GomokuAI_CUDA"
+          Directory="%%LocalAppData%%\\GomokuAI"
           ;!@InstallEnd@!
           "@
           $sfxCfg | Set-Content -Encoding ASCII "sfx_config.txt"
@@ -105,93 +110,15 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GomokuAI_For_Windows(CUDA)
-          path: GomokuAI_For_Windows(CUDA)_v*_Setup.exe
+          name: GomokuAI_For_Windows
+          path: GomokuAI_For_Windows_v*_Setup.exe
 
 
   # ============================================================
-  #  Windows CPU 版 — NSIS .exe 安装程序
+  #  Linux AMD64 统一 .deb — onedir → /opt/
+  #  同时打包 PyTorch CUDA + Intel XPU，运行时自动检测
   # ============================================================
-  build-windows-cpu:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install NSIS
-        run: choco install nsis -y --no-progress
-
-      - name: Install dependencies (CPU)
-        run: |
-          python -m pip install --upgrade pip
-          pip install numpy PyQt5
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-          pip install pyinstaller
-
-      - name: Build (onedir)
-        run: |
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CPU" `
-            --exclude-module torch.distributed `
-            --exclude-module torch.testing `
-            --exclude-module torch.jit `
-            --exclude-module torch.futures `
-            --exclude-module torch._dynamo `
-            --exclude-module torch._inductor `
-            --collect-submodules torch `
-            main.py
-
-      - name: Create NSIS installer
-        run: |
-          $ver = "${{ github.ref_name }}" -replace '^v',''
-          $outName = "GomokuAI_For_Windows(CPU)_v${ver}_Setup.exe"
-
-          $nsiContent = @"
-          !include "MUI2.nsh"
-          Name "五子棋AI (CPU)"
-          OutFile "${outName}"
-          InstallDir "`$PROGRAMFILES\GomokuAI_CPU"
-          RequestExecutionLevel admin
-          !define MUI_ABORTWARNING
-          !insertmacro MUI_PAGE_WELCOME
-          !insertmacro MUI_PAGE_DIRECTORY
-          !insertmacro MUI_PAGE_INSTFILES
-          !insertmacro MUI_PAGE_FINISH
-          !insertmacro MUI_LANGUAGE "SimpChinese"
-          !insertmacro MUI_LANGUAGE "English"
-          Section "Install"
-            SetOutPath `$INSTDIR
-            File /r "dist\GomokuAI_CPU\*"
-            CreateShortCut "`$DESKTOP\五子棋AI (CPU).lnk" "`$INSTDIR\GomokuAI_CPU.exe" "" "`$INSTDIR\GomokuAI_CPU.exe" 0
-            CreateDirectory "`$SMPROGRAMS\五子棋AI (CPU)"
-            CreateShortCut "`$SMPROGRAMS\五子棋AI (CPU)\五子棋AI (CPU).lnk" "`$INSTDIR\GomokuAI_CPU.exe" "" "`$INSTDIR\GomokuAI_CPU.exe" 0
-            CreateShortCut "`$SMPROGRAMS\五子棋AI (CPU)\卸载 五子棋AI (CPU).lnk" "`$INSTDIR\uninstall.exe"
-            WriteUninstaller "`$INSTDIR\uninstall.exe"
-          SectionEnd
-          Section "Uninstall"
-            Delete "`$DESKTOP\五子棋AI (CPU).lnk"
-            RMDir /r "`$SMPROGRAMS\五子棋AI (CPU)"
-            RMDir /r "`$INSTDIR"
-          SectionEnd
-          "@
-          $nsiContent | Out-File -Encoding ASCII installer.nsi
-          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
-          Get-ChildItem "${outName}" | Select-Object Name, Length
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GomokuAI_For_Windows(CPU)
-          path: GomokuAI_For_Windows(CPU)_v*_Setup.exe
-
-
-  # ============================================================
-  #  Linux AMD64 CUDA .deb — onedir → /opt/
-  # ============================================================
-  build-linux-cuda-amd:
+  build-linux-amd:
     runs-on: ubuntu-latest
     container:
       image: pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
@@ -208,111 +135,17 @@ jobs:
             libxcb-xinerama0 libxcb-xkb1 libxkbcommon0 \
             libegl1 libfontconfig1 libdbus-1-3
 
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install numpy PyQt5 pyinstaller
-
-      - name: Build (onedir)
-        run: |
-          pyinstaller --onedir --windowed --name "gomoku-ai-cuda" \
-            --exclude-module torch.distributed \
-            --exclude-module torch.testing \
-            --exclude-module torch.jit \
-            --exclude-module torch.futures \
-            --exclude-module torch._dynamo \
-            --exclude-module torch._inductor \
-            --collect-submodules torch \
-            main.py
-
-      - name: Package .deb
-        run: |
-          raw="${GITHUB_REF_NAME}"
-          if [[ "$raw" =~ ^v[0-9] ]]; then VERSION="${raw#v}"
-          elif [[ "$raw" =~ ^[0-9] ]]; then VERSION="$raw"
-          else VERSION="0.0.0-$(date -u +%Y%m%d-%H%M%S)"; fi
-          echo "VERSION=$VERSION"
-
-          PKG_DIR="deb_build"
-          APP_DIR="${PKG_DIR}/opt/gomoku-ai-cuda"
-          BIN_DIR="${PKG_DIR}/usr/local/bin"
-          DESK_DIR="${PKG_DIR}/usr/share/applications"
-          mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESK_DIR}" "${PKG_DIR}/DEBIAN"
-
-          cp -r dist/gomoku-ai-cuda/* "${APP_DIR}/"
-          chmod -R 755 "${APP_DIR}"
-
-          # 启动脚本 (printf 替代 heredoc)
-          printf '%s\n%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai-cuda/gomoku-ai-cuda "$@"' > "${BIN_DIR}/gomoku-ai-cuda"
-          chmod 755 "${BIN_DIR}/gomoku-ai-cuda"
-
-          # .desktop 文件
-          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            '[Desktop Entry]' \
-            'Name=五子棋AI (CUDA)' \
-            'Name[zh_CN]=五子棋AI (CUDA)' \
-            'Comment=Gomoku AI - PVS+LMR+MultiLine Defense+Desperation Mode' \
-            'Exec=/usr/local/bin/gomoku-ai-cuda' \
-            'Terminal=false' \
-            'Type=Application' \
-            'Categories=Game;BoardGame;' \
-            > "${DESK_DIR}/gomoku-ai-cuda.desktop"
-
-          # DEBIAN/control
-          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            "Package: gomoku-ai-cuda" \
-            "Version: ${VERSION}" \
-            "Section: games" \
-            "Priority: optional" \
-            "Architecture: amd64" \
-            "Maintainer: iamlinxuhan" \
-            "Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0" \
-            "Description: 五子棋AI CUDA版 - PVS+LMR+多线防守+拼命模式+GPU加速" \
-            > "${PKG_DIR}/DEBIAN/control"
-
-          dpkg-deb --build "${PKG_DIR}" "GomokuAI_For_Linux(CUDA)_AMD.deb"
-          ls -lh "GomokuAI_For_Linux(CUDA)_AMD.deb"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GomokuAI_For_Linux(CUDA)_AMD
-          path: GomokuAI_For_Linux(CUDA)_AMD.deb
-
-
-  # ============================================================
-  #  Linux AMD64 CPU .deb — onedir → /opt/
-  # ============================================================
-  build-linux-cpu-amd:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            binutils libgl1 libglib2.0-0 libxkbcommon-x11-0 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
-            libxcb-xinerama0 libxcb-xkb1 libxkbcommon0 \
-            libegl1 libfontconfig1 libdbus-1-3
-
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install Python dependencies (CPU)
+      - name: Install Python dependencies (CUDA + XPU)
         run: |
           python -m pip install --upgrade pip
           pip install numpy PyQt5
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          # Intel XPU 扩展 (Intel GPU 支持)
+          pip install intel-extension-for-pytorch
           pip install pyinstaller
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --name "gomoku-ai-cpu" \
+          pyinstaller --onedir --windowed --name "gomoku-ai" \
             --exclude-module torch.distributed \
             --exclude-module torch.testing \
             --exclude-module torch.jit \
@@ -320,6 +153,7 @@ jobs:
             --exclude-module torch._dynamo \
             --exclude-module torch._inductor \
             --collect-submodules torch \
+            --collect-submodules intel_extension_for_pytorch \
             main.py
 
       - name: Package .deb
@@ -331,53 +165,56 @@ jobs:
           echo "VERSION=$VERSION"
 
           PKG_DIR="deb_build"
-          APP_DIR="${PKG_DIR}/opt/gomoku-ai-cpu"
+          APP_DIR="${PKG_DIR}/opt/gomoku-ai"
           BIN_DIR="${PKG_DIR}/usr/local/bin"
           DESK_DIR="${PKG_DIR}/usr/share/applications"
           mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESK_DIR}" "${PKG_DIR}/DEBIAN"
 
-          cp -r dist/gomoku-ai-cpu/* "${APP_DIR}/"
+          cp -r dist/gomoku-ai/* "${APP_DIR}/"
           chmod -R 755 "${APP_DIR}"
 
-          printf '%s\n%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai-cpu/gomoku-ai-cpu "$@"' > "${BIN_DIR}/gomoku-ai-cpu"
-          chmod 755 "${BIN_DIR}/gomoku-ai-cpu"
+          # 启动脚本 (printf 替代 heredoc)
+          printf '%s\n%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai/gomoku-ai "$@"' > "${BIN_DIR}/gomoku-ai"
+          chmod 755 "${BIN_DIR}/gomoku-ai"
 
+          # .desktop 文件
           printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
             '[Desktop Entry]' \
-            'Name=五子棋AI (CPU)' \
-            'Name[zh_CN]=五子棋AI (CPU)' \
-            'Comment=Gomoku AI - PVS+LMR+MultiLine Defense+Desperation Mode' \
-            'Exec=/usr/local/bin/gomoku-ai-cpu' \
+            'Name=五子棋AI' \
+            'Name[zh_CN]=五子棋AI' \
+            'Comment=Gomoku AI - PVS+LMR+MultiLine Defense+Desperation Mode (NVIDIA/Intel/CPU)' \
+            'Exec=/usr/local/bin/gomoku-ai' \
             'Terminal=false' \
             'Type=Application' \
             'Categories=Game;BoardGame;' \
-            > "${DESK_DIR}/gomoku-ai-cpu.desktop"
+            > "${DESK_DIR}/gomoku-ai.desktop"
 
+          # DEBIAN/control
           printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            "Package: gomoku-ai-cpu" \
+            "Package: gomoku-ai" \
             "Version: ${VERSION}" \
             "Section: games" \
             "Priority: optional" \
             "Architecture: amd64" \
             "Maintainer: iamlinxuhan" \
             "Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0" \
-            "Description: 五子棋AI CPU版 - PVS+LMR+多线防守+拼命模式(不需要NVIDIA显卡)" \
+            "Description: 五子棋AI - PVS+LMR+多线防守+拼命模式 (NVIDIA CUDA / Intel XPU / CPU 自动检测)" \
             > "${PKG_DIR}/DEBIAN/control"
 
-          dpkg-deb --build "${PKG_DIR}" "GomokuAI_For_Linux(CPU)_AMD.deb"
-          ls -lh "GomokuAI_For_Linux(CPU)_AMD.deb"
+          dpkg-deb --build "${PKG_DIR}" "GomokuAI_For_Linux_AMD.deb"
+          ls -lh "GomokuAI_For_Linux_AMD.deb"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GomokuAI_For_Linux(CPU)_AMD
-          path: GomokuAI_For_Linux(CPU)_AMD.deb
+          name: GomokuAI_For_Linux_AMD
+          path: GomokuAI_For_Linux_AMD.deb
 
 
   # ============================================================
-  #  Linux ARM64 CUDA .pkg — apt PyQt5 (跳过源码编译)
+  #  Linux ARM64 统一 .pkg — apt PyQt5 (跳过源码编译)
   # ============================================================
-  build-linux-cuda-arm:
+  build-linux-arm:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
@@ -405,7 +242,7 @@ jobs:
 
       - name: Build (onedir)
         run: |
-          .venv/bin/pyinstaller --onedir --windowed --name "gomoku-ai-cuda-arm" \
+          .venv/bin/pyinstaller --onedir --windowed --name "gomoku-ai-arm" \
             --exclude-module torch.distributed \
             --exclude-module torch.testing \
             --exclude-module torch.jit \
@@ -417,21 +254,21 @@ jobs:
 
       - name: Package .pkg
         run: |
-          PKG_NAME="GomokuAI_For_Linux(CUDA)_ARM"
-          PKG_DIR="${PKG_NAME}/gomoku-ai-cuda-arm"
+          PKG_NAME="GomokuAI_For_Linux_ARM"
+          PKG_DIR="${PKG_NAME}/gomoku-ai-arm"
           mkdir -p "${PKG_DIR}"
-          cp -r dist/gomoku-ai-cuda-arm/* "${PKG_DIR}/"
+          cp -r dist/gomoku-ai-arm/* "${PKG_DIR}/"
           chmod -R 755 "${PKG_DIR}"
           printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
             '#!/bin/bash' \
-            '# 五子棋AI ARM64 CUDA 版安装脚本' \
+            '# 五子棋AI ARM64 版安装脚本' \
             'set -e' \
-            'APP_DIR="/opt/gomoku-ai-cuda-arm"' \
-            'echo "Installing GomokuAI (CUDA ARM)..."' \
+            'APP_DIR="/opt/gomoku-ai-arm"' \
+            'echo "Installing GomokuAI (ARM)..."' \
             'sudo mkdir -p "${APP_DIR}"' \
-            'sudo cp -r gomoku-ai-cuda-arm/* "${APP_DIR}/"' \
+            'sudo cp -r gomoku-ai-arm/* "${APP_DIR}/"' \
             'sudo chmod -R 755 "${APP_DIR}"' \
-            'sudo ln -sf "${APP_DIR}/gomoku-ai-cuda-arm" /usr/local/bin/gomoku-ai' \
+            'sudo ln -sf "${APP_DIR}/gomoku-ai-arm" /usr/local/bin/gomoku-ai' \
             'echo "Done! Run: gomoku-ai"' \
             > "${PKG_NAME}/install.sh"
           chmod 755 "${PKG_NAME}/install.sh"
@@ -442,81 +279,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GomokuAI_For_Linux(CUDA)_ARM
-          path: GomokuAI_For_Linux(CUDA)_ARM.pkg
-
-
-  # ============================================================
-  #  Linux ARM64 CPU .pkg — apt PyQt5 (跳过源码编译)
-  # ============================================================
-  build-linux-cpu-arm:
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system dependencies (含 apt PyQt5 跳过慢速源码编译)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            python3-venv python3-dev python3-pyqt5 \
-            binutils libgl1 libglib2.0-0 libxkbcommon-x11-0 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
-            libxcb-xinerama0 libxcb-xkb1 libxkbcommon0 \
-            libegl1 libfontconfig1 libdbus-1-3 \
-            qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
-
-      - name: Setup venv & install pip deps
-        run: |
-          python3 -m venv --system-site-packages .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install numpy
-          .venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
-          .venv/bin/pip install pyinstaller
-          .venv/bin/python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 OK')"
-
-      - name: Build (onedir)
-        run: |
-          .venv/bin/pyinstaller --onedir --windowed --name "gomoku-ai-cpu-arm" \
-            --exclude-module torch.distributed \
-            --exclude-module torch.testing \
-            --exclude-module torch.jit \
-            --exclude-module torch.futures \
-            --exclude-module torch._dynamo \
-            --exclude-module torch._inductor \
-            --collect-submodules torch \
-            main.py
-
-      - name: Package .pkg
-        run: |
-          PKG_NAME="GomokuAI_For_Linux(CPU)_ARM"
-          PKG_DIR="${PKG_NAME}/gomoku-ai-cpu-arm"
-          mkdir -p "${PKG_DIR}"
-          cp -r dist/gomoku-ai-cpu-arm/* "${PKG_DIR}/"
-          chmod -R 755 "${PKG_DIR}"
-          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            '#!/bin/bash' \
-            '# 五子棋AI ARM64 CPU 版安装脚本' \
-            'set -e' \
-            'APP_DIR="/opt/gomoku-ai-cpu-arm"' \
-            'echo "Installing GomokuAI (CPU ARM)..."' \
-            'sudo mkdir -p "${APP_DIR}"' \
-            'sudo cp -r gomoku-ai-cpu-arm/* "${APP_DIR}/"' \
-            'sudo chmod -R 755 "${APP_DIR}"' \
-            'sudo ln -sf "${APP_DIR}/gomoku-ai-cpu-arm" /usr/local/bin/gomoku-ai' \
-            'echo "Done! Run: gomoku-ai"' \
-            > "${PKG_NAME}/install.sh"
-          chmod 755 "${PKG_NAME}/install.sh"
-
-          tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
-          mv "${PKG_NAME}.tar.gz" "${PKG_NAME}.pkg"
-          ls -lh "${PKG_NAME}.pkg"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GomokuAI_For_Linux(CPU)_ARM
-          path: GomokuAI_For_Linux(CPU)_ARM.pkg
+          name: GomokuAI_For_Linux_ARM
+          path: GomokuAI_For_Linux_ARM.pkg
 
 
   # ============================================================
@@ -524,12 +288,9 @@ jobs:
   # ============================================================
   release:
     needs:
-      - build-windows-cuda
-      - build-windows-cpu
-      - build-linux-cuda-amd
-      - build-linux-cpu-amd
-      - build-linux-cuda-arm
-      - build-linux-cpu-arm
+      - build-windows-unified
+      - build-linux-amd
+      - build-linux-arm
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
