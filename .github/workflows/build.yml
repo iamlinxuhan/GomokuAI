@@ -19,6 +19,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        shell: pwsh
+        run: |
+          Get-PSDrive C | Select-Object Used,Free
+          Remove-Item -Recurse -Force "$env:AGENT_TOOLSDIRECTORY\dotnet","$env:AGENT_TOOLSDIRECTORY\java","$env:AGENT_TOOLSDIRECTORY\go" -ErrorAction SilentlyContinue
+          Get-PSDrive C | Select-Object Used,Free
+
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
@@ -125,6 +132,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          df -h /
+          rm -rf /opt/hostedtoolcache /usr/share/dotnet /usr/local/lib/android /usr/local/.ghcup 2>/dev/null || true
+          apt-get clean 2>/dev/null || true
+          df -h /
+
       - name: Install system dependencies
         run: |
           apt-get update -qq
@@ -156,7 +170,8 @@ jobs:
             --collect-submodules intel_extension_for_pytorch \
             main.py
 
-      - name: Package .deb
+      - name: Package .tar.gz (instead of .deb to save space)
+        shell: bash
         run: |
           raw="${GITHUB_REF_NAME}"
           if [[ "$raw" =~ ^v[0-9] ]]; then VERSION="${raw#v}"
@@ -164,45 +179,60 @@ jobs:
           else VERSION="0.0.0-$(date -u +%Y%m%d-%H%M%S)"; fi
           echo "VERSION=$VERSION"
 
-          PKG_DIR="deb_build"
-          APP_DIR="${PKG_DIR}/opt/gomoku-ai"
-          BIN_DIR="${PKG_DIR}/usr/local/bin"
-          DESK_DIR="${PKG_DIR}/usr/share/applications"
-          mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESK_DIR}" "${PKG_DIR}/DEBIAN"
+          PKG_NAME="GomokuAI_For_Linux_AMD_v${VERSION}"
+          PKG_DIR="${PKG_NAME}/gomoku-ai"
+          mkdir -p "${PKG_DIR}"
 
-          cp -r dist/gomoku-ai/* "${APP_DIR}/"
-          chmod -R 755 "${APP_DIR}"
+          cp -r dist/gomoku-ai/* "${PKG_DIR}/"
+          chmod -R 755 "${PKG_DIR}"
 
-          # 启动脚本 (printf 替代 heredoc)
-          printf '%s\n%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai/gomoku-ai "$@"' > "${BIN_DIR}/gomoku-ai"
-          chmod 755 "${BIN_DIR}/gomoku-ai"
+          # install.sh
+          cat > "${PKG_NAME}/install.sh" << 'INSTEOF'
+          #!/bin/bash
+          set -e
+          echo "=== 五子棋AI 安装 (NVIDIA CUDA / Intel XPU / CPU 自动检测) ==="
+          APP_DIR="/opt/gomoku-ai"
+          sudo mkdir -p "${APP_DIR}"
+          sudo cp -r "$(dirname "$0")/gomoku-ai/"* "${APP_DIR}/"
+          sudo chmod -R 755 "${APP_DIR}"
+          sudo ln -sf "${APP_DIR}/gomoku-ai" /usr/local/bin/gomoku-ai
+          echo "安装完成！运行: gomoku-ai"
+          INSTEOF
+          chmod 755 "${PKG_NAME}/install.sh"
+
+          # uninstall.sh
+          cat > "${PKG_NAME}/uninstall.sh" << 'UNEOF'
+          #!/bin/bash
+          set -e
+          echo "=== 卸载 五子棋AI ==="
+          sudo rm -rf /opt/gomoku-ai
+          sudo rm -f /usr/local/bin/gomoku-ai
+          sudo rm -f /usr/share/applications/gomoku-ai.desktop
+          echo "卸载完成！"
+          UNEOF
+          chmod 755 "${PKG_NAME}/uninstall.sh"
 
           # .desktop 文件
+          mkdir -p "${PKG_NAME}"
           printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
             '[Desktop Entry]' \
             'Name=五子棋AI' \
             'Name[zh_CN]=五子棋AI' \
-            'Comment=Gomoku AI - PVS+LMR+MultiLine Defense+Desperation Mode (NVIDIA/Intel/CPU)' \
+            'Comment=Gomoku AI (NVIDIA CUDA / Intel XPU / CPU)' \
             'Exec=/usr/local/bin/gomoku-ai' \
             'Terminal=false' \
             'Type=Application' \
             'Categories=Game;BoardGame;' \
-            > "${DESK_DIR}/gomoku-ai.desktop"
+            > "${PKG_NAME}/gomoku-ai.desktop"
 
-          # DEBIAN/control
-          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            "Package: gomoku-ai" \
-            "Version: ${VERSION}" \
-            "Section: games" \
-            "Priority: optional" \
-            "Architecture: amd64" \
-            "Maintainer: iamlinxuhan" \
-            "Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0" \
-            "Description: 五子棋AI - PVS+LMR+多线防守+拼命模式 (NVIDIA CUDA / Intel XPU / CPU 自动检测)" \
-            > "${PKG_DIR}/DEBIAN/control"
+          tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
+          ls -lh "${PKG_NAME}.tar.gz"
 
-          dpkg-deb --build "${PKG_DIR}" "GomokuAI_For_Linux_AMD.deb"
-          ls -lh "GomokuAI_For_Linux_AMD.deb"
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GomokuAI_For_Linux_AMD
+          path: GomokuAI_For_Linux_AMD_v*.tar.gz
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
