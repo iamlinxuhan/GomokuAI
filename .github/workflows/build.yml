@@ -11,9 +11,10 @@ permissions:
 jobs:
 
   # ============================================================
-  #  Windows CUDA 版 — NVIDIA GPU (7z SFX 自解压)
+  #  Windows 统一版 — 7z 压缩包 + install.bat
+  #  PyTorch CUDA + Intel XPU，运行时自动检测 GPU
   # ============================================================
-  build-windows-cuda:
+  build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,114 +24,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies (CUDA)
+      - name: Install dependencies (CUDA + XPU)
         run: |
           python -m pip install --upgrade pip
           pip install numpy PyQt5
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-          pip install pyinstaller
-
-      - name: Build (onedir)
-        run: |
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CUDA" `
-            --exclude-module torch.distributed `
-            --exclude-module torch.testing `
-            --exclude-module torch.jit `
-            --exclude-module torch.futures `
-            --exclude-module torch._dynamo `
-            --exclude-module torch._inductor `
-            --collect-submodules torch `
-            main.py
-
-      - name: Create 7z SFX installer
-        shell: pwsh
-        run: |
-          $ver = '${{ github.ref_name }}' -replace '^v',''
-          $outName = "GomokuAI_For_Windows_CUDA_v${ver}_Setup.exe"
-          $appDir = "dist\GomokuAI_CUDA"
-          $displayName = "五子棋AI_CUDA"
-
-          # setup.ps1
-          $setupPs = @"
-          `$WshShell = New-Object -ComObject WScript.Shell
-          `$InstallDir = Split-Path -Parent `$MyInvocation.MyCommand.Path
-          `$AppExe = Join-Path `$InstallDir 'GomokuAI_CUDA.exe'
-          `$Programs = Join-Path `$env:APPDATA 'Microsoft\Windows\Start Menu\Programs\$displayName'
-          New-Item -ItemType Directory -Force -Path `$Programs | Out-Null
-          `$sc = `$WshShell.CreateShortcut(([Environment]::GetFolderPath('Desktop') + '\$displayName.lnk'))
-          `$sc.TargetPath = `$AppExe; `$sc.Save()
-          `$sc2 = `$WshShell.CreateShortcut((Join-Path `$Programs '$displayName.lnk'))
-          `$sc2.TargetPath = `$AppExe; `$sc2.Save()
-          `$sc3 = `$WshShell.CreateShortcut((Join-Path `$Programs '卸载 $displayName.lnk'))
-          `$sc3.TargetPath = (Join-Path `$InstallDir 'uninstall.cmd'); `$sc3.Save()
-          Write-Host '$displayName 安装完成！(NVIDIA CUDA)'
-          Start-Sleep -Seconds 2
-          "@
-          $setupPs | Set-Content -Encoding UTF8 "$appDir\setup.ps1"
-
-          # uninstall.cmd
-          @"
-          @echo off
-          echo ============================================
-          echo   卸载 $displayName
-          echo ============================================
-          echo.
-          taskkill /f /im GomokuAI_CUDA.exe >nul 2>&1
-          del /q "%USERPROFILE%\Desktop\$displayName.lnk" >nul 2>&1
-          rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\$displayName" >nul 2>&1
-          echo 快捷方式已删除。
-          echo 安装目录: %~dp0
-          echo 如需完全删除，请手动删除上述文件夹。
-          echo.
-          pause
-          "@ | Set-Content -Encoding ASCII "$appDir\uninstall.cmd"
-
-          if ($ver -match '^\d') { $displayVer = "v$ver" } else { $displayVer = "$ver" }
-          $sfxCfg = @"
-          ;!@Install@!UTF-8!
-          Title="五子棋AI CUDA $displayVer (NVIDIA GPU)"
-          BeginPrompt="即将安装 五子棋AI CUDA $displayVer，是否继续？(需要NVIDIA显卡)"
-          RunProgram="powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%%T\\setup.ps1\""
-          Directory="%%LocalAppData%%\\GomokuAI_CUDA"
-          ;!@InstallEnd@!
-          "@
-          $sfxCfg | Set-Content -Encoding ASCII "sfx_config.txt"
-
-          & "C:\Program Files\7-Zip\7z.exe" a -mx9 -mfb=273 -md=512m -ms=on "temp.7z" "$appDir\*"
-          cmd /c "copy /b `"C:\Program Files\7-Zip\7z.sfx`" + sfx_config.txt + temp.7z `"$outName`""
-          Get-ChildItem "$outName" | Select-Object Name, Length
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: GomokuAI_For_Windows_CUDA
-          path: GomokuAI_For_Windows_CUDA_v*_Setup.exe
-
-
-  # ============================================================
-  #  Windows CPU 版 — Intel GPU 检测 + CPU fallback (无 CUDA)
-  # ============================================================
-  build-windows-cpu:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies (CPU + XPU)
-        run: |
-          python -m pip install --upgrade pip
-          pip install numpy PyQt5
-          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
           pip install intel-extension-for-pytorch
           pip install pyinstaller
 
       - name: Build (onedir)
         run: |
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI_CPU" `
+          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
             --exclude-module torch.distributed `
             --exclude-module torch.testing `
             --exclude-module torch.jit `
@@ -141,69 +45,77 @@ jobs:
             --collect-submodules intel_extension_for_pytorch `
             main.py
 
-      - name: Create 7z SFX installer
+      - name: Create 7z package with install.bat
         shell: pwsh
         run: |
           $ver = '${{ github.ref_name }}' -replace '^v',''
-          $outName = "GomokuAI_For_Windows_CPU_v${ver}_Setup.exe"
-          $appDir = "dist\GomokuAI_CPU"
-          $displayName = "五子棋AI_CPU"
+          $pkgName = "GomokuAI_For_Windows_v${ver}"
+          $appDir = "dist\GomokuAI"
+          $pkgDir = $pkgName
+          $outName = "${pkgName}.7z"
 
-          # setup.ps1
-          $setupPs = @"
-          `$WshShell = New-Object -ComObject WScript.Shell
-          `$InstallDir = Split-Path -Parent `$MyInvocation.MyCommand.Path
-          `$AppExe = Join-Path `$InstallDir 'GomokuAI_CPU.exe'
-          `$Programs = Join-Path `$env:APPDATA 'Microsoft\Windows\Start Menu\Programs\$displayName'
-          New-Item -ItemType Directory -Force -Path `$Programs | Out-Null
-          `$sc = `$WshShell.CreateShortcut(([Environment]::GetFolderPath('Desktop') + '\$displayName.lnk'))
-          `$sc.TargetPath = `$AppExe; `$sc.Save()
-          `$sc2 = `$WshShell.CreateShortcut((Join-Path `$Programs '$displayName.lnk'))
-          `$sc2.TargetPath = `$AppExe; `$sc2.Save()
-          `$sc3 = `$WshShell.CreateShortcut((Join-Path `$Programs '卸载 $displayName.lnk'))
-          `$sc3.TargetPath = (Join-Path `$InstallDir 'uninstall.cmd'); `$sc3.Save()
-          Write-Host '$displayName 安装完成！(Intel XPU / CPU 自动检测)'
-          Start-Sleep -Seconds 2
-          "@
-          $setupPs | Set-Content -Encoding UTF8 "$appDir\setup.ps1"
+          # 创建打包目录结构
+          mkdir $pkgDir
+          Copy-Item -Recurse "$appDir\*" "$pkgDir\GomokuAI\"
 
-          # uninstall.cmd
+          # install.bat
           @"
           @echo off
+          chcp 65001 >nul
           echo ============================================
-          echo   卸载 $displayName
+          echo   五子棋AI 安装程序
+          echo   支持 NVIDIA CUDA / Intel XPU / CPU 自动检测
           echo ============================================
           echo.
-          taskkill /f /im GomokuAI_CPU.exe >nul 2>&1
-          del /q "%USERPROFILE%\Desktop\$displayName.lnk" >nul 2>&1
-          rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\$displayName" >nul 2>&1
-          echo 快捷方式已删除。
-          echo 安装目录: %~dp0
-          echo 如需完全删除，请手动删除上述文件夹。
+          set "INSTALL_DIR=%LOCALAPPDATA%\GomokuAI"
+          echo 安装目录: %INSTALL_DIR%
           echo.
+          if exist "%INSTALL_DIR%" (
+              echo 检测到已有安装，正在覆盖...
+              taskkill /f /im GomokuAI.exe >nul 2>&1
+          )
+          xcopy /E /I /Y "%~dp0GomokuAI" "%INSTALL_DIR%" >nul
+          if %errorlevel% neq 0 (
+              echo 安装失败！请以管理员身份运行。
+              pause
+              exit /b 1
+          )
+          echo.
+          echo 创建快捷方式...
+          powershell -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $sc = $ws.CreateShortcut([Environment]::GetFolderPath('Desktop') + '\五子棋AI.lnk'); $sc.TargetPath = '%INSTALL_DIR%\GomokuAI.exe'; $sc.WorkingDirectory = '%INSTALL_DIR%'; $sc.IconLocation = '%INSTALL_DIR%\GomokuAI.exe,0'; $sc.Save(); $sp = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\五子棋AI'; New-Item -ItemType Directory -Force -Path $sp | Out-Null; $sc2 = $ws.CreateShortcut((Join-Path $sp '五子棋AI.lnk')); $sc2.TargetPath = '%INSTALL_DIR%\GomokuAI.exe'; $sc2.WorkingDirectory = '%INSTALL_DIR%'; $sc2.Save()"
+          echo.
+          echo ============================================
+          echo   安装完成！
+          echo   桌面快捷方式: 五子棋AI
+          echo ============================================
           pause
-          "@ | Set-Content -Encoding ASCII "$appDir\uninstall.cmd"
+          "@ | Set-Content -Encoding UTF8 "$pkgDir\install.bat"
 
-          if ($ver -match '^\d') { $displayVer = "v$ver" } else { $displayVer = "$ver" }
-          $sfxCfg = @"
-          ;!@Install@!UTF-8!
-          Title="五子棋AI CPU $displayVer (Intel/CPU)"
-          BeginPrompt="即将安装 五子棋AI CPU $displayVer，是否继续？(支持Intel XPU / CPU自动检测)"
-          RunProgram="powershell -WindowStyle Hidden -ExecutionPolicy Bypass -File \"%%T\\setup.ps1\""
-          Directory="%%LocalAppData%%\\GomokuAI_CPU"
-          ;!@InstallEnd@!
-          "@
-          $sfxCfg | Set-Content -Encoding ASCII "sfx_config.txt"
+          # uninstall.bat
+          @"
+          @echo off
+          chcp 65001 >nul
+          echo ============================================
+          echo   卸载 五子棋AI
+          echo ============================================
+          echo.
+          taskkill /f /im GomokuAI.exe >nul 2>&1
+          del /q "%USERPROFILE%\Desktop\五子棋AI.lnk" >nul 2>&1
+          rmdir /s /q "%APPDATA%\Microsoft\Windows\Start Menu\Programs\五子棋AI" >nul 2>&1
+          rmdir /s /q "%LOCALAPPDATA%\GomokuAI" >nul 2>&1
+          echo 卸载完成！
+          pause
+          "@ | Set-Content -Encoding UTF8 "$pkgDir\uninstall.bat"
 
-          & "C:\Program Files\7-Zip\7z.exe" a -mx9 -mfb=273 -md=512m -ms=on "temp.7z" "$appDir\*"
-          cmd /c "copy /b `"C:\Program Files\7-Zip\7z.sfx`" + sfx_config.txt + temp.7z `"$outName`""
-          Get-ChildItem "$outName" | Select-Object Name, Length
+          # 用 7z 压缩 (mx9 最高压缩率)
+          & "C:\Program Files\7-Zip\7z.exe" a -mx9 "$outName" "$pkgDir\"
+          Get-ChildItem "$outName" | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GomokuAI_For_Windows_CPU
-          path: GomokuAI_For_Windows_CPU_v*_Setup.exe
+          name: GomokuAI_For_Windows
+          path: GomokuAI_For_Windows_v*.7z
 
 
   # ============================================================
@@ -395,8 +307,7 @@ jobs:
   # ============================================================
   release:
     needs:
-      - build-windows-cuda
-      - build-windows-cpu
+      - build-windows
       - build-linux-amd
       - build-linux-arm
     if: startsWith(github.ref, 'refs/tags/')
