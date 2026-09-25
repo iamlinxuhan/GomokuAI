@@ -1,0 +1,5369 @@
+{
+ "black": "engine",
+ "white": "legacy",
+ "black_level": 1,
+ "white_level": 1,
+ "seed": 20260919,
+ "games": 4,
+ "load_ms": 4.8,
+ "results": [
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 16.5,
+     "score": 2185,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "紧贴人类-第二步"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 311.6,
+     "score": -391.69999999999993,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 312.6,
+     "score": -497.44999999999993,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 320.4,
+     "score": -423.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 321.4,
+     "score": -252.29999999999995,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 335.2,
+     "score": -12293.4,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 337.9,
+     "score": 527.55,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      12,
+      10
+     ],
+     "ms": 344.4,
+     "score": -55826.049999999996,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 348.0,
+     "score": 15536.95,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 51.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 350.7,
+     "score": 28779.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      7,
+      5
+     ],
+     "ms": 57.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 373.1,
+     "score": 29783.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 364.0,
+     "score": -79537.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 368.0,
+     "score": 31308.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 65.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 69.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      12,
+      8
+     ],
+     "ms": 380.4,
+     "score": -77896.55,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 383.2,
+     "score": 19404.45,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 71.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      13,
+      9
+     ],
+     "ms": 392.3,
+     "score": 16819.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 394.7,
+     "score": -34263.9,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      13,
+      10
+     ],
+     "ms": 393.2,
+     "score": 30091.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 395.6,
+     "score": -60550.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 398.5,
+     "score": 18542.300000000003,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 402.7,
+     "score": -90296.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 74.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      9,
+      13
+     ],
+     "ms": 72.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      8,
+      14
+     ],
+     "ms": 76.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 414.5,
+     "score": -26463.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 32,
+     "player": "black",
+     "pos": [
+      8,
+      5
+     ],
+     "ms": 82.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 33,
+     "player": "white",
+     "pos": [
+      12,
+      7
+     ],
+     "ms": 413.1,
+     "score": -13425.649999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 34,
+     "player": "black",
+     "pos": [
+      12,
+      6
+     ],
+     "ms": 81.5,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 35,
+     "player": "white",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 421.3,
+     "score": -50763.84999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 36,
+     "player": "black",
+     "pos": [
+      6,
+      10
+     ],
+     "ms": 422.2,
+     "score": -29223.399999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 37,
+     "player": "white",
+     "pos": [
+      10,
+      14
+     ],
+     "ms": 433.0,
+     "score": -750.3499999999913,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 38,
+     "player": "black",
+     "pos": [
+      11,
+      15
+     ],
+     "ms": 91.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 39,
+     "player": "white",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 444.1,
+     "score": -36526.34999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 40,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 443.2,
+     "score": -10556.449999999997,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 41,
+     "player": "white",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 442.3,
+     "score": -24485.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 42,
+     "player": "black",
+     "pos": [
+      13,
+      11
+     ],
+     "ms": 439.4,
+     "score": 2971.1500000000015,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 43,
+     "player": "white",
+     "pos": [
+      13,
+      12
+     ],
+     "ms": 441.4,
+     "score": -37168.59999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 44,
+     "player": "black",
+     "pos": [
+      14,
+      12
+     ],
+     "ms": 95.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 45,
+     "player": "white",
+     "pos": [
+      8,
+      4
+     ],
+     "ms": 450.0,
+     "score": 5715.150000000009,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 46,
+     "player": "black",
+     "pos": [
+      9,
+      15
+     ],
+     "ms": 456.0,
+     "score": -22561.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 47,
+     "player": "white",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 459.3,
+     "score": -7554.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 48,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 459.9,
+     "score": -1204003.0999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 49,
+     "player": "white",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 103.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 50,
+     "player": "black",
+     "pos": [
+      10,
+      15
+     ],
+     "ms": 465.8,
+     "score": -1173737.0999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 51,
+     "player": "white",
+     "pos": [
+      8,
+      15
+     ],
+     "ms": 464.7,
+     "score": -8482.199999999997,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 52,
+     "player": "black",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 474.4,
+     "score": -1186369.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 53,
+     "player": "white",
+     "pos": [
+      13,
+      5
+     ],
+     "ms": 104.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 54,
+     "player": "black",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 485.6,
+     "score": -1172522.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 55,
+     "player": "white",
+     "pos": [
+      7,
+      14
+     ],
+     "ms": 109.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 56,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 111.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 57,
+     "player": "white",
+     "pos": [
+      9,
+      14
+     ],
+     "ms": 110.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 58,
+     "player": "black",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 479.5,
+     "score": 22884.65000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 59,
+     "player": "white",
+     "pos": [
+      11,
+      14
+     ],
+     "ms": 480.8,
+     "score": -18089.300000000003,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 60,
+     "player": "black",
+     "pos": [
+      12,
+      14
+     ],
+     "ms": 477.5,
+     "score": 24694.350000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 61,
+     "player": "white",
+     "pos": [
+      13,
+      13
+     ],
+     "ms": 110.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 62,
+     "player": "black",
+     "pos": [
+      12,
+      15
+     ],
+     "ms": 483.7,
+     "score": 41590.15000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 63,
+     "player": "white",
+     "pos": [
+      13,
+      15
+     ],
+     "ms": 107.2,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 64,
+     "player": "black",
+     "pos": [
+      13,
+      8
+     ],
+     "ms": 486.6,
+     "score": 54580.850000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 65,
+     "player": "white",
+     "pos": [
+      13,
+      7
+     ],
+     "ms": 108.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 66,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 488.8,
+     "score": 49869.350000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 67,
+     "player": "white",
+     "pos": [
+      6,
+      13
+     ],
+     "ms": 107.2,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 68,
+     "player": "black",
+     "pos": [
+      9,
+      16
+     ],
+     "ms": 491.4,
+     "score": 18043.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 69,
+     "player": "white",
+     "pos": [
+      13,
+      14
+     ],
+     "ms": 498.9,
+     "score": -26690.04999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 70,
+     "player": "black",
+     "pos": [
+      13,
+      16
+     ],
+     "ms": 111.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 71,
+     "player": "white",
+     "pos": [
+      14,
+      14
+     ],
+     "ms": 499.7,
+     "score": -14964.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 72,
+     "player": "black",
+     "pos": [
+      15,
+      15
+     ],
+     "ms": 115.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 73,
+     "player": "white",
+     "pos": [
+      5,
+      12
+     ],
+     "ms": 519.0,
+     "score": -2318.899999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 74,
+     "player": "black",
+     "pos": [
+      4,
+      11
+     ],
+     "ms": 124.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 75,
+     "player": "white",
+     "pos": [
+      12,
+      16
+     ],
+     "ms": 525.0,
+     "score": 275.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 76,
+     "player": "black",
+     "pos": [
+      15,
+      13
+     ],
+     "ms": 521.4,
+     "score": -10530.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 77,
+     "player": "white",
+     "pos": [
+      11,
+      17
+     ],
+     "ms": 524.5,
+     "score": 10099.050000000017,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 78,
+     "player": "black",
+     "pos": [
+      10,
+      18
+     ],
+     "ms": 129.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 79,
+     "player": "white",
+     "pos": [
+      16,
+      14
+     ],
+     "ms": 526.4,
+     "score": -9490.949999999983,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 80,
+     "player": "black",
+     "pos": [
+      15,
+      14
+     ],
+     "ms": 530.2,
+     "score": 32555.449999999997,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 81,
+     "player": "white",
+     "pos": [
+      15,
+      12
+     ],
+     "ms": 527.1,
+     "score": -11481.899999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 82,
+     "player": "black",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 531.7,
+     "score": 32896.05000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 83,
+     "player": "white",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 130.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 84,
+     "player": "black",
+     "pos": [
+      14,
+      15
+     ],
+     "ms": 531.1,
+     "score": 46613.3,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 85,
+     "player": "white",
+     "pos": [
+      16,
+      13
+     ],
+     "ms": 530.3,
+     "score": -8580.949999999983,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 86,
+     "player": "black",
+     "pos": [
+      15,
+      16
+     ],
+     "ms": 532.3,
+     "score": 43980.149999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 87,
+     "player": "white",
+     "pos": [
+      15,
+      17
+     ],
+     "ms": 128.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 88,
+     "player": "black",
+     "pos": [
+      12,
+      17
+     ],
+     "ms": 533.5,
+     "score": 55469.600000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 89,
+     "player": "white",
+     "pos": [
+      11,
+      18
+     ],
+     "ms": 126.5,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 90,
+     "player": "black",
+     "pos": [
+      9,
+      3
+     ],
+     "ms": 536.2,
+     "score": 57474.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 91,
+     "player": "white",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 541.0,
+     "score": -17220.04999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 92,
+     "player": "black",
+     "pos": [
+      6,
+      5
+     ],
+     "ms": 542.9,
+     "score": 13331.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 93,
+     "player": "white",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 545.9,
+     "score": -4078.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 94,
+     "player": "black",
+     "pos": [
+      4,
+      6
+     ],
+     "ms": 132.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 95,
+     "player": "white",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 552.9,
+     "score": 22345.95000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 96,
+     "player": "black",
+     "pos": [
+      4,
+      8
+     ],
+     "ms": 138.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 97,
+     "player": "white",
+     "pos": [
+      17,
+      14
+     ],
+     "ms": 557.5,
+     "score": 21989.149999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 98,
+     "player": "black",
+     "pos": [
+      14,
+      11
+     ],
+     "ms": 557.1,
+     "score": 7579.0500000000175,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 99,
+     "player": "white",
+     "pos": [
+      15,
+      11
+     ],
+     "ms": 555.9,
+     "score": 10548.850000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 100,
+     "player": "black",
+     "pos": [
+      4,
+      7
+     ],
+     "ms": 558.2,
+     "score": 23744.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 101,
+     "player": "white",
+     "pos": [
+      4,
+      9
+     ],
+     "ms": 559.9,
+     "score": -31422.29999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 102,
+     "player": "black",
+     "pos": [
+      4,
+      5
+     ],
+     "ms": 558.7,
+     "score": 42296.80000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 103,
+     "player": "white",
+     "pos": [
+      4,
+      4
+     ],
+     "ms": 135.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 104,
+     "player": "black",
+     "pos": [
+      5,
+      5
+     ],
+     "ms": 568.1,
+     "score": -6832.100000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 105,
+     "player": "white",
+     "pos": [
+      5,
+      9
+     ],
+     "ms": 571.1,
+     "score": 21877.20000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 106,
+     "player": "black",
+     "pos": [
+      3,
+      9
+     ],
+     "ms": 137.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 107,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 573.0,
+     "score": 31877.20000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 108,
+     "player": "black",
+     "pos": [
+      5,
+      10
+     ],
+     "ms": 647.6,
+     "score": -11243195.35,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 109,
+     "player": "white",
+     "pos": [
+      3,
+      10
+     ],
+     "ms": 140.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 110,
+     "player": "black",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 615.5,
+     "score": -10000000,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 111,
+     "player": "white",
+     "pos": [
+      2,
+      11
+     ],
+     "ms": 104.2,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 647.6,
+   "total_ms": 38553.1,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "wall_ms": 38579.7,
+   "plies": 111,
+   "index": 0,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 12.7,
+     "score": 2185,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "紧贴人类-第二步"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 301.2,
+     "score": -392.9,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 307.2,
+     "score": -510.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 299.6,
+     "score": 35.55000000000007,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      5,
+      12
+     ],
+     "ms": 301.5,
+     "score": -963.2,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 316.2,
+     "score": 486.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      6,
+      11
+     ],
+     "ms": 345.7,
+     "score": -13289.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 346.3,
+     "score": 1544.0500000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 347.1,
+     "score": -55116.799999999996,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 348.5,
+     "score": 15027.05,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      5
+     ],
+     "ms": 57.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 357.5,
+     "score": 15398.1,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 362.9,
+     "score": -66037.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 368.3,
+     "score": 4258.1,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 368.0,
+     "score": -51684.2,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 409.3,
+     "score": -11797248.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 69.2,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 70.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 52.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 409.3,
+   "total_ms": 5041.5,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     9
+    ]
+   ],
+   "wall_ms": 5045.8,
+   "plies": 20,
+   "index": 1,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 14.3,
+     "score": 2185,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "紧贴人类-第二步"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 303.9,
+     "score": -391.69999999999993,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 309.6,
+     "score": -520.9499999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 298.4,
+     "score": 57.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 304.6,
+     "score": -970.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 314.8,
+     "score": 503.70000000000005,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 344.8,
+     "score": -13549.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 344.7,
+     "score": 1551.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 348.6,
+     "score": -55613.799999999996,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 348.7,
+     "score": 15616.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      14
+     ],
+     "ms": 58.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 359.4,
+     "score": 15969.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 364.8,
+     "score": -66277.59999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 366.8,
+     "score": 4599.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 364.8,
+     "score": -51649.59999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      9,
+      13
+     ],
+     "ms": 407.0,
+     "score": -11541678.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 69.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      6,
+      13
+     ],
+     "ms": 72.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 57.2,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 407.0,
+   "total_ms": 5051.8,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     10
+    ]
+   ],
+   "wall_ms": 5056.1,
+   "plies": 20,
+   "index": 2,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "draw",
+   "reason": "max_moves",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 16.2,
+     "score": 2185,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "紧贴人类-第二步"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 306.4,
+     "score": -396.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 305.8,
+     "score": -219.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 313.1,
+     "score": -778.35,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 318.8,
+     "score": -100.64999999999998,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 320.7,
+     "score": -12160.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 325.2,
+     "score": 389.70000000000005,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 333.7,
+     "score": -11120.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      6,
+      12
+     ],
+     "ms": 334.9,
+     "score": 980.8000000000011,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      5,
+      13
+     ],
+     "ms": 49.9,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 351.1,
+     "score": 2199.8500000000004,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 351.9,
+     "score": -25022.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 355.4,
+     "score": 14970.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 356.9,
+     "score": -66997.4,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 367.9,
+     "score": 28562.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 68.5,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 383.1,
+     "score": 28754.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 74.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 76.5,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 387.6,
+     "score": -49716.1,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      9,
+      13
+     ],
+     "ms": 387.3,
+     "score": 32229.9,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      12,
+      10
+     ],
+     "ms": 385.5,
+     "score": -53043.299999999996,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 388.4,
+     "score": 20464.85,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 389.0,
+     "score": -38987.9,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      13,
+      11
+     ],
+     "ms": 389.3,
+     "score": -8272.599999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      14,
+      11
+     ],
+     "ms": 77.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 401.6,
+     "score": 35154.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 401.8,
+     "score": -51526.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 81.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 410.8,
+     "score": -34744.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 32,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 411.5,
+     "score": 34785.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 33,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 411.9,
+     "score": -35482.549999999996,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 34,
+     "player": "black",
+     "pos": [
+      8,
+      5
+     ],
+     "ms": 408.2,
+     "score": 45629.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 35,
+     "player": "white",
+     "pos": [
+      8,
+      4
+     ],
+     "ms": 85.4,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 36,
+     "player": "black",
+     "pos": [
+      8,
+      14
+     ],
+     "ms": 420.5,
+     "score": 58523.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 37,
+     "player": "white",
+     "pos": [
+      7,
+      15
+     ],
+     "ms": 93.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 38,
+     "player": "black",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 435.1,
+     "score": 60405.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 39,
+     "player": "white",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 435.6,
+     "score": -57944.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 40,
+     "player": "black",
+     "pos": [
+      9,
+      15
+     ],
+     "ms": 439.6,
+     "score": 61792.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 41,
+     "player": "white",
+     "pos": [
+      10,
+      16
+     ],
+     "ms": 101.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 42,
+     "player": "black",
+     "pos": [
+      9,
+      14
+     ],
+     "ms": 452.4,
+     "score": 87734.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 43,
+     "player": "white",
+     "pos": [
+      9,
+      16
+     ],
+     "ms": 105.4,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 44,
+     "player": "black",
+     "pos": [
+      10,
+      14
+     ],
+     "ms": 456.4,
+     "score": 88437.05,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 45,
+     "player": "white",
+     "pos": [
+      11,
+      14
+     ],
+     "ms": 454.5,
+     "score": -123949.44999999998,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 46,
+     "player": "black",
+     "pos": [
+      8,
+      16
+     ],
+     "ms": 461.8,
+     "score": 90315.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 47,
+     "player": "white",
+     "pos": [
+      7,
+      17
+     ],
+     "ms": 107.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 48,
+     "player": "black",
+     "pos": [
+      8,
+      15
+     ],
+     "ms": 462.3,
+     "score": 90491.1,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 49,
+     "player": "white",
+     "pos": [
+      8,
+      17
+     ],
+     "ms": 106.2,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 50,
+     "player": "black",
+     "pos": [
+      10,
+      15
+     ],
+     "ms": 107.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 51,
+     "player": "white",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 461.9,
+     "score": -84511.95,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 52,
+     "player": "black",
+     "pos": [
+      11,
+      15
+     ],
+     "ms": 457.8,
+     "score": 93415.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 53,
+     "player": "white",
+     "pos": [
+      12,
+      15
+     ],
+     "ms": 101.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 54,
+     "player": "black",
+     "pos": [
+      13,
+      16
+     ],
+     "ms": 460.3,
+     "score": 92898.9,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 55,
+     "player": "white",
+     "pos": [
+      12,
+      16
+     ],
+     "ms": 470.6,
+     "score": -92769.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 56,
+     "player": "black",
+     "pos": [
+      12,
+      17
+     ],
+     "ms": 469.4,
+     "score": 93087.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 57,
+     "player": "white",
+     "pos": [
+      14,
+      15
+     ],
+     "ms": 468.3,
+     "score": -95656.34999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 58,
+     "player": "black",
+     "pos": [
+      11,
+      16
+     ],
+     "ms": 473.5,
+     "score": 106768.55,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 59,
+     "player": "white",
+     "pos": [
+      13,
+      18
+     ],
+     "ms": 109.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 60,
+     "player": "black",
+     "pos": [
+      7,
+      14
+     ],
+     "ms": 471.5,
+     "score": 117508.85,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 61,
+     "player": "white",
+     "pos": [
+      6,
+      14
+     ],
+     "ms": 106.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 62,
+     "player": "black",
+     "pos": [
+      4,
+      12
+     ],
+     "ms": 473.0,
+     "score": 116981.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 63,
+     "player": "white",
+     "pos": [
+      5,
+      12
+     ],
+     "ms": 480.4,
+     "score": -103503.45,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 64,
+     "player": "black",
+     "pos": [
+      5,
+      10
+     ],
+     "ms": 481.2,
+     "score": 74198.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 65,
+     "player": "white",
+     "pos": [
+      6,
+      11
+     ],
+     "ms": 483.5,
+     "score": -90454.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 66,
+     "player": "black",
+     "pos": [
+      4,
+      13
+     ],
+     "ms": 111.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 67,
+     "player": "white",
+     "pos": [
+      5,
+      14
+     ],
+     "ms": 483.7,
+     "score": -77683.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 68,
+     "player": "black",
+     "pos": [
+      5,
+      15
+     ],
+     "ms": 110.5,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 69,
+     "player": "white",
+     "pos": [
+      4,
+      11
+     ],
+     "ms": 487.5,
+     "score": -79923.34999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 70,
+     "player": "black",
+     "pos": [
+      3,
+      11
+     ],
+     "ms": 488.6,
+     "score": 93984.9,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 71,
+     "player": "white",
+     "pos": [
+      9,
+      17
+     ],
+     "ms": 496.0,
+     "score": -76065.3,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 72,
+     "player": "black",
+     "pos": [
+      10,
+      17
+     ],
+     "ms": 492.6,
+     "score": 52448.45,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 73,
+     "player": "white",
+     "pos": [
+      6,
+      17
+     ],
+     "ms": 493.9,
+     "score": -65394.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 74,
+     "player": "black",
+     "pos": [
+      5,
+      17
+     ],
+     "ms": 113.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 75,
+     "player": "white",
+     "pos": [
+      3,
+      10
+     ],
+     "ms": 496.1,
+     "score": -64787.2,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 76,
+     "player": "black",
+     "pos": [
+      2,
+      9
+     ],
+     "ms": 116.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 77,
+     "player": "white",
+     "pos": [
+      13,
+      12
+     ],
+     "ms": 521.4,
+     "score": -63709.45,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 78,
+     "player": "black",
+     "pos": [
+      15,
+      10
+     ],
+     "ms": 506.1,
+     "score": 40146.3,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 79,
+     "player": "white",
+     "pos": [
+      14,
+      12
+     ],
+     "ms": 519.3,
+     "score": -50535.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 80,
+     "player": "black",
+     "pos": [
+      15,
+      12
+     ],
+     "ms": 125.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 81,
+     "player": "white",
+     "pos": [
+      14,
+      13
+     ],
+     "ms": 522.7,
+     "score": -47637.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 82,
+     "player": "black",
+     "pos": [
+      14,
+      14
+     ],
+     "ms": 125.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 83,
+     "player": "white",
+     "pos": [
+      15,
+      11
+     ],
+     "ms": 521.2,
+     "score": -50780.09999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 84,
+     "player": "black",
+     "pos": [
+      14,
+      10
+     ],
+     "ms": 524.6,
+     "score": 58437.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 85,
+     "player": "white",
+     "pos": [
+      16,
+      10
+     ],
+     "ms": 524.4,
+     "score": -47050.45,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 86,
+     "player": "black",
+     "pos": [
+      13,
+      13
+     ],
+     "ms": 521.7,
+     "score": 71326.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 87,
+     "player": "white",
+     "pos": [
+      17,
+      9
+     ],
+     "ms": 523.7,
+     "score": -40150.09999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 88,
+     "player": "black",
+     "pos": [
+      18,
+      8
+     ],
+     "ms": 129.4,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 89,
+     "player": "white",
+     "pos": [
+      7,
+      16
+     ],
+     "ms": 532.8,
+     "score": -36218.84999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 90,
+     "player": "black",
+     "pos": [
+      6,
+      15
+     ],
+     "ms": 542.7,
+     "score": 67869.35,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 91,
+     "player": "white",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 530.4,
+     "score": -35955.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 92,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 533.2,
+     "score": 81364.7,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 93,
+     "player": "white",
+     "pos": [
+      12,
+      14
+     ],
+     "ms": 531.8,
+     "score": -46655.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 94,
+     "player": "black",
+     "pos": [
+      12,
+      13
+     ],
+     "ms": 128.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 95,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 534.5,
+     "score": -45873.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 96,
+     "player": "black",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 535.2,
+     "score": 82006.95,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 97,
+     "player": "white",
+     "pos": [
+      6,
+      5
+     ],
+     "ms": 538.3,
+     "score": -57289.04999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 98,
+     "player": "black",
+     "pos": [
+      11,
+      17
+     ],
+     "ms": 547.6,
+     "score": 84182.35,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 99,
+     "player": "white",
+     "pos": [
+      13,
+      17
+     ],
+     "ms": 547.7,
+     "score": -70937.35,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 100,
+     "player": "black",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 544.1,
+     "score": 86652.45,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 101,
+     "player": "white",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 544.0,
+     "score": -100354.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 102,
+     "player": "black",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 553.2,
+     "score": 97540.85,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 103,
+     "player": "white",
+     "pos": [
+      5,
+      6
+     ],
+     "ms": 128.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 104,
+     "player": "black",
+     "pos": [
+      7,
+      4
+     ],
+     "ms": 553.0,
+     "score": 88064.1,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 105,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 552.6,
+     "score": -96701.29999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 106,
+     "player": "black",
+     "pos": [
+      10,
+      5
+     ],
+     "ms": 130.9,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 107,
+     "player": "white",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 559.3,
+     "score": -57444.04999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 108,
+     "player": "black",
+     "pos": [
+      4,
+      5
+     ],
+     "ms": 133.4,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 109,
+     "player": "white",
+     "pos": [
+      9,
+      5
+     ],
+     "ms": 564.3,
+     "score": -33229.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 110,
+     "player": "black",
+     "pos": [
+      7,
+      3
+     ],
+     "ms": 565.5,
+     "score": 66391.05,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 111,
+     "player": "white",
+     "pos": [
+      7,
+      5
+     ],
+     "ms": 566.9,
+     "score": -85014.29999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 112,
+     "player": "black",
+     "pos": [
+      6,
+      3
+     ],
+     "ms": 570.8,
+     "score": 88713.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 113,
+     "player": "white",
+     "pos": [
+      5,
+      2
+     ],
+     "ms": 139.4,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 114,
+     "player": "black",
+     "pos": [
+      11,
+      4
+     ],
+     "ms": 585.9,
+     "score": 100347.40000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 115,
+     "player": "white",
+     "pos": [
+      12,
+      3
+     ],
+     "ms": 148.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 116,
+     "player": "black",
+     "pos": [
+      5,
+      4
+     ],
+     "ms": 595.7,
+     "score": 103328.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 117,
+     "player": "white",
+     "pos": [
+      7,
+      2
+     ],
+     "ms": 596.2,
+     "score": -105782.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 118,
+     "player": "black",
+     "pos": [
+      3,
+      6
+     ],
+     "ms": 601.2,
+     "score": 112984.95,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 119,
+     "player": "white",
+     "pos": [
+      2,
+      7
+     ],
+     "ms": 162.3,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 120,
+     "player": "black",
+     "pos": [
+      5,
+      3
+     ],
+     "ms": 608.2,
+     "score": 115593.85,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 121,
+     "player": "white",
+     "pos": [
+      8,
+      3
+     ],
+     "ms": 609.6,
+     "score": -73151.85,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 122,
+     "player": "black",
+     "pos": [
+      6,
+      1
+     ],
+     "ms": 608.7,
+     "score": 92741.40000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 123,
+     "player": "white",
+     "pos": [
+      6,
+      2
+     ],
+     "ms": 612.0,
+     "score": -64856.399999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 124,
+     "player": "black",
+     "pos": [
+      8,
+      2
+     ],
+     "ms": 608.9,
+     "score": 103902.1,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 125,
+     "player": "white",
+     "pos": [
+      6,
+      4
+     ],
+     "ms": 611.3,
+     "score": -72661.15,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 126,
+     "player": "black",
+     "pos": [
+      4,
+      3
+     ],
+     "ms": 607.0,
+     "score": 113126.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 127,
+     "player": "white",
+     "pos": [
+      3,
+      3
+     ],
+     "ms": 155.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 128,
+     "player": "black",
+     "pos": [
+      3,
+      2
+     ],
+     "ms": 625.4,
+     "score": 115644.2,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 129,
+     "player": "white",
+     "pos": [
+      4,
+      4
+     ],
+     "ms": 616.4,
+     "score": -81649.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 130,
+     "player": "black",
+     "pos": [
+      2,
+      2
+     ],
+     "ms": 625.1,
+     "score": 115814.85,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 131,
+     "player": "white",
+     "pos": [
+      2,
+      1
+     ],
+     "ms": 634.6,
+     "score": -95046.29999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 132,
+     "player": "black",
+     "pos": [
+      1,
+      2
+     ],
+     "ms": 624.2,
+     "score": 118049.15000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 133,
+     "player": "white",
+     "pos": [
+      4,
+      2
+     ],
+     "ms": 625.5,
+     "score": -64923.44999999998,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 134,
+     "player": "black",
+     "pos": [
+      5,
+      1
+     ],
+     "ms": 624.5,
+     "score": 106804.55,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 135,
+     "player": "white",
+     "pos": [
+      4,
+      1
+     ],
+     "ms": 628.9,
+     "score": -64869.100000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 136,
+     "player": "black",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 629.1,
+     "score": 117047.95,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 137,
+     "player": "white",
+     "pos": [
+      13,
+      15
+     ],
+     "ms": 626.0,
+     "score": -63768.79999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 138,
+     "player": "black",
+     "pos": [
+      14,
+      16
+     ],
+     "ms": 629.6,
+     "score": 106852.15000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 139,
+     "player": "white",
+     "pos": [
+      15,
+      15
+     ],
+     "ms": 626.7,
+     "score": -51753.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 140,
+     "player": "black",
+     "pos": [
+      16,
+      15
+     ],
+     "ms": 159.5,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 141,
+     "player": "white",
+     "pos": [
+      11,
+      5
+     ],
+     "ms": 635.2,
+     "score": -50901.600000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 142,
+     "player": "black",
+     "pos": [
+      12,
+      4
+     ],
+     "ms": 634.2,
+     "score": 105827.2,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 143,
+     "player": "white",
+     "pos": [
+      10,
+      4
+     ],
+     "ms": 633.7,
+     "score": -50639.399999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 144,
+     "player": "black",
+     "pos": [
+      12,
+      6
+     ],
+     "ms": 633.3,
+     "score": 105229.40000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 145,
+     "player": "white",
+     "pos": [
+      11,
+      3
+     ],
+     "ms": 639.2,
+     "score": -50026.649999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 146,
+     "player": "black",
+     "pos": [
+      10,
+      3
+     ],
+     "ms": 640.4,
+     "score": 94489.05000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 147,
+     "player": "white",
+     "pos": [
+      12,
+      5
+     ],
+     "ms": 639.4,
+     "score": -60982.29999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 148,
+     "player": "black",
+     "pos": [
+      9,
+      4
+     ],
+     "ms": 638.3,
+     "score": 108083.35,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 149,
+     "player": "white",
+     "pos": [
+      11,
+      2
+     ],
+     "ms": 159.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 150,
+     "player": "black",
+     "pos": [
+      13,
+      1
+     ],
+     "ms": 639.7,
+     "score": 94937.05000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 151,
+     "player": "white",
+     "pos": [
+      13,
+      4
+     ],
+     "ms": 652.2,
+     "score": -59023.149999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 152,
+     "player": "black",
+     "pos": [
+      14,
+      5
+     ],
+     "ms": 648.6,
+     "score": -1024170.8,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 153,
+     "player": "white",
+     "pos": [
+      11,
+      6
+     ],
+     "ms": 655.2,
+     "score": -46694.44999999998,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 154,
+     "player": "black",
+     "pos": [
+      14,
+      3
+     ],
+     "ms": 167.9,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 155,
+     "player": "white",
+     "pos": [
+      14,
+      4
+     ],
+     "ms": 656.4,
+     "score": -46620.19999999998,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 156,
+     "player": "black",
+     "pos": [
+      10,
+      1
+     ],
+     "ms": 660.1,
+     "score": 105514.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 157,
+     "player": "white",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 658.5,
+     "score": -45865.649999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 158,
+     "player": "black",
+     "pos": [
+      3,
+      7
+     ],
+     "ms": 657.3,
+     "score": 82245.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 159,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 657.7,
+     "score": -45094.649999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 160,
+     "player": "black",
+     "pos": [
+      5,
+      5
+     ],
+     "ms": 658.1,
+     "score": 94582.35,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 161,
+     "player": "white",
+     "pos": [
+      3,
+      8
+     ],
+     "ms": 659.2,
+     "score": -45755.649999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 162,
+     "player": "black",
+     "pos": [
+      4,
+      8
+     ],
+     "ms": 656.5,
+     "score": 51943.30000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 163,
+     "player": "white",
+     "pos": [
+      5,
+      9
+     ],
+     "ms": 655.5,
+     "score": -33172.600000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 164,
+     "player": "black",
+     "pos": [
+      4,
+      9
+     ],
+     "ms": 665.5,
+     "score": 73586.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 165,
+     "player": "white",
+     "pos": [
+      4,
+      7
+     ],
+     "ms": 656.6,
+     "score": -7577.5,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 166,
+     "player": "black",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 161.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 167,
+     "player": "white",
+     "pos": [
+      16,
+      11
+     ],
+     "ms": 662.0,
+     "score": -6790.6999999999825,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 168,
+     "player": "black",
+     "pos": [
+      17,
+      11
+     ],
+     "ms": 659.8,
+     "score": 48913.05000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 169,
+     "player": "white",
+     "pos": [
+      16,
+      12
+     ],
+     "ms": 657.3,
+     "score": -5348.899999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 170,
+     "player": "black",
+     "pos": [
+      16,
+      9
+     ],
+     "ms": 659.2,
+     "score": 62146.850000000006,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 171,
+     "player": "white",
+     "pos": [
+      16,
+      13
+     ],
+     "ms": 667.2,
+     "score": 5935.5500000000175,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 172,
+     "player": "black",
+     "pos": [
+      16,
+      14
+     ],
+     "ms": 158.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 173,
+     "player": "white",
+     "pos": [
+      15,
+      14
+     ],
+     "ms": 698.1,
+     "score": 7415.5500000000175,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 174,
+     "player": "black",
+     "pos": [
+      15,
+      16
+     ],
+     "ms": 661.0,
+     "score": 52019.20000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 175,
+     "player": "white",
+     "pos": [
+      17,
+      14
+     ],
+     "ms": 676.7,
+     "score": -2442.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 176,
+     "player": "black",
+     "pos": [
+      11,
+      18
+     ],
+     "ms": 667.5,
+     "score": 64755.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 177,
+     "player": "white",
+     "pos": [
+      17,
+      12
+     ],
+     "ms": 678.5,
+     "score": -1837.5499999999884,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 178,
+     "player": "black",
+     "pos": [
+      18,
+      11
+     ],
+     "ms": 158.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 179,
+     "player": "white",
+     "pos": [
+      16,
+      16
+     ],
+     "ms": 680.8,
+     "score": 7402.450000000012,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 180,
+     "player": "black",
+     "pos": [
+      5,
+      16
+     ],
+     "ms": 688.5,
+     "score": 63921.55000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 181,
+     "player": "white",
+     "pos": [
+      4,
+      17
+     ],
+     "ms": 710.1,
+     "score": 6335.899999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 182,
+     "player": "black",
+     "pos": [
+      3,
+      5
+     ],
+     "ms": 688.0,
+     "score": 65028.149999999994,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 183,
+     "player": "white",
+     "pos": [
+      1,
+      5
+     ],
+     "ms": 705.8,
+     "score": 5421.950000000012,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 184,
+     "player": "black",
+     "pos": [
+      2,
+      4
+     ],
+     "ms": 689.4,
+     "score": 65246.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 185,
+     "player": "white",
+     "pos": [
+      4,
+      6
+     ],
+     "ms": 692.1,
+     "score": 5211.3000000000175,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 186,
+     "player": "black",
+     "pos": [
+      4,
+      14
+     ],
+     "ms": 699.6,
+     "score": 65715.4,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 187,
+     "player": "white",
+     "pos": [
+      3,
+      13
+     ],
+     "ms": 695.0,
+     "score": -4903.9499999999825,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 188,
+     "player": "black",
+     "pos": [
+      4,
+      15
+     ],
+     "ms": 696.4,
+     "score": 78479.0,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 189,
+     "player": "white",
+     "pos": [
+      4,
+      16
+     ],
+     "ms": 149.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 190,
+     "player": "black",
+     "pos": [
+      3,
+      15
+     ],
+     "ms": 675.6,
+     "score": 89679.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 191,
+     "player": "white",
+     "pos": [
+      2,
+      15
+     ],
+     "ms": 149.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 192,
+     "player": "black",
+     "pos": [
+      3,
+      16
+     ],
+     "ms": 686.9,
+     "score": 89950.75,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 193,
+     "player": "white",
+     "pos": [
+      3,
+      17
+     ],
+     "ms": 683.9,
+     "score": -15796.699999999983,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 194,
+     "player": "black",
+     "pos": [
+      6,
+      13
+     ],
+     "ms": 684.2,
+     "score": 90466.05000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 195,
+     "player": "white",
+     "pos": [
+      17,
+      13
+     ],
+     "ms": 683.4,
+     "score": -14096.299999999988,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 196,
+     "player": "black",
+     "pos": [
+      17,
+      15
+     ],
+     "ms": 681.4,
+     "score": 80232.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 197,
+     "player": "white",
+     "pos": [
+      15,
+      13
+     ],
+     "ms": 678.8,
+     "score": -2022.3999999999942,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 198,
+     "player": "black",
+     "pos": [
+      18,
+      13
+     ],
+     "ms": 147.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 199,
+     "player": "white",
+     "pos": [
+      18,
+      12
+     ],
+     "ms": 676.1,
+     "score": -1398.4499999999825,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 200,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 679.5,
+     "score": 78664.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 201,
+     "player": "white",
+     "pos": [
+      3,
+      9
+     ],
+     "ms": 680.6,
+     "score": -774.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 202,
+     "player": "black",
+     "pos": [
+      2,
+      16
+     ],
+     "ms": 678.5,
+     "score": 78651.30000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 203,
+     "player": "white",
+     "pos": [
+      1,
+      17
+     ],
+     "ms": 678.6,
+     "score": -1237.5499999999884,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 204,
+     "player": "black",
+     "pos": [
+      2,
+      17
+     ],
+     "ms": 679.2,
+     "score": 79186.6,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 205,
+     "player": "white",
+     "pos": [
+      5,
+      18
+     ],
+     "ms": 681.4,
+     "score": -1134.4499999999825,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 206,
+     "player": "black",
+     "pos": [
+      11,
+      1
+     ],
+     "ms": 676.6,
+     "score": 79789.9,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 207,
+     "player": "white",
+     "pos": [
+      12,
+      1
+     ],
+     "ms": 142.1,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 208,
+     "player": "black",
+     "pos": [
+      12,
+      2
+     ],
+     "ms": 675.3,
+     "score": 78990.80000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 209,
+     "player": "white",
+     "pos": [
+      3,
+      4
+     ],
+     "ms": 676.6,
+     "score": -860.1000000000058,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 210,
+     "player": "black",
+     "pos": [
+      9,
+      1
+     ],
+     "ms": 674.5,
+     "score": 80077.65,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 211,
+     "player": "white",
+     "pos": [
+      7,
+      1
+     ],
+     "ms": 679.7,
+     "score": -11561.949999999983,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 212,
+     "player": "black",
+     "pos": [
+      1,
+      3
+     ],
+     "ms": 677.4,
+     "score": 80905.25,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 213,
+     "player": "white",
+     "pos": [
+      3,
+      1
+     ],
+     "ms": 676.9,
+     "score": -22383.04999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 214,
+     "player": "black",
+     "pos": [
+      0,
+      2
+     ],
+     "ms": 677.6,
+     "score": 92722.4,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 215,
+     "player": "white",
+     "pos": [
+      1,
+      1
+     ],
+     "ms": 679.3,
+     "score": -18513.899999999965,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 216,
+     "player": "black",
+     "pos": [
+      0,
+      1
+     ],
+     "ms": 133.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 217,
+     "player": "white",
+     "pos": [
+      0,
+      3
+     ],
+     "ms": 677.4,
+     "score": -18572.79999999999,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 218,
+     "player": "black",
+     "pos": [
+      9,
+      2
+     ],
+     "ms": 676.4,
+     "score": 92467.20000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 219,
+     "player": "white",
+     "pos": [
+      8,
+      1
+     ],
+     "ms": 675.7,
+     "score": -61841.149999999965,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 220,
+     "player": "black",
+     "pos": [
+      9,
+      3
+     ],
+     "ms": 679.8,
+     "score": 105583.55000000002,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 221,
+     "player": "white",
+     "pos": [
+      9,
+      0
+     ],
+     "ms": 129.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 222,
+     "player": "black",
+     "pos": [
+      10,
+      0
+     ],
+     "ms": 676.0,
+     "score": 117601.45000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 223,
+     "player": "white",
+     "pos": [
+      13,
+      3
+     ],
+     "ms": 673.6,
+     "score": -40335.84999999998,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 224,
+     "player": "black",
+     "pos": [
+      13,
+      5
+     ],
+     "ms": 678.0,
+     "score": 117773.70000000001,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 225,
+     "player": "white",
+     "pos": [
+      4,
+      10
+     ],
+     "ms": 675.5,
+     "score": -40303.899999999965,
+     "depth": 2,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 710.1,
+   "total_ms": 107238.6,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     11
+    ]
+   ],
+   "wall_ms": 107293.5,
+   "plies": 225,
+   "index": 3,
+   "swapped": false,
+   "a_side": "black"
+  }
+ ],
+ "summary": {
+  "a_name": "engine",
+  "a_wins": 2,
+  "a_losses": 1,
+  "draws": 1,
+  "win_rate": 0.6667,
+  "illegal": 0,
+  "errors": 0,
+  "total_wall_s": 156.1
+ }
+}

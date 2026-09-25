@@ -1,0 +1,145 @@
+{
+ "engine": "armcfg",
+ "level": 4,
+ "results": [
+  {
+   "id": "mid_10stones",
+   "move": [
+    5,
+    8
+   ],
+   "wall_ms": 66.1,
+   "engine_ms": 0.3,
+   "depth": 1,
+   "order_depth": 1,
+   "nodes": 96,
+   "nps": 1452,
+   "tt_hit_rate": 0.0,
+   "qnode_ratio": 0.5,
+   "vcf_nodes": 1,
+   "score": -9999999,
+   "score_type": "mate",
+   "reason": "PVS搜索(对手有VCF·无挡点)",
+   "compliance": true
+  },
+  {
+   "id": "mid_clash",
+   "move": [
+    7,
+    11
+   ],
+   "wall_ms": 171.7,
+   "engine_ms": 130.2,
+   "depth": 5,
+   "order_depth": 5,
+   "nodes": 292875,
+   "nps": 1705291,
+   "tt_hit_rate": 0.005924,
+   "qnode_ratio": 0.511167,
+   "vcf_nodes": 3,
+   "score": 9999992,
+   "score_type": "mate",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "spread_wide",
+   "move": [
+    6,
+    6
+   ],
+   "wall_ms": 12800.0,
+   "engine_ms": 12751.2,
+   "depth": 6,
+   "order_depth": 6,
+   "nodes": 39207936,
+   "nps": 3063110,
+   "tt_hit_rate": 0.005945,
+   "qnode_ratio": 0.515182,
+   "vcf_nodes": 1,
+   "score": 1100,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "dense_threat",
+   "move": [
+    11,
+    10
+   ],
+   "wall_ms": 6652.0,
+   "engine_ms": 6603.8,
+   "depth": 9,
+   "order_depth": 9,
+   "nodes": 4907236,
+   "nps": 737708,
+   "tt_hit_rate": 0.009917,
+   "qnode_ratio": 0.818767,
+   "vcf_nodes": 3,
+   "score": 4060,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "sparse_early",
+   "move": [
+    8,
+    9
+   ],
+   "wall_ms": 12795.9,
+   "engine_ms": 12750.0,
+   "depth": 8,
+   "order_depth": 8,
+   "nodes": 11902976,
+   "nps": 930216,
+   "tt_hit_rate": 0.014053,
+   "qnode_ratio": 0.677953,
+   "vcf_nodes": 1,
+   "score": 1460,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  }
+ ],
+ "legacy_baseline": {
+  "bench_10stones": {
+   "depth": 5,
+   "time_ms": 8009.7,
+   "note": "中局 10 子，难度3"
+  },
+  "cprofile_10stones": {
+   "total_calls": 14206400,
+   "time_s": 6.783,
+   "hot": [
+    [
+     "_check_win_fast",
+     13035,
+     4.68
+    ],
+    [
+     "_cached_evaluate",
+     2639,
+     2.207
+    ],
+    [
+     "evaluate_board",
+     2035,
+     1.965
+    ],
+    [
+     "_analyze_line",
+     795184,
+     0.848
+    ],
+    [
+     "zobrist_hash",
+     2640,
+     0.238
+    ]
+   ],
+   "note": "_check_win_fast 占累计耗时约 69-77%（不同测量批次），是稳定的首要热点"
+  }
+ }
+}

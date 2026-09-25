@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
+game_log_*.txt

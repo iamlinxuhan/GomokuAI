@@ -1,0 +1,12 @@
+# 强制 LF 行尾（GitHub Actions YAML 必须）
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.py    text eol=lf
+*.sh    text eol=lf
+*.md    text eol=lf
+
+# 二进制文件
+*.ico   binary
+*.png   binary
+*.exe   binary
+*.deb   binary

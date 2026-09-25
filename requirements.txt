@@ -1,0 +1,29 @@
+# 五子棋 AI —— 运行时依赖
+#
+#     pip install -r requirements.txt
+#
+# 只有两个。旧版依赖里的 torch 已经删干净了（GPU 分支从未真正生效），
+# 连带收益是包体积 —— 见 README「打包为 EXE」。
+#
+# **不锁版本。** 这里列的是"需要什么"，不是"某次装的哪一版" —— 锁版本会
+# 让解析器被迫挑某个具体发行版，弊大于利。需要复现某次构建时，用
+# `pip freeze` 另存一份锁定文件，别写回这里。
+#
+# ⚠️ **Windows 上有个与版本约束无关的坑，值得知道：**
+#
+#   PyQt5 依赖 PyQt5-Qt5，而 PyQt5-Qt5 从 5.15.11 起**只发 Linux/macOS
+#   wheel** —— 最后一个带 Windows wheel 的是 5.15.2。
+#
+#     PyQt5-Qt5 5.15.2              ← 有 win_amd64
+#     PyQt5-Qt5 5.15.11 ~ 5.15.19   ← 只有 manylinux / macosx
+#
+#   按当前平台解析（`pip`）会自动回落到 5.15.2，正常。但做**全平台统一
+#   解析**的工具（如 `uv` 的 project 模式）会先选中 5.15.19，再到 Windows
+#   上安装失败 —— 因为锁定文件里已经写死了那个版本。
+#
+#   这不是版本约束能解决的：把 PyQt5 锁死反而更糟。真遇到时改用
+#   `pip install -r requirements.txt` 或 `uv pip install -r requirements.txt`
+#   （两者都按当前平台解析），而不是 `uv add -r`。
+
+numpy
+PyQt5

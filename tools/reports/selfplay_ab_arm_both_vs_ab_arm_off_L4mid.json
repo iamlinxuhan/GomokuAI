@@ -1,0 +1,11294 @@
+{
+ "black": "ab_arm_both",
+ "white": "ab_arm_off",
+ "black_level": 4,
+ "white_level": 4,
+ "seed": 20260919,
+ "games": 30,
+ "load_ms": 15.1,
+ "results": [
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 0.6,
+     "score": 1100,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 0.4,
+     "score": -560,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 3857.6,
+     "score": 540,
+     "depth": 8,
+     "nodes": 4744048,
+     "nps": 1266011,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 5211.8,
+     "score": -1570,
+     "depth": 6,
+     "nodes": 5306368,
+     "nps": 1040372,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 3185.5,
+     "score": 1480,
+     "depth": 7,
+     "nodes": 3437884,
+     "nps": 1079483,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5101.8,
+     "score": -980,
+     "depth": 5,
+     "nodes": 3740672,
+     "nps": 733305,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 808.4,
+     "score": 9999992,
+     "depth": 6,
+     "nodes": 882799,
+     "nps": 1093115,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 485.7,
+     "score": -9999993,
+     "depth": 5,
+     "nodes": 561869,
+     "nps": 1158246,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 23.4,
+     "score": 9999994,
+     "depth": 4,
+     "nodes": 15161,
+     "nps": 664810,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      5
+     ],
+     "ms": 54.8,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 8438,
+     "nps": 628719,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 3.7,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 2991,
+     "nps": 947700,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 120.3,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 46775,
+     "nps": 603520,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 3.8,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 1769,
+     "nps": 562068,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      3,
+      5
+     ],
+     "ms": 44.1,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 144,
+     "nps": 1445696,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 0.8,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5211.8,
+   "total_ms": 18902.8,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "wall_ms": 18903.5,
+   "plies": 16,
+   "index": 0,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 0.2,
+     "score": 1080,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 0.2,
+     "score": -490,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 5194.4,
+     "score": 90,
+     "depth": 6,
+     "nodes": 8805376,
+     "nps": 1726529,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5147.7,
+     "score": -990,
+     "depth": 8,
+     "nodes": 6005760,
+     "nps": 1177392,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 5101.9,
+     "score": 310,
+     "depth": 6,
+     "nodes": 5055488,
+     "nps": 990999,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 5100.8,
+     "score": -400,
+     "depth": 7,
+     "nodes": 5910528,
+     "nps": 1158905,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5101.2,
+     "score": 350,
+     "depth": 6,
+     "nodes": 5660672,
+     "nps": 1109804,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 3164.4,
+     "score": -40,
+     "depth": 7,
+     "nodes": 3708226,
+     "nps": 1172106,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 5101.5,
+     "score": 40,
+     "depth": 6,
+     "nodes": 5031936,
+     "nps": 986477,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 2567.2,
+     "score": 40,
+     "depth": 7,
+     "nodes": 2714239,
+     "nps": 1057569,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 5100.9,
+     "score": -440,
+     "depth": 6,
+     "nodes": 4788224,
+     "nps": 938830,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 5101.0,
+     "score": -370,
+     "depth": 6,
+     "nodes": 4865024,
+     "nps": 953892,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5101.4,
+     "score": 430,
+     "depth": 5,
+     "nodes": 4308992,
+     "nps": 844777,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5101.5,
+     "score": -430,
+     "depth": 6,
+     "nodes": 4765696,
+     "nps": 934332,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 5101.7,
+     "score": 450,
+     "depth": 5,
+     "nodes": 4384768,
+     "nps": 859581,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5102.2,
+     "score": 9999986,
+     "depth": 6,
+     "nodes": 4812800,
+     "nps": 943413,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      12,
+      7
+     ],
+     "ms": 5100.8,
+     "score": -558020,
+     "depth": 6,
+     "nodes": 10809344,
+     "nps": 2119451,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 1775.6,
+     "score": 9999990,
+     "depth": 7,
+     "nodes": 2980605,
+     "nps": 1679379,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      12,
+      13
+     ],
+     "ms": 1490.7,
+     "score": -9999991,
+     "depth": 6,
+     "nodes": 2136273,
+     "nps": 1433729,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 6.5,
+     "score": 9999992,
+     "depth": 2,
+     "nodes": 4798,
+     "nps": 810416,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 48.0,
+     "score": -9999993,
+     "depth": 2,
+     "nodes": 249,
+     "nps": 1514506,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      11,
+      14
+     ],
+     "ms": 6.7,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 5052,
+     "nps": 836999,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 41.2,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 263,
+     "nps": 1564433,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 1.5,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 596,
+     "nps": 749854,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 42.4,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 543,
+     "nps": 666723,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 1.8,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 535,
+     "nps": 564862,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      4,
+      6
+     ],
+     "ms": 42.0,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 172,
+     "nps": 1365339,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      7,
+      14
+     ],
+     "ms": 0.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5194.4,
+   "total_ms": 75646.1,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     9
+    ]
+   ],
+   "wall_ms": 75647.5,
+   "plies": 29,
+   "index": 1,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 0.2,
+     "score": 1160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 0.2,
+     "score": -580,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 5190.4,
+     "score": 1550,
+     "depth": 7,
+     "nodes": 6461440,
+     "nps": 1266850,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 5147.9,
+     "score": -1500,
+     "depth": 6,
+     "nodes": 4933632,
+     "nps": 967310,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5101.3,
+     "score": 1730,
+     "depth": 7,
+     "nodes": 5281792,
+     "nps": 1035525,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5101.0,
+     "score": -1870,
+     "depth": 6,
+     "nodes": 5688320,
+     "nps": 1115306,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.0,
+     "score": 2860,
+     "depth": 7,
+     "nodes": 5778432,
+     "nps": 1132940,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5101.0,
+     "score": -2860,
+     "depth": 6,
+     "nodes": 4580352,
+     "nps": 898053,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 3632.1,
+     "score": 560260,
+     "depth": 8,
+     "nodes": 5435883,
+     "nps": 1496883,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5101.0,
+     "score": -559900,
+     "depth": 6,
+     "nodes": 11848704,
+     "nps": 2323161,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 3715.5,
+     "score": 561250,
+     "depth": 8,
+     "nodes": 5600938,
+     "nps": 1507733,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 5100.8,
+     "score": -560260,
+     "depth": 6,
+     "nodes": 4678656,
+     "nps": 917365,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 3834.2,
+     "score": 9999990,
+     "depth": 8,
+     "nodes": 3896956,
+     "nps": 1016535,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 5102.3,
+     "score": -561250,
+     "depth": 5,
+     "nodes": 4020224,
+     "nps": 788036,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 4.1,
+     "score": 9999992,
+     "depth": 2,
+     "nodes": 3133,
+     "nps": 875007,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 3169.0,
+     "score": -9999993,
+     "depth": 5,
+     "nodes": 2496171,
+     "nps": 798173,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 3.5,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 2616,
+     "nps": 921905,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      3,
+      6
+     ],
+     "ms": 124.2,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 58296,
+     "nps": 697662,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      4,
+      7
+     ],
+     "ms": 311.3,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 228988,
+     "nps": 737189,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      1,
+      4
+     ],
+     "ms": 324.3,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 242062,
+     "nps": 748223,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 24.4,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 26404,
+     "nps": 1118081,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      0,
+      2
+     ],
+     "ms": 44.0,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 176,
+     "nps": 1469654,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 0.8,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5190.4,
+   "total_ms": 61234.5,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     10
+    ]
+   ],
+   "wall_ms": 61235.6,
+   "plies": 24,
+   "index": 2,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 0.2,
+     "score": 250,
+     "depth": 8,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 0.2,
+     "score": -580,
+     "depth": 8,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5190.0,
+     "score": -90,
+     "depth": 6,
+     "nodes": 5838848,
+     "nps": 1144621,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 4712.0,
+     "score": -500,
+     "depth": 7,
+     "nodes": 4761599,
+     "nps": 1020631,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 5101.3,
+     "score": 500,
+     "depth": 6,
+     "nodes": 4018176,
+     "nps": 787780,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 2999.6,
+     "score": -410,
+     "depth": 7,
+     "nodes": 4251587,
+     "nps": 1417688,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 5101.3,
+     "score": 559380,
+     "depth": 5,
+     "nodes": 4028416,
+     "nps": 789778,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 5101.0,
+     "score": -559380,
+     "depth": 4,
+     "nodes": 3575808,
+     "nps": 701088,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      4,
+      7
+     ],
+     "ms": 0.6,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 233,
+     "nps": 1669676,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 551.7,
+     "score": -9999995,
+     "depth": 3,
+     "nodes": 310299,
+     "nps": 607642,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 527.1,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 317872,
+     "nps": 603909,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      2,
+      5
+     ],
+     "ms": 633.3,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 375501,
+     "nps": 593594,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 47.0,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 44440,
+     "nps": 960896,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      0,
+      3
+     ],
+     "ms": 0.8,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 204,
+     "nps": 1691472,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 43.6,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5190.0,
+   "total_ms": 30009.8,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     11
+    ]
+   ],
+   "wall_ms": 30010.6,
+   "plies": 16,
+   "index": 3,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": 1020,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 0.2,
+     "score": -570,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 3046.6,
+     "score": 560,
+     "depth": 8,
+     "nodes": 3952424,
+     "nps": 1317280,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 5148.0,
+     "score": -1880,
+     "depth": 6,
+     "nodes": 5106688,
+     "nps": 1001040,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 2739.7,
+     "score": 2450,
+     "depth": 7,
+     "nodes": 3258041,
+     "nps": 1189444,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5100.9,
+     "score": -2480,
+     "depth": 6,
+     "nodes": 3752960,
+     "nps": 735827,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 3349.9,
+     "score": 3020,
+     "depth": 7,
+     "nodes": 3359563,
+     "nps": 1003050,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 5100.7,
+     "score": -2030,
+     "depth": 5,
+     "nodes": 3670016,
+     "nps": 719585,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 4663.6,
+     "score": 9999990,
+     "depth": 7,
+     "nodes": 5215575,
+     "nps": 1118529,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 5102.0,
+     "score": -2770,
+     "depth": 5,
+     "nodes": 3401728,
+     "nps": 666816,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 25.6,
+     "score": 9999992,
+     "depth": 2,
+     "nodes": 16208,
+     "nps": 648748,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      5,
+      4
+     ],
+     "ms": 5145.3,
+     "score": -2770,
+     "depth": 3,
+     "nodes": 5865472,
+     "nps": 1150018,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      6,
+      5
+     ],
+     "ms": 14.0,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 15111,
+     "nps": 1127967,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 81.8,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 23161,
+     "nps": 641424,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 12.2,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 13431,
+     "nps": 1150514,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 67.8,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 14992,
+     "nps": 633842,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      6,
+      10
+     ],
+     "ms": 33.8,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 31392,
+     "nps": 946150,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      3,
+      2
+     ],
+     "ms": 42.0,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 168,
+     "nps": 1517519,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 0.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5148.0,
+   "total_ms": 39675.0,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     9,
+     8
+    ]
+   ],
+   "wall_ms": 39676.0,
+   "plies": 20,
+   "index": 4,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 0.2,
+     "score": 1060,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": -500,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5194.0,
+     "score": 580,
+     "depth": 6,
+     "nodes": 6680576,
+     "nps": 1309810,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5147.9,
+     "score": -240,
+     "depth": 7,
+     "nodes": 5448704,
+     "nps": 1068143,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 5101.0,
+     "score": 640,
+     "depth": 6,
+     "nodes": 6471680,
+     "nps": 1268855,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      12,
+      8
+     ],
+     "ms": 4389.8,
+     "score": -950,
+     "depth": 9,
+     "nodes": 4374302,
+     "nps": 996639,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 5100.9,
+     "score": 580,
+     "depth": 6,
+     "nodes": 4151296,
+     "nps": 813961,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5100.9,
+     "score": -950,
+     "depth": 7,
+     "nodes": 5213184,
+     "nps": 1022121,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5101.1,
+     "score": 2270,
+     "depth": 5,
+     "nodes": 4090880,
+     "nps": 802078,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5101.0,
+     "score": -1770,
+     "depth": 8,
+     "nodes": 5266432,
+     "nps": 1032553,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 5101.2,
+     "score": 940,
+     "depth": 6,
+     "nodes": 7235584,
+     "nps": 1418615,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 5102.1,
+     "score": -2530,
+     "depth": 9,
+     "nodes": 5080064,
+     "nps": 995818,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5100.8,
+     "score": 1460,
+     "depth": 6,
+     "nodes": 4314112,
+     "nps": 845890,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 5101.4,
+     "score": -2550,
+     "depth": 7,
+     "nodes": 6635520,
+     "nps": 1300916,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.0,
+     "score": 4720,
+     "depth": 5,
+     "nodes": 4568064,
+     "nps": 895643,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 5101.1,
+     "score": -4210,
+     "depth": 7,
+     "nodes": 6041600,
+     "nps": 1184520,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 5100.7,
+     "score": 4210,
+     "depth": 6,
+     "nodes": 6839296,
+     "nps": 1341025,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 32.3,
+     "score": -9999991,
+     "depth": 2,
+     "nodes": 39298,
+     "nps": 1246938,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      13,
+      11
+     ],
+     "ms": 47.9,
+     "score": 9999992,
+     "depth": 1,
+     "nodes": 2856,
+     "nps": 443700,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 6.3,
+     "score": -9999993,
+     "depth": 1,
+     "nodes": 2830,
+     "nps": 512603,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 53.6,
+     "score": 9999994,
+     "depth": 1,
+     "nodes": 3774,
+     "nps": 637093,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 3.1,
+     "score": -9999995,
+     "depth": 1,
+     "nodes": 1178,
+     "nps": 469676,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 52.6,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 2305,
+     "nps": 544611,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      13,
+      9
+     ],
+     "ms": 6.9,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 4097,
+     "nps": 657621,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 45.1,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 789,
+     "nps": 427802,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 0.9,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 160,
+     "nps": 1393351,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 43.0,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5194.0,
+   "total_ms": 76236.9,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     9,
+     10
+    ]
+   ],
+   "wall_ms": 76238.3,
+   "plies": 28,
+   "index": 5,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": 670,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 0.2,
+     "score": -160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5150.4,
+     "score": 490,
+     "depth": 8,
+     "nodes": 5991424,
+     "nps": 1174749,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5152.0,
+     "score": -1330,
+     "depth": 6,
+     "nodes": 8016896,
+     "nps": 1571819,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 5101.4,
+     "score": 1310,
+     "depth": 7,
+     "nodes": 7111680,
+     "nps": 1394248,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5101.4,
+     "score": 450,
+     "depth": 5,
+     "nodes": 4686848,
+     "nps": 918855,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 4692.1,
+     "score": 1180,
+     "depth": 9,
+     "nodes": 5091135,
+     "nps": 1085196,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5101.5,
+     "score": -90,
+     "depth": 5,
+     "nodes": 5118976,
+     "nps": 1003549,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 5101.2,
+     "score": 1180,
+     "depth": 7,
+     "nodes": 7316480,
+     "nps": 1434403,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      12,
+      7
+     ],
+     "ms": 5101.1,
+     "score": -80,
+     "depth": 5,
+     "nodes": 4097024,
+     "nps": 803270,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      13,
+      6
+     ],
+     "ms": 4891.8,
+     "score": 1480,
+     "depth": 9,
+     "nodes": 5555097,
+     "nps": 1135760,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      12,
+      8
+     ],
+     "ms": 5100.8,
+     "score": -1010,
+     "depth": 5,
+     "nodes": 4447232,
+     "nps": 871986,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5102.1,
+     "score": 1450,
+     "depth": 8,
+     "nodes": 5279744,
+     "nps": 1034961,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      14,
+      8
+     ],
+     "ms": 5101.6,
+     "score": 556700,
+     "depth": 5,
+     "nodes": 4336640,
+     "nps": 850183,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      13,
+      8
+     ],
+     "ms": 3840.2,
+     "score": -557440,
+     "depth": 9,
+     "nodes": 3453613,
+     "nps": 899501,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      12,
+      10
+     ],
+     "ms": 5100.9,
+     "score": 557420,
+     "depth": 5,
+     "nodes": 4852736,
+     "nps": 951498,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5101.5,
+     "score": -557440,
+     "depth": 8,
+     "nodes": 3516416,
+     "nps": 689388,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 5101.5,
+     "score": 557420,
+     "depth": 4,
+     "nodes": 4001792,
+     "nps": 784526,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 3205.6,
+     "score": -558350,
+     "depth": 7,
+     "nodes": 2171471,
+     "nps": 677544,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 5101.2,
+     "score": 557440,
+     "depth": 5,
+     "nodes": 4037632,
+     "nps": 791613,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5101.0,
+     "score": -558350,
+     "depth": 6,
+     "nodes": 3549184,
+     "nps": 695885,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 5102.2,
+     "score": 558350,
+     "depth": 5,
+     "nodes": 3949568,
+     "nps": 774187,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 5101.2,
+     "score": -559890,
+     "depth": 6,
+     "nodes": 3218432,
+     "nps": 631011,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      9,
+      5
+     ],
+     "ms": 5101.5,
+     "score": 559890,
+     "depth": 5,
+     "nodes": 4284416,
+     "nps": 839965,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 5022.7,
+     "score": -9999993,
+     "depth": 5,
+     "nodes": 3651976,
+     "nps": 727192,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      8,
+      5
+     ],
+     "ms": 1083.3,
+     "score": 9999994,
+     "depth": 4,
+     "nodes": 594364,
+     "nps": 548997,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 1015.8,
+     "score": -9999995,
+     "depth": 3,
+     "nodes": 557029,
+     "nps": 548761,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 9.2,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 7217,
+     "nps": 849620,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      3,
+      5
+     ],
+     "ms": 847.9,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 421961,
+     "nps": 526813,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 14.6,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 11675,
+     "nps": 843645,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 32,
+     "player": "black",
+     "pos": [
+      1,
+      3
+     ],
+     "ms": 41.2,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 212,
+     "nps": 1346330,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 33,
+     "player": "white",
+     "pos": [
+      12,
+      6
+     ],
+     "ms": 0.8,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5152.0,
+   "total_ms": 116590.1,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     9
+    ]
+   ],
+   "wall_ms": 116591.9,
+   "plies": 33,
+   "index": 6,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 0.2,
+     "score": 1160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 0.2,
+     "score": -590,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5193.3,
+     "score": 1390,
+     "depth": 7,
+     "nodes": 8849408,
+     "nps": 1734871,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 3580.0,
+     "score": -1550,
+     "depth": 8,
+     "nodes": 3691654,
+     "nps": 1044600,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 5101.3,
+     "score": 1060,
+     "depth": 6,
+     "nodes": 5335040,
+     "nps": 1045951,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 3359.8,
+     "score": -2440,
+     "depth": 9,
+     "nodes": 2900063,
+     "nps": 863341,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 5100.8,
+     "score": 1550,
+     "depth": 6,
+     "nodes": 3482624,
+     "nps": 682847,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 5101.4,
+     "score": -2440,
+     "depth": 7,
+     "nodes": 6311936,
+     "nps": 1237447,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 5102.1,
+     "score": 560950,
+     "depth": 5,
+     "nodes": 4503552,
+     "nps": 882764,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 4841.1,
+     "score": -9999989,
+     "depth": 5,
+     "nodes": 3557173,
+     "nps": 734885,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 17.7,
+     "score": 9999988,
+     "depth": 3,
+     "nodes": 12046,
+     "nps": 702185,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 47.3,
+     "score": -9999989,
+     "depth": 2,
+     "nodes": 2814,
+     "nps": 511382,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      9,
+      13
+     ],
+     "ms": 3.0,
+     "score": 9999990,
+     "depth": 1,
+     "nodes": 1701,
+     "nps": 694716,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 44.8,
+     "score": -9999991,
+     "depth": 1,
+     "nodes": 2161,
+     "nps": 573546,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      6,
+      12
+     ],
+     "ms": 4.7,
+     "score": 9999992,
+     "depth": 1,
+     "nodes": 3237,
+     "nps": 766798,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      5,
+      13
+     ],
+     "ms": 47.3,
+     "score": -9999993,
+     "depth": 1,
+     "nodes": 1589,
+     "nps": 583934,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 3.6,
+     "score": 9999994,
+     "depth": 1,
+     "nodes": 2428,
+     "nps": 823354,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 48.2,
+     "score": -9999995,
+     "depth": 1,
+     "nodes": 2577,
+     "nps": 598051,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 4.6,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 2669,
+     "nps": 701314,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 47.4,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 1361,
+     "nps": 499717,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 4.0,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 2274,
+     "nps": 699584,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      3,
+      11
+     ],
+     "ms": 43.9,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 160,
+     "nps": 1357807,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 0.9,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5193.3,
+   "total_ms": 37697.7,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "wall_ms": 37698.7,
+   "plies": 24,
+   "index": 7,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 0.2,
+     "score": 1160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 0.2,
+     "score": -590,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 3229.2,
+     "score": 590,
+     "depth": 8,
+     "nodes": 3704810,
+     "nps": 1179599,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 5148.0,
+     "score": -1160,
+     "depth": 6,
+     "nodes": 6926336,
+     "nps": 1357844,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.0,
+     "score": 1150,
+     "depth": 8,
+     "nodes": 4893696,
+     "nps": 959442,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 5101.1,
+     "score": -1280,
+     "depth": 6,
+     "nodes": 4958208,
+     "nps": 972106,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5100.7,
+     "score": 1940,
+     "depth": 8,
+     "nodes": 4775936,
+     "nps": 936411,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 5100.7,
+     "score": -2270,
+     "depth": 6,
+     "nodes": 3965952,
+     "nps": 777597,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 4848.3,
+     "score": 1960,
+     "depth": 8,
+     "nodes": 4495597,
+     "nps": 927384,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5101.0,
+     "score": -2140,
+     "depth": 6,
+     "nodes": 3906560,
+     "nps": 765927,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5101.2,
+     "score": 1960,
+     "depth": 6,
+     "nodes": 4714496,
+     "nps": 924332,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 5101.5,
+     "score": -1960,
+     "depth": 5,
+     "nodes": 3795968,
+     "nps": 744172,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 5100.6,
+     "score": 2870,
+     "depth": 8,
+     "nodes": 3982336,
+     "nps": 780838,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 5101.0,
+     "score": -3940,
+     "depth": 6,
+     "nodes": 4911104,
+     "nps": 962889,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 5101.3,
+     "score": 4340,
+     "depth": 8,
+     "nodes": 3687424,
+     "nps": 722907,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      10,
+      14
+     ],
+     "ms": 5101.9,
+     "score": -5240,
+     "depth": 6,
+     "nodes": 4568064,
+     "nps": 895449,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 394.2,
+     "score": 9999986,
+     "depth": 7,
+     "nodes": 359264,
+     "nps": 912935,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 5101.0,
+     "score": -4330,
+     "depth": 5,
+     "nodes": 4082688,
+     "nps": 800460,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 8.8,
+     "score": 9999988,
+     "depth": 2,
+     "nodes": 5239,
+     "nps": 626079,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      12,
+      13
+     ],
+     "ms": 118.5,
+     "score": -9999989,
+     "depth": 2,
+     "nodes": 60354,
+     "nps": 777434,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      13,
+      14
+     ],
+     "ms": 39.6,
+     "score": 9999990,
+     "depth": 3,
+     "nodes": 42129,
+     "nps": 1081209,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 57.3,
+     "score": -9999991,
+     "depth": 2,
+     "nodes": 37415,
+     "nps": 661839,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 12.6,
+     "score": 9999994,
+     "depth": 1,
+     "nodes": 10313,
+     "nps": 861174,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      6,
+      11
+     ],
+     "ms": 66.2,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 21496,
+     "nps": 947588,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      6,
+      12
+     ],
+     "ms": 10.4,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 8324,
+     "nps": 858764,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      5,
+      13
+     ],
+     "ms": 57.7,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 4762,
+     "nps": 528306,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      4,
+      10
+     ],
+     "ms": 12.0,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 8416,
+     "nps": 735833,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      2,
+      8
+     ],
+     "ms": 43.9,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 186,
+     "nps": 1356456,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      3,
+      9
+     ],
+     "ms": 0.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5148.0,
+   "total_ms": 75260.9,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "wall_ms": 75262.4,
+   "plies": 30,
+   "index": 8,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": 670,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 0.2,
+     "score": -160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5193.1,
+     "score": 90,
+     "depth": 6,
+     "nodes": 8521728,
+     "nps": 1670815,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5152.0,
+     "score": -990,
+     "depth": 8,
+     "nodes": 5906432,
+     "nps": 1158082,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5100.5,
+     "score": 310,
+     "depth": 6,
+     "nodes": 6784000,
+     "nps": 1330167,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5101.4,
+     "score": -390,
+     "depth": 7,
+     "nodes": 5838848,
+     "nps": 1144652,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5101.5,
+     "score": 550,
+     "depth": 6,
+     "nodes": 5499904,
+     "nps": 1078200,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 3979.7,
+     "score": -990,
+     "depth": 9,
+     "nodes": 4392827,
+     "nps": 1103925,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 5100.9,
+     "score": 390,
+     "depth": 6,
+     "nodes": 4560896,
+     "nps": 894221,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5101.6,
+     "score": -1450,
+     "depth": 6,
+     "nodes": 5599232,
+     "nps": 1097645,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 5100.7,
+     "score": 550,
+     "depth": 6,
+     "nodes": 5677056,
+     "nps": 1113119,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      12,
+      7
+     ],
+     "ms": 3648.7,
+     "score": -700,
+     "depth": 7,
+     "nodes": 4412854,
+     "nps": 1209588,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      13,
+      6
+     ],
+     "ms": 5100.9,
+     "score": 1060,
+     "depth": 6,
+     "nodes": 4663296,
+     "nps": 914301,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 4717.5,
+     "score": -2920,
+     "depth": 7,
+     "nodes": 5488482,
+     "nps": 1163550,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      6,
+      10
+     ],
+     "ms": 5100.9,
+     "score": 3760,
+     "depth": 5,
+     "nodes": 4210688,
+     "nps": 825559,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 4791.4,
+     "score": -4820,
+     "depth": 9,
+     "nodes": 5075433,
+     "nps": 1059403,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 5100.6,
+     "score": 3920,
+     "depth": 6,
+     "nodes": 5959680,
+     "nps": 1168551,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      5,
+      9
+     ],
+     "ms": 2610.0,
+     "score": -9999985,
+     "depth": 8,
+     "nodes": 3144762,
+     "nps": 1205065,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 3167.4,
+     "score": 9999986,
+     "depth": 5,
+     "nodes": 3687265,
+     "nps": 1164358,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 1545.6,
+     "score": -9999987,
+     "depth": 4,
+     "nodes": 1025901,
+     "nps": 664008,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 3.0,
+     "score": 9999988,
+     "depth": 2,
+     "nodes": 1804,
+     "nps": 732637,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 46.5,
+     "score": -9999989,
+     "depth": 1,
+     "nodes": 1972,
+     "nps": 630854,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 2.9,
+     "score": 9999990,
+     "depth": 1,
+     "nodes": 1538,
+     "nps": 631838,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 49.0,
+     "score": -9999991,
+     "depth": 1,
+     "nodes": 1257,
+     "nps": 644608,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 2.3,
+     "score": 9999992,
+     "depth": 1,
+     "nodes": 1171,
+     "nps": 620383,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 41.6,
+     "score": -9999993,
+     "depth": 1,
+     "nodes": 449,
+     "nps": 822737,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 1.3,
+     "score": 9999994,
+     "depth": 1,
+     "nodes": 436,
+     "nps": 654916,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 42.3,
+     "score": -9999995,
+     "depth": 1,
+     "nodes": 349,
+     "nps": 884386,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 1.2,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 332,
+     "nps": 620776,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      9,
+      5
+     ],
+     "ms": 42.8,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 289,
+     "nps": 833823,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 32,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 1.1,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 255,
+     "nps": 598868,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 33,
+     "player": "white",
+     "pos": [
+      3,
+      6
+     ],
+     "ms": 43.0,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 182,
+     "nps": 1413153,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 34,
+     "player": "black",
+     "pos": [
+      5,
+      10
+     ],
+     "ms": 0.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5193.1,
+   "total_ms": 80992.8,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     9
+    ]
+   ],
+   "wall_ms": 80994.4,
+   "plies": 34,
+   "index": 9,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5193.2,
+     "score": 880,
+     "depth": 8,
+     "nodes": 6144000,
+     "nps": 1204683,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 5148.0,
+     "score": -910,
+     "depth": 6,
+     "nodes": 6494208,
+     "nps": 1273152,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5100.7,
+     "score": 830,
+     "depth": 8,
+     "nodes": 5598208,
+     "nps": 1097635,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.4,
+     "score": -990,
+     "depth": 6,
+     "nodes": 6394880,
+     "nps": 1253706,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5100.6,
+     "score": 1370,
+     "depth": 8,
+     "nodes": 6470656,
+     "nps": 1268742,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 5101.4,
+     "score": -2200,
+     "depth": 6,
+     "nodes": 5022720,
+     "nps": 984678,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 4419.9,
+     "score": 2190,
+     "depth": 9,
+     "nodes": 5116716,
+     "nps": 1157789,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      12,
+      8
+     ],
+     "ms": 5100.7,
+     "score": -1390,
+     "depth": 5,
+     "nodes": 3591168,
+     "nps": 704131,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 5101.4,
+     "score": 559420,
+     "depth": 5,
+     "nodes": 4124672,
+     "nps": 808603,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 5101.1,
+     "score": -559420,
+     "depth": 4,
+     "nodes": 3407872,
+     "nps": 668147,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      10,
+      5
+     ],
+     "ms": 5101.8,
+     "score": 561290,
+     "depth": 3,
+     "nodes": 3350528,
+     "nps": 656811,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 17.1,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 12986,
+     "nps": 792857,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 45.3,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 878,
+     "nps": 764693,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 0.7,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 148,
+     "nps": 751448,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 43.0,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 148,
+     "nps": 536846,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 0.7,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 136,
+     "nps": 1478437,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 47.3,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5193.2,
+   "total_ms": 55724.4,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     8
+    ]
+   ],
+   "wall_ms": 55725.3,
+   "plies": 18,
+   "index": 10,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 5153.8,
+     "score": 90,
+     "depth": 6,
+     "nodes": 7961600,
+     "nps": 1560995,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 3995.8,
+     "score": -1100,
+     "depth": 8,
+     "nodes": 4223364,
+     "nps": 1069934,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5101.2,
+     "score": 480,
+     "depth": 6,
+     "nodes": 6870016,
+     "nps": 1346910,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5102.0,
+     "score": -910,
+     "depth": 8,
+     "nodes": 5633024,
+     "nps": 1104239,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 5101.5,
+     "score": 1000,
+     "depth": 5,
+     "nodes": 4785152,
+     "nps": 938093,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 5101.1,
+     "score": -510,
+     "depth": 6,
+     "nodes": 4571136,
+     "nps": 896223,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 5101.1,
+     "score": -470,
+     "depth": 6,
+     "nodes": 4130816,
+     "nps": 809895,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      9,
+      5
+     ],
+     "ms": 5102.1,
+     "score": 360,
+     "depth": 7,
+     "nodes": 4691968,
+     "nps": 919731,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5101.6,
+     "score": -360,
+     "depth": 6,
+     "nodes": 3210240,
+     "nps": 629353,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 5102.6,
+     "score": -150,
+     "depth": 6,
+     "nodes": 3718144,
+     "nps": 728784,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 5101.6,
+     "score": 150,
+     "depth": 5,
+     "nodes": 3304448,
+     "nps": 647822,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      10,
+      4
+     ],
+     "ms": 5101.2,
+     "score": 480,
+     "depth": 8,
+     "nodes": 4387840,
+     "nps": 860255,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      11,
+      3
+     ],
+     "ms": 5102.3,
+     "score": 80,
+     "depth": 6,
+     "nodes": 4217856,
+     "nps": 826787,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5100.8,
+     "score": 1790,
+     "depth": 8,
+     "nodes": 3862528,
+     "nps": 757348,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 5101.4,
+     "score": 80,
+     "depth": 5,
+     "nodes": 3646464,
+     "nps": 714892,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 430.5,
+     "score": 9999990,
+     "depth": 6,
+     "nodes": 375229,
+     "nps": 873051,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5100.8,
+     "score": -1310,
+     "depth": 5,
+     "nodes": 4201472,
+     "nps": 823806,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 1.0,
+     "score": 9999992,
+     "depth": 2,
+     "nodes": 337,
+     "nps": 1169107,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 4658.5,
+     "score": -9999993,
+     "depth": 4,
+     "nodes": 5291054,
+     "nps": 1146464,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 5.2,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 4191,
+     "nps": 915505,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 50.8,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 8292,
+     "nps": 833830,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 3.1,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 2874,
+     "nps": 1202882,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      10,
+      5
+     ],
+     "ms": 48.7,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 3313,
+     "nps": 663882,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 8.4,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 8562,
+     "nps": 1120784,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      3,
+      6
+     ],
+     "ms": 43.5,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 194,
+     "nps": 1189556,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 0.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5153.8,
+   "total_ms": 85821.3,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     7
+    ]
+   ],
+   "wall_ms": 85822.7,
+   "plies": 27,
+   "index": 11,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 0.2,
+     "score": 1060,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": -500,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 3496.6,
+     "score": 560,
+     "depth": 8,
+     "nodes": 4779160,
+     "nps": 1404000,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5148.0,
+     "score": -1460,
+     "depth": 6,
+     "nodes": 5994496,
+     "nps": 1175302,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.5,
+     "score": 1830,
+     "depth": 7,
+     "nodes": 6075392,
+     "nps": 1191028,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5100.8,
+     "score": -340,
+     "depth": 5,
+     "nodes": 3226624,
+     "nps": 632662,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 4660.0,
+     "score": 1440,
+     "depth": 10,
+     "nodes": 4604486,
+     "nps": 988225,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5102.0,
+     "score": -740,
+     "depth": 5,
+     "nodes": 3518464,
+     "nps": 689718,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 4011.3,
+     "score": 1440,
+     "depth": 8,
+     "nodes": 4661687,
+     "nps": 1162306,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 5101.7,
+     "score": -2370,
+     "depth": 6,
+     "nodes": 4606976,
+     "nps": 903144,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 3587.1,
+     "score": 2030,
+     "depth": 7,
+     "nodes": 4547643,
+     "nps": 1268035,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 5100.9,
+     "score": -960,
+     "depth": 5,
+     "nodes": 4299776,
+     "nps": 843059,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 3714.3,
+     "score": 2250,
+     "depth": 7,
+     "nodes": 4763132,
+     "nps": 1282672,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 5101.6,
+     "score": -960,
+     "depth": 5,
+     "nodes": 3866624,
+     "nps": 758033,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 3225.3,
+     "score": 1430,
+     "depth": 6,
+     "nodes": 2887830,
+     "nps": 895580,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      13,
+      10
+     ],
+     "ms": 5100.6,
+     "score": -1860,
+     "depth": 4,
+     "nodes": 3751936,
+     "nps": 735667,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 5102.4,
+     "score": 1550,
+     "depth": 8,
+     "nodes": 4116480,
+     "nps": 806894,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 5101.2,
+     "score": -1620,
+     "depth": 4,
+     "nodes": 3721216,
+     "nps": 729545,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 2773.0,
+     "score": 2460,
+     "depth": 7,
+     "nodes": 2075671,
+     "nps": 748684,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      14,
+      11
+     ],
+     "ms": 5101.8,
+     "score": -1550,
+     "depth": 5,
+     "nodes": 4073472,
+     "nps": 798537,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      15,
+      12
+     ],
+     "ms": 5101.2,
+     "score": 2460,
+     "depth": 6,
+     "nodes": 6239232,
+     "nps": 1223265,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      11,
+      6
+     ],
+     "ms": 5102.6,
+     "score": -2460,
+     "depth": 5,
+     "nodes": 4405248,
+     "nps": 863496,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5101.2,
+     "score": 2460,
+     "depth": 4,
+     "nodes": 6482944,
+     "nps": 1271063,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 5101.6,
+     "score": -5550,
+     "depth": 4,
+     "nodes": 4063232,
+     "nps": 796578,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      11,
+      5
+     ],
+     "ms": 5101.2,
+     "score": 4060,
+     "depth": 4,
+     "nodes": 6793216,
+     "nps": 1331891,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 5101.0,
+     "score": -4060,
+     "depth": 3,
+     "nodes": 6617088,
+     "nps": 1297406,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 655.2,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 786192,
+     "nps": 1201225,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      14,
+      9
+     ],
+     "ms": 65.7,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 90599,
+     "nps": 1391019,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 63.8,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 89495,
+     "nps": 1417961,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      13,
+      13
+     ],
+     "ms": 102.4,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 67729,
+     "nps": 666575,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 32,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 190.0,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 266133,
+     "nps": 1406332,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 33,
+     "player": "white",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 0.8,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 192,
+     "nps": 1282316,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 34,
+     "player": "black",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 42.1,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5148.0,
+   "total_ms": 113359.2,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     9,
+     10
+    ]
+   ],
+   "wall_ms": 113361.1,
+   "plies": 34,
+   "index": 12,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": 1020,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 0.2,
+     "score": -570,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5149.1,
+     "score": 500,
+     "depth": 6,
+     "nodes": 8403968,
+     "nps": 1647781,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 5151.8,
+     "score": -960,
+     "depth": 9,
+     "nodes": 5481472,
+     "nps": 1074621,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5100.7,
+     "score": 70,
+     "depth": 6,
+     "nodes": 6008832,
+     "nps": 1178197,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5101.9,
+     "score": -390,
+     "depth": 7,
+     "nodes": 5568512,
+     "nps": 1091602,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 5101.0,
+     "score": 380,
+     "depth": 6,
+     "nodes": 5647360,
+     "nps": 1107233,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 4982.7,
+     "score": -1210,
+     "depth": 8,
+     "nodes": 6145794,
+     "nps": 1233577,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5102.2,
+     "score": 790,
+     "depth": 6,
+     "nodes": 5180416,
+     "nps": 1015448,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 3589.8,
+     "score": -910,
+     "depth": 9,
+     "nodes": 3950226,
+     "nps": 1100614,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 5102.0,
+     "score": 1290,
+     "depth": 5,
+     "nodes": 3875840,
+     "nps": 759770,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 3464.5,
+     "score": 460,
+     "depth": 8,
+     "nodes": 3192491,
+     "nps": 921658,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 5101.6,
+     "score": 330,
+     "depth": 5,
+     "nodes": 4204544,
+     "nps": 824256,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 3937.2,
+     "score": 560,
+     "depth": 7,
+     "nodes": 4136729,
+     "nps": 1050832,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 5101.1,
+     "score": -460,
+     "depth": 5,
+     "nodes": 3796992,
+     "nps": 744442,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 5101.2,
+     "score": 880,
+     "depth": 5,
+     "nodes": 3674112,
+     "nps": 720350,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      11,
+      6
+     ],
+     "ms": 5101.2,
+     "score": -810,
+     "depth": 4,
+     "nodes": 3039232,
+     "nps": 595864,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 2733.3,
+     "score": 9999992,
+     "depth": 5,
+     "nodes": 2179040,
+     "nps": 797383,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 25.2,
+     "score": -9999993,
+     "depth": 4,
+     "nodes": 26822,
+     "nps": 1096142,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 57.5,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 7242,
+     "nps": 555563,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 0.9,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 237,
+     "nps": 1556783,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 47.0,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 217,
+     "nps": 1086733,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      12,
+      10
+     ],
+     "ms": 1.0,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 213,
+     "nps": 912889,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 42.8,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 214,
+     "nps": 612715,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      4,
+      4
+     ],
+     "ms": 0.8,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 174,
+     "nps": 1409192,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      7,
+      14
+     ],
+     "ms": 43.3,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5151.8,
+   "total_ms": 75140.2,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     9,
+     8
+    ]
+   ],
+   "wall_ms": 75141.5,
+   "plies": 27,
+   "index": 13,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 0.2,
+     "score": 1080,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 0.2,
+     "score": -490,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 2793.1,
+     "score": 880,
+     "depth": 8,
+     "nodes": 3620464,
+     "nps": 1340660,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 5147.8,
+     "score": -1330,
+     "depth": 6,
+     "nodes": 6905856,
+     "nps": 1354023,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 4306.2,
+     "score": 1300,
+     "depth": 8,
+     "nodes": 6099018,
+     "nps": 1416519,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 5101.1,
+     "score": -1410,
+     "depth": 6,
+     "nodes": 4535296,
+     "nps": 889178,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 4385.8,
+     "score": 3740,
+     "depth": 8,
+     "nodes": 5261712,
+     "nps": 1199903,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.2,
+     "score": -2960,
+     "depth": 6,
+     "nodes": 3901440,
+     "nps": 764917,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 5101.9,
+     "score": 4730,
+     "depth": 7,
+     "nodes": 4964352,
+     "nps": 973156,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      6,
+      12
+     ],
+     "ms": 5101.0,
+     "score": -2380,
+     "depth": 5,
+     "nodes": 4947968,
+     "nps": 970141,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 5101.3,
+     "score": 562030,
+     "depth": 5,
+     "nodes": 4661248,
+     "nps": 913842,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      5,
+      6
+     ],
+     "ms": 5101.4,
+     "score": -562030,
+     "depth": 4,
+     "nodes": 3999744,
+     "nps": 784137,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 5101.1,
+     "score": 562400,
+     "depth": 3,
+     "nodes": 3973120,
+     "nps": 778983,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 5101.8,
+     "score": -562400,
+     "depth": 2,
+     "nodes": 4025344,
+     "nps": 789115,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 672.9,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 481635,
+     "nps": 716285,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      3,
+      4
+     ],
+     "ms": 656.0,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 473186,
+     "nps": 722088,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 99.0,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 143002,
+     "nps": 1454396,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      1,
+      2
+     ],
+     "ms": 0.8,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 194,
+     "nps": 1471168,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      6,
+      14
+     ],
+     "ms": 47.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5147.8,
+   "total_ms": 58920.6,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     9
+    ]
+   ],
+   "wall_ms": 58921.5,
+   "plies": 20,
+   "index": 14,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 0.2,
+     "score": 1100,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 0.2,
+     "score": -560,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 5156.8,
+     "score": 890,
+     "depth": 6,
+     "nodes": 8058880,
+     "nps": 1579962,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 3980.1,
+     "score": -1480,
+     "depth": 8,
+     "nodes": 4039325,
+     "nps": 1027024,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 5101.0,
+     "score": 890,
+     "depth": 6,
+     "nodes": 5946368,
+     "nps": 1165877,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      6,
+      12
+     ],
+     "ms": 2941.0,
+     "score": -1050,
+     "depth": 9,
+     "nodes": 3010851,
+     "nps": 1023983,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 5100.7,
+     "score": 1110,
+     "depth": 6,
+     "nodes": 4423680,
+     "nps": 867379,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 5100.8,
+     "score": -860,
+     "depth": 7,
+     "nodes": 3688448,
+     "nps": 723199,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5100.8,
+     "score": 1430,
+     "depth": 6,
+     "nodes": 8043520,
+     "nps": 1577147,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 5026.8,
+     "score": -1950,
+     "depth": 9,
+     "nodes": 5260702,
+     "nps": 1046686,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 5101.3,
+     "score": 1930,
+     "depth": 6,
+     "nodes": 7901184,
+     "nps": 1549091,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 3974.0,
+     "score": -2750,
+     "depth": 10,
+     "nodes": 3553655,
+     "nps": 894377,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5101.5,
+     "score": 2670,
+     "depth": 5,
+     "nodes": 4235264,
+     "nps": 830310,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      6,
+      11
+     ],
+     "ms": 5101.0,
+     "score": -2670,
+     "depth": 9,
+     "nodes": 4176896,
+     "nps": 818948,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5101.3,
+     "score": 9999990,
+     "depth": 5,
+     "nodes": 4046848,
+     "nps": 793407,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 715.9,
+     "score": -9999991,
+     "depth": 6,
+     "nodes": 497538,
+     "nps": 695724,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 1757.3,
+     "score": 9999992,
+     "depth": 5,
+     "nodes": 1859808,
+     "nps": 1058734,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 0.8,
+     "score": -9999993,
+     "depth": 2,
+     "nodes": 216,
+     "nps": 1228592,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 578.8,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 322934,
+     "nps": 602932,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 0.7,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 225,
+     "nps": 1484903,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 47.3,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 213,
+     "nps": 1181397,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 0.9,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 209,
+     "nps": 1006191,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 42.9,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 158,
+     "nps": 586590,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      4,
+      6
+     ],
+     "ms": 0.8,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 154,
+     "nps": 1379421,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      6,
+      13
+     ],
+     "ms": 43.0,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5156.8,
+   "total_ms": 65076.0,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "wall_ms": 65077.3,
+   "plies": 26,
+   "index": 15,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 0.2,
+     "score": 1100,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 0.2,
+     "score": -560,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 3792.8,
+     "score": 540,
+     "depth": 8,
+     "nodes": 4744048,
+     "nps": 1266727,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 5147.7,
+     "score": -1570,
+     "depth": 6,
+     "nodes": 5408768,
+     "nps": 1060459,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 3191.1,
+     "score": 1480,
+     "depth": 7,
+     "nodes": 3437884,
+     "nps": 1077562,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5100.8,
+     "score": -980,
+     "depth": 5,
+     "nodes": 3807232,
+     "nps": 746473,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 827.7,
+     "score": 9999992,
+     "depth": 6,
+     "nodes": 882799,
+     "nps": 1067313,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 492.5,
+     "score": -9999993,
+     "depth": 5,
+     "nodes": 561868,
+     "nps": 1142382,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 23.4,
+     "score": 9999994,
+     "depth": 4,
+     "nodes": 15161,
+     "nps": 667933,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      5
+     ],
+     "ms": 56.2,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 8438,
+     "nps": 615827,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 3.8,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 2991,
+     "nps": 940261,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 116.1,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 46775,
+     "nps": 631431,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 3.8,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 1769,
+     "nps": 551270,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      3,
+      5
+     ],
+     "ms": 48.1,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 144,
+     "nps": 1490791,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 0.5,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5147.7,
+   "total_ms": 18805.1,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "wall_ms": 18805.8,
+   "plies": 16,
+   "index": 16,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 0.2,
+     "score": 1080,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 0.2,
+     "score": -490,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 5192.0,
+     "score": 90,
+     "depth": 6,
+     "nodes": 8680448,
+     "nps": 1701820,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5151.9,
+     "score": -990,
+     "depth": 8,
+     "nodes": 6006784,
+     "nps": 1177771,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 5101.1,
+     "score": 310,
+     "depth": 6,
+     "nodes": 5050368,
+     "nps": 990150,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 5102.4,
+     "score": -400,
+     "depth": 7,
+     "nodes": 5786624,
+     "nps": 1134240,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5100.5,
+     "score": 350,
+     "depth": 6,
+     "nodes": 5424128,
+     "nps": 1063532,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 3053.7,
+     "score": -40,
+     "depth": 7,
+     "nodes": 3639151,
+     "nps": 1191988,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 5101.9,
+     "score": 40,
+     "depth": 6,
+     "nodes": 5081088,
+     "nps": 996047,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5101.5,
+     "score": 40,
+     "depth": 7,
+     "nodes": 5206016,
+     "nps": 1020616,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 5100.8,
+     "score": -440,
+     "depth": 6,
+     "nodes": 4853760,
+     "nps": 951683,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 5102.0,
+     "score": -370,
+     "depth": 6,
+     "nodes": 4556800,
+     "nps": 893250,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5100.8,
+     "score": 430,
+     "depth": 5,
+     "nodes": 4243456,
+     "nps": 832038,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5100.7,
+     "score": -430,
+     "depth": 6,
+     "nodes": 4369408,
+     "nps": 856735,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 5101.8,
+     "score": 450,
+     "depth": 5,
+     "nodes": 4315136,
+     "nps": 845924,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5101.0,
+     "score": 9999986,
+     "depth": 6,
+     "nodes": 4697088,
+     "nps": 920932,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      12,
+      7
+     ],
+     "ms": 5100.7,
+     "score": -558020,
+     "depth": 6,
+     "nodes": 11510784,
+     "nps": 2256946,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 1715.6,
+     "score": 9999990,
+     "depth": 7,
+     "nodes": 2792741,
+     "nps": 1628362,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      12,
+      13
+     ],
+     "ms": 1441.8,
+     "score": -9999991,
+     "depth": 6,
+     "nodes": 2194563,
+     "nps": 1522668,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 4.8,
+     "score": 9999992,
+     "depth": 2,
+     "nodes": 3319,
+     "nps": 743934,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 44.1,
+     "score": -9999993,
+     "depth": 2,
+     "nodes": 249,
+     "nps": 1517654,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      11,
+      14
+     ],
+     "ms": 6.6,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 5052,
+     "nps": 840724,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 41.3,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 263,
+     "nps": 1451282,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 1.5,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 596,
+     "nps": 779677,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 42.4,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 543,
+     "nps": 652054,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 1.6,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 535,
+     "nps": 562929,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      4,
+      6
+     ],
+     "ms": 42.3,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 172,
+     "nps": 1446849,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      7,
+      14
+     ],
+     "ms": 0.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5192.0,
+   "total_ms": 77955.7,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     9
+    ]
+   ],
+   "wall_ms": 77957.1,
+   "plies": 29,
+   "index": 17,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 0.2,
+     "score": 1160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 0.2,
+     "score": -580,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 5191.8,
+     "score": 1550,
+     "depth": 7,
+     "nodes": 6538240,
+     "nps": 1281812,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 5148.0,
+     "score": -1500,
+     "depth": 6,
+     "nodes": 5068800,
+     "nps": 993879,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5100.8,
+     "score": 1730,
+     "depth": 7,
+     "nodes": 5452800,
+     "nps": 1069167,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5101.0,
+     "score": -1870,
+     "depth": 6,
+     "nodes": 5830656,
+     "nps": 1143203,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 3810.9,
+     "score": 2090,
+     "depth": 8,
+     "nodes": 4759735,
+     "nps": 1249176,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5101.3,
+     "score": -2860,
+     "depth": 6,
+     "nodes": 4663296,
+     "nps": 914245,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 3756.2,
+     "score": 560260,
+     "depth": 8,
+     "nodes": 5464909,
+     "nps": 1455155,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5100.9,
+     "score": -559900,
+     "depth": 6,
+     "nodes": 12161024,
+     "nps": 2384416,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 4478.7,
+     "score": 561250,
+     "depth": 8,
+     "nodes": 6507011,
+     "nps": 1453094,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 5101.0,
+     "score": -560260,
+     "depth": 6,
+     "nodes": 4862976,
+     "nps": 953470,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 3904.1,
+     "score": 9999990,
+     "depth": 8,
+     "nodes": 3925476,
+     "nps": 1005648,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 5102.0,
+     "score": -561250,
+     "depth": 5,
+     "nodes": 3962880,
+     "nps": 776825,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 4.3,
+     "score": 9999992,
+     "depth": 2,
+     "nodes": 3133,
+     "nps": 824701,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 3129.9,
+     "score": -9999993,
+     "depth": 5,
+     "nodes": 2495425,
+     "nps": 809648,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 3.6,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 2616,
+     "nps": 924971,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      3,
+      6
+     ],
+     "ms": 128.2,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 58296,
+     "nps": 694476,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      4,
+      7
+     ],
+     "ms": 307.1,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 228988,
+     "nps": 747247,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      1,
+      4
+     ],
+     "ms": 326.4,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 242062,
+     "nps": 742953,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 24.4,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 26404,
+     "nps": 1109373,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      0,
+      2
+     ],
+     "ms": 42.0,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 176,
+     "nps": 1496255,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 0.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5191.8,
+   "total_ms": 60863.8,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     10
+    ]
+   ],
+   "wall_ms": 60864.9,
+   "plies": 24,
+   "index": 18,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 0.2,
+     "score": 250,
+     "depth": 8,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 0.2,
+     "score": -580,
+     "depth": 8,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5191.6,
+     "score": -90,
+     "depth": 6,
+     "nodes": 5524480,
+     "nps": 1083193,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 4651.7,
+     "score": -500,
+     "depth": 7,
+     "nodes": 4761599,
+     "nps": 1033798,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 5100.4,
+     "score": 500,
+     "depth": 6,
+     "nodes": 3950592,
+     "nps": 774622,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 3001.4,
+     "score": -410,
+     "depth": 7,
+     "nodes": 4251587,
+     "nps": 1416869,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 5101.8,
+     "score": 559380,
+     "depth": 5,
+     "nodes": 4012032,
+     "nps": 786480,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 5101.2,
+     "score": -559380,
+     "depth": 4,
+     "nodes": 3572736,
+     "nps": 700441,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      4,
+      7
+     ],
+     "ms": 0.7,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 233,
+     "nps": 1810003,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 558.3,
+     "score": -9999995,
+     "depth": 3,
+     "nodes": 310299,
+     "nps": 602337,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 543.0,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 317856,
+     "nps": 586050,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      2,
+      5
+     ],
+     "ms": 632.4,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 375501,
+     "nps": 594372,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 47.4,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 44440,
+     "nps": 952777,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      0,
+      3
+     ],
+     "ms": 0.7,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 204,
+     "nps": 1616366,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 48.3,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5191.6,
+   "total_ms": 29979.3,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     11
+    ]
+   ],
+   "wall_ms": 29980.0,
+   "plies": 16,
+   "index": 19,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": 1020,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 0.2,
+     "score": -570,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 3048.1,
+     "score": 560,
+     "depth": 8,
+     "nodes": 3952424,
+     "nps": 1316565,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 5147.9,
+     "score": -1880,
+     "depth": 6,
+     "nodes": 5066752,
+     "nps": 993402,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 2729.6,
+     "score": 2450,
+     "depth": 7,
+     "nodes": 3258041,
+     "nps": 1193871,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5102.3,
+     "score": -2480,
+     "depth": 6,
+     "nodes": 3879936,
+     "nps": 760510,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 3352.4,
+     "score": 3020,
+     "depth": 7,
+     "nodes": 3359563,
+     "nps": 1002357,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 5100.9,
+     "score": -2030,
+     "depth": 5,
+     "nodes": 3665920,
+     "nps": 718778,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 4670.2,
+     "score": 9999990,
+     "depth": 7,
+     "nodes": 5215575,
+     "nps": 1116951,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 5100.7,
+     "score": -2770,
+     "depth": 5,
+     "nodes": 3395584,
+     "nps": 665780,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 25.0,
+     "score": 9999992,
+     "depth": 2,
+     "nodes": 16208,
+     "nps": 664701,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      5,
+      4
+     ],
+     "ms": 5142.5,
+     "score": -2770,
+     "depth": 3,
+     "nodes": 5872640,
+     "nps": 1151480,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      6,
+      5
+     ],
+     "ms": 13.8,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 15111,
+     "nps": 1140999,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 82.2,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 23161,
+     "nps": 633768,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 12.0,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 13431,
+     "nps": 1174672,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 67.8,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 14992,
+     "nps": 628518,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      6,
+      10
+     ],
+     "ms": 33.4,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 31392,
+     "nps": 960293,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      3,
+      2
+     ],
+     "ms": 42.5,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 168,
+     "nps": 1560627,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 0.6,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5147.9,
+   "total_ms": 39672.4,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     9,
+     8
+    ]
+   ],
+   "wall_ms": 39673.3,
+   "plies": 20,
+   "index": 20,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 0.2,
+     "score": 1060,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": -500,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5191.4,
+     "score": 580,
+     "depth": 6,
+     "nodes": 6676480,
+     "nps": 1308833,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5152.0,
+     "score": -240,
+     "depth": 7,
+     "nodes": 5450752,
+     "nps": 1068600,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 5101.3,
+     "score": 640,
+     "depth": 6,
+     "nodes": 6518784,
+     "nps": 1278054,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      12,
+      8
+     ],
+     "ms": 4386.4,
+     "score": -950,
+     "depth": 9,
+     "nodes": 4374299,
+     "nps": 997353,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 5101.0,
+     "score": 580,
+     "depth": 6,
+     "nodes": 4152320,
+     "nps": 814138,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5100.8,
+     "score": -950,
+     "depth": 7,
+     "nodes": 5224448,
+     "nps": 1024378,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5101.3,
+     "score": 2270,
+     "depth": 5,
+     "nodes": 4111360,
+     "nps": 806052,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5102.8,
+     "score": -1770,
+     "depth": 8,
+     "nodes": 5243904,
+     "nps": 1027778,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 5100.7,
+     "score": 940,
+     "depth": 6,
+     "nodes": 7110656,
+     "nps": 1394188,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 5101.3,
+     "score": -2530,
+     "depth": 9,
+     "nodes": 5033984,
+     "nps": 986890,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5101.2,
+     "score": 1460,
+     "depth": 6,
+     "nodes": 4198400,
+     "nps": 823109,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 5100.7,
+     "score": -2550,
+     "depth": 7,
+     "nodes": 6575104,
+     "nps": 1289186,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5100.9,
+     "score": 4720,
+     "depth": 5,
+     "nodes": 4796416,
+     "nps": 940421,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 5100.6,
+     "score": -4210,
+     "depth": 7,
+     "nodes": 5980160,
+     "nps": 1172573,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 5100.8,
+     "score": 4210,
+     "depth": 6,
+     "nodes": 5964800,
+     "nps": 1169541,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      8,
+      5
+     ],
+     "ms": 1225.8,
+     "score": -9999989,
+     "depth": 5,
+     "nodes": 1353764,
+     "nps": 1105064,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 2323.2,
+     "score": 9999992,
+     "depth": 5,
+     "nodes": 3048843,
+     "nps": 1312748,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 6.8,
+     "score": -9999991,
+     "depth": 2,
+     "nodes": 240,
+     "nps": 39416,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      13,
+      11
+     ],
+     "ms": 47.2,
+     "score": 9999992,
+     "depth": 1,
+     "nodes": 2263,
+     "nps": 397814,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 5.4,
+     "score": -9999993,
+     "depth": 1,
+     "nodes": 2363,
+     "nps": 511150,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 46.5,
+     "score": 9999994,
+     "depth": 1,
+     "nodes": 3216,
+     "nps": 656714,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 2.9,
+     "score": -9999995,
+     "depth": 1,
+     "nodes": 1109,
+     "nps": 473148,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 49.0,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 2246,
+     "nps": 539171,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      13,
+      9
+     ],
+     "ms": 6.3,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 3990,
+     "nps": 710023,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 45.6,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 725,
+     "nps": 436434,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 0.7,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 176,
+     "nps": 1354241,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 43.2,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5191.4,
+   "total_ms": 79746.5,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     9,
+     10
+    ]
+   ],
+   "wall_ms": 79747.9,
+   "plies": 30,
+   "index": 21,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": 670,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 0.2,
+     "score": -160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5147.8,
+     "score": 490,
+     "depth": 8,
+     "nodes": 5841920,
+     "nps": 1145449,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5148.1,
+     "score": -1330,
+     "depth": 6,
+     "nodes": 7690240,
+     "nps": 1507812,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5100.9,
+     "score": 1310,
+     "depth": 7,
+     "nodes": 6987776,
+     "nps": 1370084,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5101.0,
+     "score": -1080,
+     "depth": 6,
+     "nodes": 4599808,
+     "nps": 901862,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5102.2,
+     "score": 1400,
+     "depth": 7,
+     "nodes": 7315456,
+     "nps": 1433937,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 5101.1,
+     "score": -1400,
+     "depth": 6,
+     "nodes": 4945920,
+     "nps": 969695,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 5101.1,
+     "score": 1490,
+     "depth": 8,
+     "nodes": 4557824,
+     "nps": 893600,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5100.8,
+     "score": -980,
+     "depth": 5,
+     "nodes": 3280896,
+     "nps": 643303,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5100.9,
+     "score": 559110,
+     "depth": 5,
+     "nodes": 4349952,
+     "nps": 852887,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 5101.7,
+     "score": -559110,
+     "depth": 4,
+     "nodes": 4445184,
+     "nps": 871428,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      5,
+      6
+     ],
+     "ms": 0.7,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 186,
+     "nps": 1609080,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 52.8,
+     "score": -9999995,
+     "depth": 3,
+     "nodes": 7169,
+     "nps": 757869,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 9.7,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 6646,
+     "nps": 726347,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      3,
+      4
+     ],
+     "ms": 62.3,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 13454,
+     "nps": 693330,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 1.2,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 370,
+     "nps": 699903,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      1,
+      2
+     ],
+     "ms": 46.6,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 174,
+     "nps": 1467029,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 0.5,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5148.1,
+   "total_ms": 51279.9,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     9
+    ]
+   ],
+   "wall_ms": 51280.8,
+   "plies": 20,
+   "index": 22,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 0.2,
+     "score": 1160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 0.2,
+     "score": -590,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5195.2,
+     "score": 1390,
+     "depth": 7,
+     "nodes": 8981504,
+     "nps": 1760798,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 3592.0,
+     "score": -1550,
+     "depth": 8,
+     "nodes": 3691654,
+     "nps": 1041458,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 5100.8,
+     "score": 1060,
+     "depth": 6,
+     "nodes": 5578752,
+     "nps": 1093850,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 3260.6,
+     "score": -2440,
+     "depth": 9,
+     "nodes": 2900063,
+     "nps": 889624,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 5101.6,
+     "score": 1550,
+     "depth": 6,
+     "nodes": 3602432,
+     "nps": 706222,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 5100.8,
+     "score": -2440,
+     "depth": 7,
+     "nodes": 6368256,
+     "nps": 1248615,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 5101.7,
+     "score": 560950,
+     "depth": 5,
+     "nodes": 4582400,
+     "nps": 898316,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 4820.2,
+     "score": -9999989,
+     "depth": 5,
+     "nodes": 3557173,
+     "nps": 738058,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 17.9,
+     "score": 9999988,
+     "depth": 3,
+     "nodes": 12046,
+     "nps": 690287,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 47.9,
+     "score": -9999989,
+     "depth": 2,
+     "nodes": 2814,
+     "nps": 527767,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      9,
+      13
+     ],
+     "ms": 3.7,
+     "score": 9999990,
+     "depth": 1,
+     "nodes": 1701,
+     "nps": 550755,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 48.2,
+     "score": -9999991,
+     "depth": 1,
+     "nodes": 2161,
+     "nps": 573439,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      6,
+      12
+     ],
+     "ms": 4.8,
+     "score": 9999992,
+     "depth": 1,
+     "nodes": 3237,
+     "nps": 778245,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      5,
+      13
+     ],
+     "ms": 47.1,
+     "score": -9999993,
+     "depth": 1,
+     "nodes": 1589,
+     "nps": 584024,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 3.7,
+     "score": 9999994,
+     "depth": 1,
+     "nodes": 2428,
+     "nps": 792047,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 48.2,
+     "score": -9999995,
+     "depth": 1,
+     "nodes": 2577,
+     "nps": 587716,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 4.5,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 2669,
+     "nps": 671148,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 43.4,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 1361,
+     "nps": 519031,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 3.8,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 2274,
+     "nps": 713501,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      3,
+      11
+     ],
+     "ms": 48.0,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 160,
+     "nps": 1404161,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 0.6,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5195.2,
+   "total_ms": 37595.2,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "wall_ms": 37596.2,
+   "plies": 24,
+   "index": 23,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 0.2,
+     "score": 1160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 0.2,
+     "score": -590,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 3202.9,
+     "score": 590,
+     "depth": 8,
+     "nodes": 3704810,
+     "nps": 1189263,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 5152.0,
+     "score": -1160,
+     "depth": 6,
+     "nodes": 6982656,
+     "nps": 1369126,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5100.7,
+     "score": 1150,
+     "depth": 8,
+     "nodes": 4940800,
+     "nps": 968776,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 5100.9,
+     "score": -1280,
+     "depth": 6,
+     "nodes": 5122048,
+     "nps": 1004271,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5101.4,
+     "score": 1940,
+     "depth": 8,
+     "nodes": 4800512,
+     "nps": 941129,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 5102.0,
+     "score": -2270,
+     "depth": 6,
+     "nodes": 3578880,
+     "nps": 701542,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 4870.9,
+     "score": 1960,
+     "depth": 8,
+     "nodes": 4495586,
+     "nps": 923042,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5102.5,
+     "score": -2140,
+     "depth": 6,
+     "nodes": 4059136,
+     "nps": 795601,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5100.8,
+     "score": 1960,
+     "depth": 6,
+     "nodes": 4470784,
+     "nps": 876603,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 5101.4,
+     "score": -1960,
+     "depth": 5,
+     "nodes": 3728384,
+     "nps": 730953,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 5101.6,
+     "score": 2870,
+     "depth": 8,
+     "nodes": 3922944,
+     "nps": 769043,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 5101.1,
+     "score": -3940,
+     "depth": 6,
+     "nodes": 4570112,
+     "nps": 896029,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 5101.2,
+     "score": 4340,
+     "depth": 8,
+     "nodes": 3670016,
+     "nps": 719524,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      10,
+      14
+     ],
+     "ms": 5101.8,
+     "score": -5240,
+     "depth": 6,
+     "nodes": 4562944,
+     "nps": 894501,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 386.3,
+     "score": 9999986,
+     "depth": 7,
+     "nodes": 354736,
+     "nps": 919750,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 5100.9,
+     "score": -4330,
+     "depth": 5,
+     "nodes": 4026368,
+     "nps": 789455,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 9.1,
+     "score": 9999988,
+     "depth": 2,
+     "nodes": 5241,
+     "nps": 618673,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      12,
+      13
+     ],
+     "ms": 120.4,
+     "score": -9999989,
+     "depth": 2,
+     "nodes": 60354,
+     "nps": 763116,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      13,
+      14
+     ],
+     "ms": 40.0,
+     "score": 9999990,
+     "depth": 3,
+     "nodes": 42129,
+     "nps": 1072454,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 57.6,
+     "score": -9999991,
+     "depth": 2,
+     "nodes": 37415,
+     "nps": 654638,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 12.8,
+     "score": 9999994,
+     "depth": 1,
+     "nodes": 10313,
+     "nps": 836795,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      6,
+      11
+     ],
+     "ms": 69.4,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 21496,
+     "nps": 938047,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      6,
+      12
+     ],
+     "ms": 10.9,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 8324,
+     "nps": 803551,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      5,
+      13
+     ],
+     "ms": 53.1,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 4762,
+     "nps": 535207,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      4,
+      10
+     ],
+     "ms": 12.1,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 8416,
+     "nps": 724458,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      2,
+      8
+     ],
+     "ms": 43.7,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 186,
+     "nps": 1386714,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      3,
+      9
+     ],
+     "ms": 0.6,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5152.0,
+   "total_ms": 75258.3,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     10
+    ]
+   ],
+   "wall_ms": 75259.9,
+   "plies": 30,
+   "index": 24,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": 670,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 0.2,
+     "score": -160,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5190.8,
+     "score": 90,
+     "depth": 6,
+     "nodes": 8500224,
+     "nps": 1666647,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5148.0,
+     "score": -990,
+     "depth": 8,
+     "nodes": 5942272,
+     "nps": 1165046,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5101.3,
+     "score": 310,
+     "depth": 6,
+     "nodes": 6825984,
+     "nps": 1338232,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5101.9,
+     "score": -390,
+     "depth": 7,
+     "nodes": 5819392,
+     "nps": 1140735,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5102.6,
+     "score": 550,
+     "depth": 6,
+     "nodes": 5520384,
+     "nps": 1082009,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 5100.8,
+     "score": -1060,
+     "depth": 8,
+     "nodes": 5481472,
+     "nps": 1074746,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 5102.4,
+     "score": 390,
+     "depth": 6,
+     "nodes": 4547584,
+     "nps": 891385,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 4889.2,
+     "score": -920,
+     "depth": 7,
+     "nodes": 5570370,
+     "nps": 1139484,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5101.4,
+     "score": 500,
+     "depth": 6,
+     "nodes": 4148224,
+     "nps": 813236,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 4580.9,
+     "score": -880,
+     "depth": 7,
+     "nodes": 4603455,
+     "nps": 1005067,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5102.6,
+     "score": 1090,
+     "depth": 5,
+     "nodes": 3256320,
+     "nps": 638244,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 5100.6,
+     "score": -880,
+     "depth": 6,
+     "nodes": 5800960,
+     "nps": 1137430,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      13,
+      11
+     ],
+     "ms": 5101.7,
+     "score": -470,
+     "depth": 6,
+     "nodes": 4425728,
+     "nps": 867601,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 5101.2,
+     "score": 0,
+     "depth": 6,
+     "nodes": 3941376,
+     "nps": 772755,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5101.6,
+     "score": 0,
+     "depth": 5,
+     "nodes": 3866624,
+     "nps": 758022,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 3002.0,
+     "score": 90,
+     "depth": 6,
+     "nodes": 1773816,
+     "nps": 590994,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 5100.7,
+     "score": -2190,
+     "depth": 4,
+     "nodes": 3545088,
+     "nps": 695076,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 4019.7,
+     "score": 2630,
+     "depth": 5,
+     "nodes": 3951316,
+     "nps": 983161,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 5102.0,
+     "score": -2630,
+     "depth": 4,
+     "nodes": 3323904,
+     "nps": 651588,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      5,
+      9
+     ],
+     "ms": 5100.7,
+     "score": 1310,
+     "depth": 4,
+     "nodes": 5024768,
+     "nps": 985227,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 5101.3,
+     "score": -1310,
+     "depth": 3,
+     "nodes": 5442560,
+     "nps": 1067027,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      12,
+      13
+     ],
+     "ms": 114.1,
+     "score": 9999992,
+     "depth": 3,
+     "nodes": 94682,
+     "nps": 834080,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      13,
+      14
+     ],
+     "ms": 0.8,
+     "score": -9999993,
+     "depth": 2,
+     "nodes": 288,
+     "nps": 1308989,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      14,
+      13
+     ],
+     "ms": 49.0,
+     "score": 9999994,
+     "depth": 1,
+     "nodes": 2849,
+     "nps": 706431,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      13,
+      12
+     ],
+     "ms": 2.8,
+     "score": -9999995,
+     "depth": 1,
+     "nodes": 1498,
+     "nps": 706512,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 45.2,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 2056,
+     "nps": 741494,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      11,
+      14
+     ],
+     "ms": 2.0,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 878,
+     "nps": 714946,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      13,
+      13
+     ],
+     "ms": 49.9,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 1497,
+     "nps": 834506,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 32,
+     "player": "black",
+     "pos": [
+      3,
+      7
+     ],
+     "ms": 0.9,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 210,
+     "nps": 1364362,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 33,
+     "player": "white",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 43.1,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5190.8,
+   "total_ms": 103661.6,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     9
+    ]
+   ],
+   "wall_ms": 103663.2,
+   "plies": 33,
+   "index": 25,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5191.6,
+     "score": 880,
+     "depth": 8,
+     "nodes": 6221824,
+     "nps": 1219778,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 5147.9,
+     "score": -910,
+     "depth": 6,
+     "nodes": 6615040,
+     "nps": 1296821,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5100.9,
+     "score": 830,
+     "depth": 8,
+     "nodes": 5689344,
+     "nps": 1115491,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.3,
+     "score": -990,
+     "depth": 6,
+     "nodes": 6766592,
+     "nps": 1326603,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5101.3,
+     "score": 1370,
+     "depth": 8,
+     "nodes": 6042624,
+     "nps": 1184696,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 5100.6,
+     "score": -2200,
+     "depth": 6,
+     "nodes": 5097472,
+     "nps": 999498,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 5101.1,
+     "score": 2860,
+     "depth": 8,
+     "nodes": 3815424,
+     "nps": 748031,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      12,
+      8
+     ],
+     "ms": 5101.5,
+     "score": -1390,
+     "depth": 5,
+     "nodes": 3692544,
+     "nps": 723892,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 5101.1,
+     "score": 560300,
+     "depth": 5,
+     "nodes": 4067328,
+     "nps": 797410,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 5101.7,
+     "score": -559420,
+     "depth": 4,
+     "nodes": 3461120,
+     "nps": 678496,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      10,
+      5
+     ],
+     "ms": 2262.8,
+     "score": 9999994,
+     "depth": 4,
+     "nodes": 1531238,
+     "nps": 676915,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      12,
+      10
+     ],
+     "ms": 4748.5,
+     "score": -9999995,
+     "depth": 3,
+     "nodes": 3224117,
+     "nps": 679072,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 6.0,
+     "score": 9999996,
+     "depth": 2,
+     "nodes": 5864,
+     "nps": 1098782,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      7,
+      5
+     ],
+     "ms": 816.5,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 511946,
+     "nps": 660719,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 87.6,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 111114,
+     "nps": 1279935,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      5,
+      3
+     ],
+     "ms": 0.7,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 154,
+     "nps": 1320437,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 43.6,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5191.6,
+   "total_ms": 59114.7,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     8
+    ]
+   ],
+   "wall_ms": 59115.7,
+   "plies": 18,
+   "index": 26,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      10,
+      7
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 5147.8,
+     "score": 90,
+     "depth": 6,
+     "nodes": 7930880,
+     "nps": 1554941,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 3999.8,
+     "score": -1100,
+     "depth": 8,
+     "nodes": 4223364,
+     "nps": 1068242,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5101.2,
+     "score": 480,
+     "depth": 6,
+     "nodes": 6720512,
+     "nps": 1317607,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5102.2,
+     "score": -910,
+     "depth": 8,
+     "nodes": 5632000,
+     "nps": 1103991,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 5100.9,
+     "score": 1000,
+     "depth": 5,
+     "nodes": 4917248,
+     "nps": 964084,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 5100.9,
+     "score": -510,
+     "depth": 6,
+     "nodes": 4560896,
+     "nps": 894251,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 5100.8,
+     "score": -470,
+     "depth": 6,
+     "nodes": 4125696,
+     "nps": 808934,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      9,
+      5
+     ],
+     "ms": 5101.0,
+     "score": 360,
+     "depth": 7,
+     "nodes": 4686848,
+     "nps": 918928,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5100.7,
+     "score": -360,
+     "depth": 6,
+     "nodes": 3245056,
+     "nps": 636279,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 5101.9,
+     "score": -150,
+     "depth": 6,
+     "nodes": 3703808,
+     "nps": 726069,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 5102.4,
+     "score": 150,
+     "depth": 5,
+     "nodes": 3254272,
+     "nps": 637876,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      10,
+      4
+     ],
+     "ms": 5101.4,
+     "score": 480,
+     "depth": 8,
+     "nodes": 4380672,
+     "nps": 858841,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      11,
+      3
+     ],
+     "ms": 5101.0,
+     "score": 80,
+     "depth": 6,
+     "nodes": 4425728,
+     "nps": 867727,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5101.0,
+     "score": 1790,
+     "depth": 8,
+     "nodes": 3852288,
+     "nps": 755275,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 5101.4,
+     "score": 80,
+     "depth": 5,
+     "nodes": 3637248,
+     "nps": 713091,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 436.9,
+     "score": 9999990,
+     "depth": 6,
+     "nodes": 379133,
+     "nps": 869108,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      11,
+      11
+     ],
+     "ms": 5100.7,
+     "score": -1310,
+     "depth": 5,
+     "nodes": 4193280,
+     "nps": 822206,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 1.0,
+     "score": 9999992,
+     "depth": 2,
+     "nodes": 337,
+     "nps": 1162313,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 4591.7,
+     "score": -9999993,
+     "depth": 4,
+     "nodes": 5289733,
+     "nps": 1163385,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 5.2,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 4191,
+     "nps": 914858,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 50.7,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 5484,
+     "nps": 717398,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 3.0,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 2874,
+     "nps": 1203567,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      10,
+      5
+     ],
+     "ms": 49.0,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 3313,
+     "nps": 645852,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      7,
+      6
+     ],
+     "ms": 8.5,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 8562,
+     "nps": 1097757,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      3,
+      6
+     ],
+     "ms": 47.4,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 194,
+     "nps": 1270448,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 0.7,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5147.8,
+   "total_ms": 85759.2,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     10,
+     7
+    ]
+   ],
+   "wall_ms": 85760.6,
+   "plies": 27,
+   "index": 27,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 0.2,
+     "score": 1060,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": -500,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 3498.2,
+     "score": 560,
+     "depth": 8,
+     "nodes": 4779160,
+     "nps": 1400984,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 5148.0,
+     "score": -1460,
+     "depth": 6,
+     "nodes": 6054912,
+     "nps": 1187199,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.6,
+     "score": 1830,
+     "depth": 7,
+     "nodes": 6115328,
+     "nps": 1198867,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5101.1,
+     "score": -340,
+     "depth": 5,
+     "nodes": 3288064,
+     "nps": 644641,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5101.6,
+     "score": 2360,
+     "depth": 9,
+     "nodes": 5123072,
+     "nps": 1004333,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 5101.2,
+     "score": -740,
+     "depth": 5,
+     "nodes": 3473408,
+     "nps": 680967,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 3768.1,
+     "score": 1440,
+     "depth": 8,
+     "nodes": 4554052,
+     "nps": 1208768,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      12,
+      11
+     ],
+     "ms": 5101.6,
+     "score": -2370,
+     "depth": 6,
+     "nodes": 4605952,
+     "nps": 902978,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 3145.3,
+     "score": 2030,
+     "depth": 7,
+     "nodes": 4009156,
+     "nps": 1274954,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 5100.7,
+     "score": -960,
+     "depth": 5,
+     "nodes": 4342784,
+     "nps": 851520,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      10,
+      12
+     ],
+     "ms": 3320.2,
+     "score": 1970,
+     "depth": 7,
+     "nodes": 4624218,
+     "nps": 1393035,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5101.8,
+     "score": -1050,
+     "depth": 5,
+     "nodes": 3963904,
+     "nps": 777065,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 5101.9,
+     "score": 1960,
+     "depth": 7,
+     "nodes": 4556800,
+     "nps": 893269,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 5101.8,
+     "score": -950,
+     "depth": 5,
+     "nodes": 4336640,
+     "nps": 850120,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 5100.7,
+     "score": 1210,
+     "depth": 6,
+     "nodes": 8286208,
+     "nps": 1624722,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      10,
+      13
+     ],
+     "ms": 5100.7,
+     "score": -2860,
+     "depth": 6,
+     "nodes": 4666368,
+     "nps": 914963,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 3461.9,
+     "score": 2350,
+     "depth": 6,
+     "nodes": 2935207,
+     "nps": 848033,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 5100.9,
+     "score": -1680,
+     "depth": 5,
+     "nodes": 3641344,
+     "nps": 713930,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 3329.9,
+     "score": 2270,
+     "depth": 7,
+     "nodes": 2555883,
+     "nps": 767720,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      9,
+      5
+     ],
+     "ms": 5101.6,
+     "score": -2270,
+     "depth": 6,
+     "nodes": 4664320,
+     "nps": 914382,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      9,
+      13
+     ],
+     "ms": 3153.0,
+     "score": 1880,
+     "depth": 7,
+     "nodes": 2643285,
+     "nps": 838516,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      9,
+      14
+     ],
+     "ms": 5102.2,
+     "score": -2270,
+     "depth": 4,
+     "nodes": 3465216,
+     "nps": 679265,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 5101.1,
+     "score": 3080,
+     "depth": 6,
+     "nodes": 4738048,
+     "nps": 928977,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      8,
+      6
+     ],
+     "ms": 5102.0,
+     "score": -3000,
+     "depth": 5,
+     "nodes": 4111360,
+     "nps": 805964,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      8,
+      5
+     ],
+     "ms": 9.9,
+     "score": 9999990,
+     "depth": 3,
+     "nodes": 7245,
+     "nps": 787212,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      12,
+      12
+     ],
+     "ms": 1963.7,
+     "score": -9999993,
+     "depth": 4,
+     "nodes": 2209097,
+     "nps": 1149285,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 614.7,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 494759,
+     "nps": 805719,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 206.1,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 177898,
+     "nps": 866030,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 32,
+     "player": "black",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 59.6,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 80840,
+     "nps": 1375447,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 33,
+     "player": "white",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 147.5,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 72158,
+     "nps": 491599,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 34,
+     "player": "black",
+     "pos": [
+      6,
+      10
+     ],
+     "ms": 216.7,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 234629,
+     "nps": 1086204,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 35,
+     "player": "white",
+     "pos": [
+      4,
+      8
+     ],
+     "ms": 0.7,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 172,
+     "nps": 1321805,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 36,
+     "player": "black",
+     "pos": [
+      5,
+      9
+     ],
+     "ms": 42.2,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5148.0,
+   "total_ms": 113708.7,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     9,
+     10
+    ]
+   ],
+   "wall_ms": 113710.6,
+   "plies": 36,
+   "index": 28,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 0.2,
+     "score": 1020,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      8,
+      7
+     ],
+     "ms": 0.2,
+     "score": -570,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 5146.7,
+     "score": 500,
+     "depth": 6,
+     "nodes": 8628224,
+     "nps": 1691646,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      6,
+      6
+     ],
+     "ms": 5151.9,
+     "score": -960,
+     "depth": 9,
+     "nodes": 5606400,
+     "nps": 1098938,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 5101.1,
+     "score": 70,
+     "depth": 6,
+     "nodes": 6478848,
+     "nps": 1270266,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5100.9,
+     "score": -390,
+     "depth": 7,
+     "nodes": 5733376,
+     "nps": 1124147,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      11,
+      7
+     ],
+     "ms": 5101.3,
+     "score": 380,
+     "depth": 6,
+     "nodes": 5790720,
+     "nps": 1135300,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 5102.0,
+     "score": -400,
+     "depth": 7,
+     "nodes": 6393856,
+     "nps": 1253387,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 5101.8,
+     "score": 790,
+     "depth": 6,
+     "nodes": 5365760,
+     "nps": 1051869,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 2867.0,
+     "score": -910,
+     "depth": 9,
+     "nodes": 3575738,
+     "nps": 1247512,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      10,
+      6
+     ],
+     "ms": 5102.3,
+     "score": 1290,
+     "depth": 5,
+     "nodes": 3942400,
+     "nps": 772775,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 4057.3,
+     "score": -320,
+     "depth": 8,
+     "nodes": 3921740,
+     "nps": 966763,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 5101.6,
+     "score": 330,
+     "depth": 5,
+     "nodes": 3928064,
+     "nps": 770065,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 3797.3,
+     "score": 280,
+     "depth": 7,
+     "nodes": 3658279,
+     "nps": 963568,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 5102.1,
+     "score": -460,
+     "depth": 5,
+     "nodes": 3883008,
+     "nps": 761169,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 4437.2,
+     "score": -250,
+     "depth": 6,
+     "nodes": 3605158,
+     "nps": 812601,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 5102.6,
+     "score": -560,
+     "depth": 6,
+     "nodes": 4096000,
+     "nps": 802859,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 5101.0,
+     "score": -330,
+     "depth": 6,
+     "nodes": 5146624,
+     "nps": 1009074,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 5102.3,
+     "score": 1110,
+     "depth": 5,
+     "nodes": 3602432,
+     "nps": 706127,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      10,
+      5
+     ],
+     "ms": 5100.8,
+     "score": 1720,
+     "depth": 6,
+     "nodes": 3374080,
+     "nps": 661570,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      13,
+      5
+     ],
+     "ms": 5101.4,
+     "score": -1720,
+     "depth": 5,
+     "nodes": 5594112,
+     "nps": 1096731,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      12,
+      6
+     ],
+     "ms": 291.3,
+     "score": 9999992,
+     "depth": 5,
+     "nodes": 361391,
+     "nps": 1243911,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 13.7,
+     "score": -9999993,
+     "depth": 4,
+     "nodes": 25552,
+     "nps": 1977794,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 57.7,
+     "score": 9999994,
+     "depth": 3,
+     "nodes": 26291,
+     "nps": 1777691,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 1.2,
+     "score": -9999995,
+     "depth": 2,
+     "nodes": 518,
+     "nps": 734380,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      11,
+      10
+     ],
+     "ms": 42.9,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 221,
+     "nps": 1271079,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      12,
+      10
+     ],
+     "ms": 0.9,
+     "score": -9999997,
+     "depth": 1,
+     "nodes": 217,
+     "nps": 1258583,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 43.0,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 220,
+     "nps": 623384,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      4,
+      4
+     ],
+     "ms": 0.8,
+     "score": -9999999,
+     "depth": 1,
+     "nodes": 198,
+     "nps": 1426143,
+     "reason": "PVS搜索(对手有VCF·无挡点)"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      7,
+      14
+     ],
+     "ms": 43.1,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 5151.9,
+   "total_ms": 92273.6,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     9,
+     8
+    ]
+   ],
+   "wall_ms": 92275.2,
+   "plies": 31,
+   "index": 29,
+   "swapped": true,
+   "a_side": "white"
+  }
+ ],
+ "summary": {
+  "a_name": "ab_arm_both",
+  "a_wins": 21,
+  "a_losses": 9,
+  "draws": 0,
+  "win_rate": 0.7,
+  "illegal": 0,
+  "errors": 0,
+  "total_wall_s": 1992.1,
+  "games_done": 30,
+  "games_planned": 30,
+  "partial": false
+ }
+}

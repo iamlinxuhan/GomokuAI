@@ -1,0 +1,397 @@
+name: Build and Release
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+
+  # ============================================================
+  #  测试 — 每次 push / PR 都跑
+  #
+  #  放在这里而不是塞进下面三个打包 job：它们只在打 tag 时触发，而
+  #  "改坏了但还没发版"恰恰是回归最该被挡住的时候。两条 Qt 用例只
+  #  import 不构造 QApplication，因此无需 display 即可跑完。
+  # ============================================================
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 = Windows 打包用的版本（见下方 build-windows）；3.13 = 开发环境
+        # 实际在跑的版本。刻意不测 3.12 —— 两个端点覆盖"发出去的"与"开发的"，
+        # 中间那个既不发布也不开发。
+        python-version: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        # 依赖清单只有 requirements*.txt 一处，不再在这里重复列举 ——
+        # 早先四个 job 各写一行 pip install，加一个依赖要改四处，漏掉一处
+        # 就得到"本地过了 CI 挂"的假象。
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Run test suite
+        # -m "not perf"：跳过依赖机器速度的门槛（吞吐 nps / 到达深度）。
+        # 那些门槛在开发机上是有效哨兵，在更慢的 runner 上只会变成随机红。
+        # 正确性、增量一致性、时间合规、题库、VCF、棋型这些**全部保留**。
+        run: python -m pytest -q -m "not perf"
+
+  # ============================================================
+  #  Windows — Inno Setup 安装包 + 免安装单文件版
+  #  纯 CPU：引擎不再依赖 PyTorch（GPU 分支在原版中从未生效，已整体删除）。
+  #  连带收益是包体积——旧版为了塞 CUDA 运行时，要先清磁盘、再拆成两个包
+  #  才不超 GitHub 的 2GB 上限；现在只剩 numpy + PyQt5，一个包绰绰有余。
+  #
+  #  **为什么从 .7z 换成 .exe。** 旧的 7z 里是一个 install.bat：双击看到黑
+  #  窗口、没有安装向导、"添加或删除程序"里查无此物（卸载要靠另一个 .bat）、
+  #  失败时只能 `pause` 让人自己看。这些正是"安装程序"该做的事。
+  #
+  #  两份产物各有各的用处，不是二选一：
+  #  * `GomokuAI_Setup_v<ver>.exe` —— onedir 打成安装包，有向导、有卸载项、
+  #    有开始菜单/桌面快捷方式。收进了 `installer/GomokuAI.iss`。
+  #  * `GomokuAI_Portable_v<ver>.exe` —— onefile，单文件免安装，解压即用，
+  #    拷到 U 盘就能跑。代价是每次启动都要先把上百 MB 解包到临时目录。
+  # ============================================================
+  build-windows:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Resolve version
+        # 三个步骤都要这个号码，只算一次 —— 与 requirements 清单同一个理由：
+        # 同一个事实写在多处，改一处漏一处就会得到两份产物版本号不一致。
+        #
+        # tag 推送时是 `vX.Y.Z` 去掉 v；workflow_dispatch（手动试跑）没有版本
+        # 号可用，落成 0.0.0 —— 手动触发的产物进不了 Release（`release` job
+        # 只在 tag 上跑），把分支名标上去只会更让人误会。
+        shell: pwsh
+        run: |
+          $raw = '${{ github.ref_name }}'
+          $ver = if ($raw -match '^v[0-9]') { $raw.Substring(1) } else { '0.0.0' }
+          "APP_VERSION=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Write-Host "版本号: $ver"
+
+      - name: Build (onedir)
+        # 安装包的原料。onedir 而不是 onefile：onefile 每次启动都要把上百 MB
+        # 解包到临时目录，PyQt5 程序的首启动会明显变慢 —— 装到硬盘上的那份
+        # 没有任何理由付这个代价。
+        run: |
+          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
+            main.py
+
+      - name: Build portable (onefile)
+        # 免安装的那份。与上一份用不同的 --name，否则两者共用 build/ 与
+        # dist/ 下的同名中间目录，第二次构建会捡第一次的缓存而漏东西。
+        run: |
+          pyinstaller --onefile --windowed --icon="五子棋.ico" --name "GomokuAI_Portable" `
+            main.py
+
+      - name: Install Inno Setup
+        # choco 装的是当前最新版。**不假设它带简体中文语言文件** —— Inno
+        # Setup 从 6.3 起才官方收录 ChineseSimplified.isl，而 `MessagesFile`
+        # 指向不存在的文件是编译期硬错，猜错的代价是整步失败。
+        run: choco install innosetup -y --no-progress
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "找不到 ISCC：$iscc" }
+
+          # 中文界面只在**编译器自带那份 .isl** 存在时才挂上。用自带的而不是
+          # 把 .isl 收进仓库：语言文件与编译器同源，不会有版本错配。
+          $isccArgs = @("/DAppVersion=$env:APP_VERSION")
+          if (Test-Path (Join-Path (Split-Path $iscc -Parent) "Languages\ChineseSimplified.isl")) {
+            Write-Host "编译器自带中文语言文件，安装向导显示中文"
+            $isccArgs += "/DHasChinese=1"
+          } else {
+            Write-Warning "编译器没有 ChineseSimplified.isl，安装向导退回英文"
+          }
+          $isccArgs += "installer\GomokuAI.iss"
+
+          & $iscc @isccArgs
+          $setup = Get-ChildItem "dist-installer\GomokuAI_Setup_v*.exe"
+          if (-not $setup) { throw "ISCC 退出码为 0 却没有产出安装包" }
+          $setup | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}}
+
+      - name: Collect portable artifact
+        shell: pwsh
+        run: |
+          Copy-Item "dist\GomokuAI_Portable.exe" "GomokuAI_Portable_v$env:APP_VERSION.exe"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GomokuAI_For_Windows_Setup
+          path: dist-installer/GomokuAI_Setup_v*.exe
+
+      - name: Upload portable
+        uses: actions/upload-artifact@v4
+        with:
+          name: GomokuAI_For_Windows_Portable
+          path: GomokuAI_Portable_v*.exe
+
+
+  # ============================================================
+  #  Linux AMD64 — 免安装裸可执行文件 + .deb（onedir → /opt/）
+  #  纯 CPU：不再需要 pytorch/pytorch 那个预装 CUDA 的镜像，
+  #  换回普通 runner —— 镜像本身就有 ~7GB，而它提供的东西（CUDA 运行时）
+  #  现在一件都用不上。顺带省掉了"清磁盘"那一步。
+  #
+  #  两份产物都要：.deb 管"装进系统、有菜单项、能卸载"，裸可执行文件管
+  #  "下下来 chmod +x 就跑、不要 root、不碰系统目录"。
+  # ============================================================
+  build-linux-amd:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            python3-venv binutils libgl1 libglib2.0-0 libxkbcommon-x11-0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xkb1 libxkbcommon0 \
+            libegl1 libfontconfig1 libdbus-1-3
+
+      - name: Setup venv & install pip deps
+        # runner 的 python3 是 24.04 的系统解释器，受 PEP 668 保护，直接
+        # pip install 会以 externally-managed-environment 退出。用 venv 隔离，
+        # 与 ARM job 的做法一致。
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements-dev.txt
+
+      - name: Build (onedir)
+        # .deb 的原料。
+        run: |
+          .venv/bin/pyinstaller --onedir --windowed --name "gomoku-ai" main.py
+
+      - name: Build standalone executable (onefile)
+        # 免安装版本：单个 ELF，下下来 `chmod +x` 就能跑。与上一份用不同的
+        # --name，否则两者共用 build/ 与 dist/ 下的同名中间目录，第二次构建
+        # 会捡起第一次的缓存。
+        run: |
+          .venv/bin/pyinstaller --onefile --windowed --name "GomokuAI_For_Linux_AMD" main.py
+          ls -lh dist/GomokuAI_For_Linux_AMD
+          file dist/GomokuAI_For_Linux_AMD
+
+      - name: Package .deb
+        shell: bash
+        run: |
+          raw="${GITHUB_REF_NAME}"
+          if [[ "$raw" =~ ^v[0-9] ]]; then VERSION="${raw#v}"
+          elif [[ "$raw" =~ ^[0-9] ]]; then VERSION="$raw"
+          else VERSION="0.0.0-$(date -u +%Y%m%d-%H%M%S)"; fi
+          echo "VERSION=$VERSION"
+
+          PKG_DIR="deb_build"
+          APP_DIR="${PKG_DIR}/opt/gomoku-ai"
+          BIN_DIR="${PKG_DIR}/usr/local/bin"
+          DESK_DIR="${PKG_DIR}/usr/share/applications"
+          mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESK_DIR}" "${PKG_DIR}/DEBIAN"
+
+          cp -r dist/gomoku-ai/* "${APP_DIR}/"
+          chmod -R 755 "${APP_DIR}"
+
+          # 启动脚本
+          printf '%s\n%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai/gomoku-ai "$@"' > "${BIN_DIR}/gomoku-ai"
+          chmod 755 "${BIN_DIR}/gomoku-ai"
+
+          # .desktop 文件
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            '[Desktop Entry]' \
+            'Name=五子棋AI' \
+            'Name[zh_CN]=五子棋AI' \
+            'Comment=Gomoku AI - Negamax/PVS + Transposition Table + Quiescence & VCF (CPU)' \
+            'Exec=/usr/local/bin/gomoku-ai' \
+            'Terminal=false' \
+            'Type=Application' \
+            'Categories=Game;BoardGame;' \
+            > "${DESK_DIR}/gomoku-ai.desktop"
+
+          # DEBIAN/control
+          # 界面全靠中文，而这几个基础库一个字体都不带 —— 最小系统上装完
+          # 全是方框。用 `|` 串出候选链，任意一个 CJK 字体已存在即满足，
+          # 不必为了一个棋盘拖 60MB 的 Noto CJK 下来。
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            "Package: gomoku-ai" \
+            "Version: ${VERSION}" \
+            "Section: games" \
+            "Priority: optional" \
+            "Architecture: amd64" \
+            "Maintainer: iamlinxuhan" \
+            "Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0, fonts-noto-cjk | fonts-wqy-microhei | fonts-wqy-zenhei | fonts-arphic-uming" \
+            "Description: 五子棋AI - 位棋盘增量评估 + Negamax/PVS + 置换表 + 静止搜索/VCF 连续冲四 (纯 CPU)" \
+            > "${PKG_DIR}/DEBIAN/control"
+
+          # 打包前再清理一次，确保有足够空间
+          df -h /
+          pip cache purge 2>/dev/null || true
+          rm -rf /tmp/pip-* /tmp/tmp* 2>/dev/null || true
+          df -h /
+
+          # 使用 gzip 压缩（比 zstd 省磁盘，兼容性更好）
+          dpkg-deb -Zgzip --build "${PKG_DIR}" "GomokuAI_For_Linux_AMD.deb"
+          ls -lh "GomokuAI_For_Linux_AMD.deb"
+
+      - name: Upload .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: GomokuAI_For_Linux_AMD_deb
+          path: GomokuAI_For_Linux_AMD.deb
+
+      - name: Upload standalone executable
+        # 注意：artifact 这一趟**不带可执行位**（upload-artifact 只存字节），
+        # 所以用户下到的文件必须自己 `chmod +x`。Release 资产本来也没有权限
+        # 这回事，不用额外处理 —— 只在 README 里说清楚。
+        uses: actions/upload-artifact@v4
+        with:
+          name: GomokuAI_For_Linux_AMD_bin
+          path: dist/GomokuAI_For_Linux_AMD
+
+
+  # ============================================================
+  #  Linux ARM64 — 免安装裸可执行文件 + .pkg（apt PyQt5，跳过源码编译）
+  #  与 AMD64 那份对称：一份进系统、一份免安装。
+  # ============================================================
+  build-linux-arm:
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (含 apt PyQt5 跳过慢速源码编译)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends \
+            python3-venv python3-dev python3-pyqt5 \
+            binutils libgl1 libglib2.0-0 libxkbcommon-x11-0 \
+            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+            libxcb-xinerama0 libxcb-xkb1 libxkbcommon0 \
+            libegl1 libfontconfig1 libdbus-1-3 \
+            qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
+
+      - name: Setup venv & install pip deps
+        # 唯一**不**从 requirements-dev.txt 装依赖的 job：上面 apt 那份
+        # `python3-pyqt5` 已经提供 PyQt5，而 pip 只认自己那份元数据 ——
+        # 喂给它 requirements-dev.txt，它会把 PyQt5 从源码重编一遍 Qt，
+        # 慢到不可接受（这正是这个 job 用 apt 的原因）。所以这里只列
+        # 清单里剩下的两个，改动 requirements.txt 时记得同步。
+        run: |
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install numpy pyinstaller
+          .venv/bin/python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 OK')"
+
+      - name: Build (onedir)
+        # .pkg 的原料。
+        run: |
+          .venv/bin/pyinstaller --onedir --windowed --name "gomoku-ai-arm" main.py
+
+      - name: Build standalone executable (onefile)
+        # 与 AMD64 那份同源同参数，只差架构（runner 就是 arm64）。
+        run: |
+          .venv/bin/pyinstaller --onefile --windowed --name "GomokuAI_For_Linux_ARM" main.py
+          ls -lh dist/GomokuAI_For_Linux_ARM
+          file dist/GomokuAI_For_Linux_ARM
+
+      - name: Package .pkg
+        run: |
+          PKG_NAME="GomokuAI_For_Linux_ARM"
+          PKG_DIR="${PKG_NAME}/gomoku-ai-arm"
+          mkdir -p "${PKG_DIR}"
+          cp -r dist/gomoku-ai-arm/* "${PKG_DIR}/"
+          chmod -R 755 "${PKG_DIR}"
+          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
+            '#!/bin/bash' \
+            '# 五子棋AI ARM64 版安装脚本' \
+            'set -e' \
+            'APP_DIR="/opt/gomoku-ai-arm"' \
+            'echo "Installing GomokuAI (ARM)..."' \
+            'sudo mkdir -p "${APP_DIR}"' \
+            'sudo cp -r gomoku-ai-arm/* "${APP_DIR}/"' \
+            'sudo chmod -R 755 "${APP_DIR}"' \
+            'sudo ln -sf "${APP_DIR}/gomoku-ai-arm" /usr/local/bin/gomoku-ai' \
+            'echo "Done! Run: gomoku-ai"' \
+            > "${PKG_NAME}/install.sh"
+          chmod 755 "${PKG_NAME}/install.sh"
+          tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
+          mv "${PKG_NAME}.tar.gz" "${PKG_NAME}.pkg"
+          ls -lh "${PKG_NAME}.pkg"
+
+      - name: Upload .pkg
+        uses: actions/upload-artifact@v4
+        with:
+          name: GomokuAI_For_Linux_ARM_pkg
+          path: GomokuAI_For_Linux_ARM.pkg
+
+      - name: Upload standalone executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: GomokuAI_For_Linux_ARM_bin
+          path: dist/GomokuAI_For_Linux_ARM
+
+
+  # ============================================================
+  #  GitHub Release (仅 tag 推送时触发)
+  # ============================================================
+  release:
+    # `test` 必须在这里 —— 否则测试挂了照样能发版（三个 build job 都不依赖它，
+    # 而 `softprops/action-gh-release` 也不看测试结果）。CI 跑的是
+    # `-m "not perf"`，所以这条闸门不受 runner 快慢影响。
+    needs:
+      - test
+      - build-windows
+      - build-linux-amd
+      - build-linux-arm
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release/
+          merge-multiple: true
+
+      - name: List release files
+        run: ls -lah release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "${{ github.ref_name }}"
+          files: release/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

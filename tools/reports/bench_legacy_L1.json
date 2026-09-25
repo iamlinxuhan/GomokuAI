@@ -1,0 +1,145 @@
+{
+ "engine": "legacy",
+ "level": 1,
+ "results": [
+  {
+   "id": "mid_10stones",
+   "move": [
+    7,
+    9
+   ],
+   "wall_ms": 349.2,
+   "engine_ms": 327.8,
+   "depth": 2,
+   "order_depth": 2,
+   "nodes": null,
+   "nps": null,
+   "tt_hit_rate": null,
+   "qnode_ratio": null,
+   "vcf_nodes": null,
+   "score": -10000000,
+   "score_type": null,
+   "reason": "PVS搜索",
+   "compliance": null
+  },
+  {
+   "id": "mid_clash",
+   "move": [
+    9,
+    12
+   ],
+   "wall_ms": 351.7,
+   "engine_ms": 351.7,
+   "depth": 2,
+   "order_depth": 2,
+   "nodes": null,
+   "nps": null,
+   "tt_hit_rate": null,
+   "qnode_ratio": null,
+   "vcf_nodes": null,
+   "score": 10147.5,
+   "score_type": null,
+   "reason": "PVS搜索",
+   "compliance": null
+  },
+  {
+   "id": "spread_wide",
+   "move": [
+    6,
+    6
+   ],
+   "wall_ms": 398.4,
+   "engine_ms": 398.3,
+   "depth": 2,
+   "order_depth": 2,
+   "nodes": null,
+   "nps": null,
+   "tt_hit_rate": null,
+   "qnode_ratio": null,
+   "vcf_nodes": null,
+   "score": 640.4000000000001,
+   "score_type": null,
+   "reason": "PVS搜索",
+   "compliance": null
+  },
+  {
+   "id": "dense_threat",
+   "move": [
+    11,
+    10
+   ],
+   "wall_ms": 347.9,
+   "engine_ms": 347.9,
+   "depth": 2,
+   "order_depth": 2,
+   "nodes": null,
+   "nps": null,
+   "tt_hit_rate": null,
+   "qnode_ratio": null,
+   "vcf_nodes": null,
+   "score": -856174.95,
+   "score_type": null,
+   "reason": "PVS搜索",
+   "compliance": null
+  },
+  {
+   "id": "sparse_early",
+   "move": [
+    10,
+    10
+   ],
+   "wall_ms": 305.3,
+   "engine_ms": 305.3,
+   "depth": 2,
+   "order_depth": 2,
+   "nodes": null,
+   "nps": null,
+   "tt_hit_rate": null,
+   "qnode_ratio": null,
+   "vcf_nodes": null,
+   "score": 676.0,
+   "score_type": null,
+   "reason": "PVS搜索",
+   "compliance": null
+  }
+ ],
+ "legacy_baseline": {
+  "bench_10stones": {
+   "depth": 5,
+   "time_ms": 8149.8,
+   "note": "中局 10 子，难度3"
+  },
+  "cprofile_10stones": {
+   "total_calls": 17861038,
+   "time_s": 8.311,
+   "hot": [
+    [
+     "_check_win_fast",
+     17346,
+     6.367
+    ],
+    [
+     "_cached_evaluate",
+     4201,
+     3.608
+    ],
+    [
+     "evaluate_board",
+     3345,
+     3.22
+    ],
+    [
+     "zobrist_hash",
+     4202,
+     0.382
+    ],
+    [
+     "_analyze_line",
+     537724,
+     0.582
+    ]
+   ],
+   "note": "_check_win_fast 占 77%"
+  }
+ }
+}

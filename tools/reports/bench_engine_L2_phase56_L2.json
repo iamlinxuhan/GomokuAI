@@ -1,0 +1,145 @@
+{
+ "engine": "engine",
+ "level": 2,
+ "results": [
+  {
+   "id": "mid_10stones",
+   "move": [
+    5,
+    8
+   ],
+   "wall_ms": 5.2,
+   "engine_ms": 5.1,
+   "depth": 1,
+   "order_depth": 1,
+   "nodes": 96,
+   "nps": 18617,
+   "tt_hit_rate": 0.0,
+   "qnode_ratio": 0.5,
+   "vcf_nodes": 1,
+   "score": -9999999,
+   "score_type": "mate",
+   "reason": "PVS搜索(对手有VCF)",
+   "compliance": true
+  },
+  {
+   "id": "mid_clash",
+   "move": [
+    10,
+    12
+   ],
+   "wall_ms": 211.5,
+   "engine_ms": 211.5,
+   "depth": 4,
+   "order_depth": 4,
+   "nodes": 6633,
+   "nps": 31355,
+   "tt_hit_rate": 0.06482737826021408,
+   "qnode_ratio": 0.8944670586461632,
+   "vcf_nodes": 3,
+   "score": 9999994,
+   "score_type": "mate",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "spread_wide",
+   "move": [
+    9,
+    5
+   ],
+   "wall_ms": 110.4,
+   "engine_ms": 110.4,
+   "depth": 10,
+   "order_depth": 10,
+   "nodes": 9158,
+   "nps": 82975,
+   "tt_hit_rate": 0.8014850404018344,
+   "qnode_ratio": 0.10089539200698842,
+   "vcf_nodes": 1,
+   "score": 2050,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "dense_threat",
+   "move": [
+    11,
+    10
+   ],
+   "wall_ms": 63.9,
+   "engine_ms": 63.9,
+   "depth": 10,
+   "order_depth": 10,
+   "nodes": 1996,
+   "nps": 31232,
+   "tt_hit_rate": 0.312625250501002,
+   "qnode_ratio": 0.6613226452905812,
+   "vcf_nodes": 3,
+   "score": -2050,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "sparse_early",
+   "move": [
+    8,
+    9
+   ],
+   "wall_ms": 5.3,
+   "engine_ms": 5.3,
+   "depth": 10,
+   "order_depth": 10,
+   "nodes": 480,
+   "nps": 90455,
+   "tt_hit_rate": 0.825,
+   "qnode_ratio": 0.1,
+   "vcf_nodes": 1,
+   "score": 2050,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  }
+ ],
+ "legacy_baseline": {
+  "bench_10stones": {
+   "depth": 5,
+   "time_ms": 8009.7,
+   "note": "中局 10 子，难度3"
+  },
+  "cprofile_10stones": {
+   "total_calls": 14206400,
+   "time_s": 6.783,
+   "hot": [
+    [
+     "_check_win_fast",
+     13035,
+     4.68
+    ],
+    [
+     "_cached_evaluate",
+     2639,
+     2.207
+    ],
+    [
+     "evaluate_board",
+     2035,
+     1.965
+    ],
+    [
+     "_analyze_line",
+     795184,
+     0.848
+    ],
+    [
+     "zobrist_hash",
+     2640,
+     0.238
+    ]
+   ],
+   "note": "_check_win_fast 占累计耗时约 69-77%（不同测量批次），是稳定的首要热点"
+  }
+ }
+}

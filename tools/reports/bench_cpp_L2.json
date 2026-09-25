@@ -1,0 +1,145 @@
+{
+ "engine": "cpp",
+ "level": 2,
+ "results": [
+  {
+   "id": "mid_10stones",
+   "move": [
+    5,
+    8
+   ],
+   "wall_ms": 66.8,
+   "engine_ms": 0.3,
+   "depth": 1,
+   "order_depth": 1,
+   "nodes": 96,
+   "nps": 1438,
+   "tt_hit_rate": 0.0,
+   "qnode_ratio": 0.5,
+   "vcf_nodes": null,
+   "score": -9999999,
+   "score_type": "mate",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "mid_clash",
+   "move": [
+    9,
+    13
+   ],
+   "wall_ms": 63.8,
+   "engine_ms": 19.8,
+   "depth": 4,
+   "order_depth": 4,
+   "nodes": 18757,
+   "nps": 293814,
+   "tt_hit_rate": 0.113344,
+   "qnode_ratio": 0.395746,
+   "vcf_nodes": null,
+   "score": 28690,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "spread_wide",
+   "move": [
+    7,
+    5
+   ],
+   "wall_ms": 252.1,
+   "engine_ms": 210.6,
+   "depth": 4,
+   "order_depth": 4,
+   "nodes": 350435,
+   "nps": 1389968,
+   "tt_hit_rate": 0.108568,
+   "qnode_ratio": 0.410992,
+   "vcf_nodes": null,
+   "score": 570,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "dense_threat",
+   "move": [
+    11,
+    10
+   ],
+   "wall_ms": 72.0,
+   "engine_ms": 24.3,
+   "depth": 4,
+   "order_depth": 4,
+   "nodes": 30985,
+   "nps": 430499,
+   "tt_hit_rate": 0.022495,
+   "qnode_ratio": 0.584444,
+   "vcf_nodes": null,
+   "score": 1340,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  },
+  {
+   "id": "sparse_early",
+   "move": [
+    8,
+    9
+   ],
+   "wall_ms": 64.0,
+   "engine_ms": 20.8,
+   "depth": 4,
+   "order_depth": 4,
+   "nodes": 30967,
+   "nps": 484019,
+   "tt_hit_rate": 0.067104,
+   "qnode_ratio": 0.451739,
+   "vcf_nodes": null,
+   "score": 560,
+   "score_type": "static",
+   "reason": "PVS搜索",
+   "compliance": true
+  }
+ ],
+ "legacy_baseline": {
+  "bench_10stones": {
+   "depth": 5,
+   "time_ms": 8009.7,
+   "note": "中局 10 子，难度3"
+  },
+  "cprofile_10stones": {
+   "total_calls": 14206400,
+   "time_s": 6.783,
+   "hot": [
+    [
+     "_check_win_fast",
+     13035,
+     4.68
+    ],
+    [
+     "_cached_evaluate",
+     2639,
+     2.207
+    ],
+    [
+     "evaluate_board",
+     2035,
+     1.965
+    ],
+    [
+     "_analyze_line",
+     795184,
+     0.848
+    ],
+    [
+     "zobrist_hash",
+     2640,
+     0.238
+    ]
+   ],
+   "note": "_check_win_fast 占累计耗时约 69-77%（不同测量批次），是稳定的首要热点"
+  }
+ }
+}
