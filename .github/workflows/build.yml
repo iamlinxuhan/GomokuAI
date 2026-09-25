@@ -317,6 +317,14 @@ jobs:
         # 用户下不到自己架构那份，而错误现场在几周后才会出现。
         #
         # Windows 的 job 不进 Release，所以这里恰好是 4 架构 × 2 = 8。
+        #
+        # **`release/` 这个前缀必须写在通配符那一侧。** 写成
+        # `for f in "...$s" "...$s".*; do [ -e "release/$f" ]` 时，`.*` 是在
+        # **当前目录**（$GITHUB_WORKSPACE，本 job 没有 checkout，因而是个空目录）
+        # 里展开的：没有匹配 → 词原样保留 `GomokuAI_For_Linux_AMD.*` → `-e` 拿
+        # 一个字面量 `*` 去问，永远为假。于是 8 个资产**明明全在**，发布会栽在
+        # 一条假报警上（v3.0.1 首次实跑就是这么红的），而报出来的理由偏偏是
+        # "缺少 AMD 的产物"。
         run: |
           n=$(ls -1 release/ | wc -l)
           echo "Release 资产：$n 个"
@@ -326,8 +334,8 @@ jobs:
             exit 1
           fi
           for s in AMD ARM X86 ARM32; do
-            for f in "GomokuAI_For_Linux_$s" "GomokuAI_For_Linux_$s".*; do
-              [ -e "release/$f" ] || { echo "!! 缺少 $s 的产物：$f" >&2; exit 1; }
+            for f in "release/GomokuAI_For_Linux_$s" "release/GomokuAI_For_Linux_$s".*; do
+              [ -e "$f" ] || { echo "!! 缺少 $s 的产物：${f#release/}" >&2; exit 1; }
             done
           done
           echo "8 个资产齐全，四架构各一份安装包 + 一份裸可执行文件"
