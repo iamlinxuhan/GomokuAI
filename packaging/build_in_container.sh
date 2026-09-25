@@ -114,7 +114,12 @@ file "dist/${PKG_NAME}"
 # 所有档位的 AI 都退回 Python 参考实现。onedir 与 onefile 用的是同一个
 # --add-binary，而 --add-binary 指向不存在的文件时 PyInstaller 会硬错，
 # 所以验 onedir 这一份就足以证明这条路径是通的。
-if ! find dist/gomoku-ai -type f -name gomoku_engine | grep -q .; then
+# `-print -quit`：找到第一个就停。**这不是提速，是消掉同一类 SIGPIPE 隐患**
+# —— `grep -q` 一命中就退出并关管道，find 若还要继续写就会被 141 干掉，
+# `pipefail` 于是把整条管道判成失败，`if !` 随之翻转为"引擎没进包"并 `exit 1`：
+# 一个**假警报**把已经成功的构建判死。（实测这条 find 的输出只有一行、
+# 写完即退，所以侥幸没炸过 —— 但"侥幸"不是能留在 CI 里的东西。）
+if ! find dist/gomoku-ai -type f -name gomoku_engine -print -quit | grep -q .; then
     echo "!! C++ 引擎没有进包 —— 检查 --add-binary" >&2
     exit 1
 fi
@@ -174,7 +179,8 @@ if [ "$KIND" = "deb" ]; then
     # gzip 而不是 zstd：兼容性更好（旧 dpkg 也能解），代价只是包大一点。
     dpkg-deb -Zgzip --build "${PKG_DIR}" "${PKG_NAME}.deb"
     ls -lh "${PKG_NAME}.deb"
-    dpkg-deb --info "${PKG_NAME}.deb" | head -12
+    # 只看前几行摘要，但**不能用 `head`**：见下面 .pkg 那一处的说明。
+    dpkg-deb --info "${PKG_NAME}.deb" | sed -n '1,12p'
 
 else
     echo "---- 打包 .pkg (tar.gz + install.sh) ----"
@@ -214,7 +220,20 @@ EOF
     chmod 755 "${PKG_NAME}/install.sh"
     tar -czf "${PKG_NAME}.pkg" "$PKG_NAME"
     ls -lh "${PKG_NAME}.pkg"
-    tar -tzf "${PKG_NAME}.pkg" | head -5
+    # 列几行证明包不是空的。**这里绝不能写 `| head -5`** —— 本脚本开头是
+    # `set -euo pipefail`，而 `head` 读够 5 行就退出、关掉管道；tar 那边还有
+    # 几万行要写（onedir 包 5 万个条目），写进已关闭的管道会收到 SIGPIPE，
+    # 于是 tar 以 141（128+13）退出，pipefail 把 141 当成整条管道的状态，
+    # `set -e` 随即中止脚本 —— **包已经打好了，却在最后一行显示失败**。
+    #
+    # 这就是 ARM64 / ARM32 两个 job 红、amd64 / i386 两个绿的全部原因：红的
+    # 那两条走的是这个 .pkg 分支，绿的那两条走 .deb 分支。上面 .deb 分支的
+    # `dpkg-deb --info | head -12` 只是**碰巧**躲过去了 —— 它的输出远小于
+    # 64 KiB 的管道缓冲区，dpkg-deb 写完全部输出就退出了，head 还没来得及关
+    # 管子。加长 control 描述或让文件数变多，同一颗雷就会在 deb 分支上炸。
+    #
+    # `sed -n '1,5p'` 读满 5 行也**继续读到 EOF**，生产者因此永远写不爆管道。
+    tar -tzf "${PKG_NAME}.pkg" | sed -n '1,5p'
 fi
 
 echo "=============================================================="
