@@ -11,3 +11,22 @@ game_log_*.txt
 # C++ 构建目录：CMakeCache 里含本机绝对路径，产物是机器相关的二进制，不入库。
 # 构建方式见 README（cmake -B cpp/build && cmake --build cpp/build）。
 cpp/build/
+
+# ---- 打包产物 ----
+#
+# 这些全部落在仓库根下（PyInstaller 与 packaging/build_in_container.sh 都在
+# 这里干活），加起来几百 MB，且都是机器相关的二进制 —— 一个都不该入库。
+# 从前只忽略了 dist-installer，于是本地跑一次打包就会让 git status 被
+# 「新增 300 个文件」刷屏，随手 `git add .` 就是一次几百 MB 的提交。
+#
+# 注意：注释**只能独占一行**。`模式  # 说明` 这种行尾写法里，`#` 之后全部
+# 属于模式本身，那条规则看起来加了、实际一条不生效。
+dist/
+build/
+*.spec
+dist-installer/
+deb_build/
+.venv-build/
+
+# 四架构的产物。裸可执行文件与 .pkg 的暂存目录同名，用一条通配一并盖住。
+GomokuAI_For_Linux_*

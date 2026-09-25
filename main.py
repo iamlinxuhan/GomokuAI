@@ -1281,7 +1281,9 @@ class GomokuGame(QMainWindow):
         """重新开始"""
         self._cancel_ai()
         if self.logger:
-            print(f"[日志] 对局日志已保存: {self.logger.filepath}")
+            # 打包版不写日志，`filepath` 是 None —— 别报一个"已保存:None"。
+            if self.logger.filepath:
+                print(f"[日志] 对局日志已保存: {self.logger.filepath}")
             self.logger.close()
         self._show_color_selection()
 

@@ -30,8 +30,8 @@ from __future__ import annotations
 
 import numpy as np
 from PyQt5.QtCore import QPointF, QRectF, Qt
-from PyQt5.QtGui import (QBrush, QColor, QImage, QLinearGradient, QPainter,
-                         QPainterPath, QPen, QPixmap, QRadialGradient)
+from PyQt5.QtGui import (QBrush, QColor, QFontMetricsF, QImage, QLinearGradient,
+                         QPainter, QPainterPath, QPen, QPixmap, QRadialGradient)
 
 import theme
 from gamelog import col_letter
@@ -364,24 +364,50 @@ def _draw_coords(p: QPainter, geom) -> None:
 
     字母来自 ``gamelog.col_letter``，**不再自己写 ``chr(65 + i)``** —— 那份
     不跳 I 的写法会让 19 列里有 11 列对不上日志／棋谱／题库。
+
+    定位一律用 ``QFontMetricsF`` 按**墨迹**算，不用 ``drawText`` 的对齐标志。
+    三轮修下来的账（设计基准，cell=34）：
+
+    * **一代：全都 ``AlignCenter``，框宽 ``band`` / ``band*1.4``。** 字在框里
+      居中，实际留白 = ``gap`` + 半格空框，而空框尺寸与字形无关 —— 于是"到
+      网格的距离"由框决定，两个方向还因框的大小不同而不相等：**行号 17.0 px、
+      字母 12.8 px**。这就是"行号偏左、字母偏上"。
+    * **二代：改成贴着网格那条边对齐**（行号 ``AlignRight``、字母
+      ``AlignBottom``）。留白不再由框决定，但两个方向仍差 2.4 px（字母 9.8、
+      行号 7.4）—— 因为这两个标志对的是字体的**包围盒**：``AlignBottom`` 把
+      下伸部分留成空白，``AlignRight`` 把字侧边距留成空白，两份空白不相等。
+      同一代还暴露了等宽字体的老问题：``"1"`` 字形窄、占位与别的数字同宽，
+      按占位右对齐时它的墨迹右沿离网格只有 **1 px**，而 ``"2"``~``"9"`` 在
+      8 px —— 整列行号看不出对齐。
+    * **三代（现在）：直接算墨迹框。** 行号以**墨迹**右沿贴 ``gap``，1 位与
+      2 位共用同一条右边线；字母以**基线**统一（不用逐字墨迹下沿，否则 ``Q``
+      带下伸的尾巴会把自己抬高，反而参差）。于是两个方向的留白由同一个
+      ``gap`` 定义、天然相等，且与字体、字号、缩放比都无关。
     """
     font = theme.mono_font(max(9, int(round(12 * geom.k))))
     p.setFont(font)
     p.setPen(QColor(theme.COORD))
 
     cell = geom.cell
-    band = cell * 0.78
-    gap = cell * 0.10            # 标注与网格之间的呼吸
+    gap = cell * 0.18            # 网格线到标注**墨迹**的呼吸
     gx, gy, span, _ = geom.rect()
 
+    fm = QFontMetricsF(font)
+    # 竖直居中的基准：用全体数字的墨迹框，而不是每个串各自的框 —— 否则
+    # "1" 与 "19" 的墨迹高度若不同就会有不同的基线，整列行号会上下跳。
+    d = fm.boundingRect("0123456789")
+    digit_cy = (d.top() + d.bottom()) / 2.0
+
     for i in range(geom.n):
+        ch = col_letter(i)
+        br = fm.boundingRect(ch)
         x = gx + i * cell
-        p.drawText(QRectF(x - cell / 2, gy - gap - band, cell, band),
-                   Qt.AlignCenter, col_letter(i))
+        p.drawText(QPointF(x - (br.left() + br.right()) / 2.0, gy - gap), ch)
+
+        t = str(i + 1)
+        bt = fm.boundingRect(t)
         y = gy + i * cell
-        p.drawText(QRectF(gx - gap - band * 1.4, y - band / 2,
-                          band * 1.4, band),
-                   Qt.AlignCenter, str(i + 1))
+        p.drawText(QPointF(gx - gap - bt.right(), y - digit_cy), t)
 
 
 def render_stones(geom, w: float, h: float, dpr: float, board,

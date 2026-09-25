@@ -11,7 +11,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-2.0.2-brightgreen)
+![Version](https://img.shields.io/badge/version-3.0.0-brightgreen)
 
 > **v2.0.0 是一次彻底重写**，评估与搜索层整体替换、界面重构为统一设计系统。
 > 旧版的"分层 TSS 威胁响应""多线防守""拼命模式"**已被删除** —— 它们的判断
@@ -59,22 +59,28 @@
 
 ### 运行方式一：直接下载 Release
 
-从 [Releases](https://github.com/iamlinxuhan/GomokuAI-Py/releases) 下载对应平台的安装包，双击即可运行（无需安装 Python）。
+从 [Releases](https://github.com/iamlinxuhan/GomokuAI/releases) 下载对应平台的安装包，双击即可运行（无需安装 Python）。
 
-| 平台 | 文件 | 说明 |
-|---|---|---|
-| Windows | `GomokuAI_Setup_vX.Y.Z.exe` | **安装包**（推荐）：向导安装、自动建开始菜单/桌面快捷方式，可在「添加或删除程序」里卸载 |
-| Windows | `GomokuAI_Portable_vX.Y.Z.exe` | **免安装**：单个 exe，拷到哪都能跑，不写注册表 |
-| Linux amd64 | `GomokuAI_For_Linux_AMD.deb` | **安装包**（推荐）：`sudo dpkg -i`，声明了依赖 |
-| Linux amd64 | `GomokuAI_For_Linux_AMD` | **免安装**：单个可执行文件，`chmod +x` 后直接运行 |
-| Linux arm64 | `GomokuAI_For_Linux_ARM.pkg` | **安装包**：解包后 `sudo ./install.sh` |
-| Linux arm64 | `GomokuAI_For_Linux_ARM` | **免安装**：同上，arm64 架构 |
+**Release 上只有 Linux，四个架构各一对（共 8 个）：**
+
+| 架构 | 安装包（推荐） | 免安装裸文件 | 装法 |
+|---|---|---|---|
+| x86_64 | `GomokuAI_For_Linux_AMD.deb` | `GomokuAI_For_Linux_AMD` | `sudo dpkg -i` → 菜单里的「五子棋AI」 |
+| arm64 | `GomokuAI_For_Linux_ARM.pkg` | `GomokuAI_For_Linux_ARM` | 解包后 `sudo ./install.sh` |
+| x86 32 位 | `GomokuAI_For_Linux_X86.deb` | `GomokuAI_For_Linux_X86` | 同 amd64 |
+| arm 32 位 | `GomokuAI_For_Linux_ARM32.pkg` | `GomokuAI_For_Linux_ARM32` | 同 arm64 |
+
+不确定装哪个就用安装包：它会在 `Depends:` 里声明图形库与 CJK 字体候选链，
+装完菜单里就有入口。裸文件声明不了依赖 —— 缺什么就报什么。
+
+`uname -m` 对应关系：`x86_64` → AMD，`aarch64` → ARM，`i686` → X86，
+`armv7l` / `armv6l` → ARM32。
+
+**没有 Windows 版。** 这个项目只在 Linux 上开发与验证过，Windows 侧的适配
+没有实测过。CI 里那份配方（Inno Setup，见「打包」一节）保留着，但没有进
+Release —— 把没验证过的产物放上去等于让用户当测试。
 
 **统一版本**：都是**纯 CPU 运行，不需要显卡驱动，也不需要安装 PyTorch/CUDA**。
-
-**免安装的那几份不声明依赖。** 系统里缺 `libgl1` / xcb 那几个库、或者一个中文字体
-都没有时，它们不会替你装 —— 只会启动失败或满屏方框。`.deb` / `.pkg` 会把这些
-一起装上（含 CJK 字体候选链），所以**不确定装哪个就用安装包**。
 
 Linux 的免安装版是**裸可执行文件，没有扩展名**，下载后要先给可执行位：
 
@@ -85,12 +91,20 @@ chmod +x GomokuAI_For_Linux_AMD
 
 （Release 资产不携带文件权限，这一步谁都替不了你。）
 
+**打包版不在你的硬盘上留任何文件。** 不写日志、不写配置、不建缓存目录
+（源码运行时那份 `game_log_*.txt` 是给开发者诊断 AI 决策用的，发行版用户
+既看不懂也用不上）。需要它时用环境变量指个目录：
+
+```bash
+GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_For_Linux_AMD
+```
+
 ### 运行方式二：从源码运行
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/iamlinxuhan/GomokuAI-Py.git
-cd GomokuAI-Py
+git clone https://github.com/iamlinxuhan/GomokuAI.git
+cd GomokuAI
 
 # 2. 安装依赖（Python >= 3.11）
 pip install -r requirements.txt
@@ -710,6 +724,8 @@ GomokuAI/
 │   ├── ui_e2e.py      # 五档各真下一局  build_book.py   # 开局库生成器
 │   ├── ab_enhance.py  # 增强搜索 A/B
 │   └── legacy_engine.py  # 旧引擎逐字快照（不得修改，作为 A/B 对照组）
+├── packaging/
+│   └── build_in_container.sh  # Linux 四架构共用的打包配方（见「打包」）
 ├── installer/
 │   └── GomokuAI.iss   # Windows 安装包脚本（Inno Setup，**UTF-8 带 BOM**，见「打包」）
 ├── requirements.txt      # 运行时依赖（numpy / PyQt5）
@@ -725,17 +741,60 @@ GomokuAI/
 
 两边都是**两份产物**：一份装进系统，一份免安装。CI 上就是这样，本地照做即可。
 
-### Windows
+**打包前必须先建 C++ 引擎，并且两份都要 `--add-binary` 带上它。**
+`config._candidates()` 找引擎的第一顺位就是 `sys._MEIPASS/<binary_name>`，
+即包内根目录 —— 设计上就要求它随包分发。漏掉这一步**不会报任何错**：
+只会让 4/5 档的 AI 静默退回本地 Python 参考实现，慢五倍、层数也少一半，
+而用户看到的只是"高级怎么这么慢还这么弱"。
+
+### Linux
+
+四个架构（amd64 / arm64 / i386 / armv7）由**同一份脚本**产出，差异只有四个
+环境变量。在目标架构的 Debian bookworm 容器里跑：
+
+```bash
+# SUFFIX=AMD KIND=deb DEB_ARCH=amd64 | SUFFIX=ARM KIND=pkg | …
+docker run --rm --platform linux/amd64 \
+    -v "$PWD:/src" -w /src \
+    -e SUFFIX=AMD -e KIND=deb -e DEB_ARCH=amd64 -e APP_VERSION=3.0.0 \
+    debian:bookworm \
+    bash packaging/build_in_container.sh
+```
+
+**为什么是容器而不是直接在本机跑。** 因为 **PyInstaller 不能交叉编译**：
+64 位机器上建不出 i386 与 armv7 的二进制，只能换一套 userland。四个架构因此
+统一走 bookworm 容器（产物统一是 Python 3.11 建的），armv7 再加一层 QEMU
+—— 没有 32 位 ARM 的 runner。另外 PyPI 上**没有 i386 / armhf 的 PyQt5 wheel**，
+所以容器里 PyQt5 走 apt 而非 pip，代价是 venv 必须 `--system-site-packages`。
+
+脚本做的六件事，依次是：apt 装图形库与编译链 → CMake 建引擎并跑
+`--verify-tables --selftest` → 建 venv → 两次 PyInstaller（都带 `--add-binary`）
+→ 断言引擎确实进包 → 按 `KIND` 收成 `.deb` 或 `.pkg`。
+
+**本机没有对应架构时不要硬试。** `docker run --platform` 会替你处理（装了
+QEMU 的话），但真正的判据只有一条：产物在目标机器上跑得起来。CI 是唯一
+能覆盖全部四个架构的地方。
+
+### Windows（未进 Release）
+
+项目只在 Linux 上验证过，Windows 那份配方保留在 workflow 里、也保留在
+下面，但**只手动 dispatch 时才跑**，不打 tag 就不会进 Release：
 
 ```bash
 # 安装依赖（打包工具含在开发依赖里）
 pip install -r requirements-dev.txt
 
+# ⓪ C++ 引擎（它的产物路径要写进下面两步的 --add-binary）
+cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+cmake --build cpp/build --config Release -j
+
 # ① 安装包的原料：onedir
-pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" main.py
+pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" \
+    --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
 
 # ② 免安装单文件版：onefile（与 ① 用不同的 --name，见下）
-pyinstaller --onefile --windowed --icon="五子棋.ico" --name "GomokuAI_Portable" main.py
+pyinstaller --onefile --windowed --icon="五子棋.ico" --name "GomokuAI_Portable" \
+    --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
 ```
 
 **为什么是两份而不是一份。** `--onedir` 启动快（运行时就在旁边，直接加载），
@@ -747,16 +806,32 @@ PyQt5 程序的首次窗口会明显慢一拍。所以：装到硬盘上的那�
 **两次构建必须用不同的 `--name`。** 否则它们共用 `build/` 与 `dist/` 下的
 同名中间目录，第二次构建会捡起第一次的缓存，产物里混进不该有的东西。
 
-### 安装包（Inno Setup）
+### 收包规则（两种形态，为什么不能只留一种）
 
-`installer/GomokuAI.iss` 把 ① 的产物打成带向导的安装程序：
+| 形态 | 给谁 | 能做什么 |
+|---|---|---|
+| `.deb` | x86_64 / i386 | `Depends:` 里声明 `libgl1`、xcb 那几个库与 CJK 字体候选链；进菜单、可在包管理器里卸载 |
+| `.pkg` | arm64 / armhf | 同上，但是 tar.gz + `install.sh` —— ARM 上跑什么发行版的都有（树莓派、Fedora ARM、Arch ARM），绑死 dpkg 会挡掉一半人 |
+
+**`install.sh` 里 `chmod -R 755` 与 `tar` 的顺序不能再调。** 一个可执行位都
+没有的 tar 包是最常见的踩坑点：解出来忘了 `chmod +x`，安装脚本自己就先
+`Permission denied`。所以脚本里显式写死 755 再打包。
+
+**裸可执行文件（onefile）声明不了依赖**，这是它必须和安装包并存、而不是
+取代安装包的原因。另外 **Release 资产只存字节**，用户下到的文件是 `0644`，
+必须自己 `chmod +x`；artifact 那一趟（`upload-artifact`）同样不保留权限。
+CI 不做任何补偿 —— 补偿不了，只能在 README 里写清楚。
+
+### Windows 安装包（Inno Setup，未进 Release）
+
+`installer/GomokuAI.iss` 把 Windows ① 的产物打成带向导的安装程序：
 
 ```bash
 # 装编译器（本地；CI 上是 choco install innosetup）
 winget install JRSoftware.InnoSetup
 
 # 编译（AppVersion 通常由 CI 从 tag 传入）
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=2.0.2 installer\GomokuAI.iss
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=3.0.0 installer\GomokuAI.iss
 ```
 
 输出到 `dist-installer/GomokuAI_Setup_v<版本>.exe`。它装进
@@ -776,30 +851,6 @@ winget install JRSoftware.InnoSetup
 不再需要任何 torch 排除参数：依赖里已经没有它了。旧版为了把 CUDA 运行时塞进
 包里，要先腾磁盘、再拆成两个包才不超 GitHub 的 2GB 上限；现在只剩 numpy 与
 PyQt5。
-
-### Linux
-
-```bash
-# ① 安装包的原料：onedir
-pyinstaller --onedir --windowed --name "gomoku-ai" main.py     # arm64 用 gomoku-ai-arm
-
-# ② 免安装可执行文件：onefile
-pyinstaller --onefile --windowed --name "GomokuAI_For_Linux_AMD" main.py
-```
-
-② 出来的 `dist/GomokuAI_For_Linux_AMD` 就是 Release 上那份**裸可执行文件**
-（无扩展名），`chmod +x` 后直接运行。① 那份分别由 `.deb`（`dpkg-deb`）和
-`.pkg`（`tar` + `install.sh`）收进系统，脚本都在 CI 里，见
-[build.yml](.github/workflows/build.yml)。
-
-**Linux 的 onefile 有两个 Windows 上没有的注意点**：
-
-- **它声明不了依赖。** `.deb` 能在 `Depends:` 里列出 `libgl1`、xcb 那几个库和
-  CJK 字体候选链，裸文件不能 —— 缺什么就报什么（或者满屏方框）。这是它必须
-  和 `.deb` 并存、而不是取代 `.deb` 的原因。
-- **可执行位不在文件里。** Release 资产只存字节，用户下到的文件是 `0644`，
-  必须自己 `chmod +x`。artifact 那一趟（`upload-artifact`）同样不保留权限。
-  CI 不做任何补偿 —— 补偿不了，只能在 README 里写清楚。
 
 ---
 
@@ -888,6 +939,78 @@ git show d232fa7:README.md | sed -n '236,401p'
 
 ## 📝 更新日志
 
+### v3.0.0 (2026-09-25)
+
+大版本。搜索核心整个换成 C++，难度从三档扩到五档，并在高级/宗师上开了
+真正的搜索裁剪 —— 这三件事互相咬合，拆成三个小版本发反而说不清。
+
+**计算核心：Python → C++17**
+
+- ♻️ 搜索整体重写为 C++17（`cpp/`），通过**本地 TCP** JSON 行协议暴露给界面。
+  算法不是新写的：常量表、棋型分类器、搜索结构、VCF 三态语义与
+  `engine_local.py` 逐一对应，`cpp/src/*.h` 里逐条记着"这几行不能顺手改好"
+  的历史 bug。实测吞吐 **47k → 0.6M–3.3M nps（约 20–30 倍）**。
+- ♻️ `engine_local.py` 保留为**低档参考实现与降级兜底**，一字未动。C++ 起不来
+  时静默降级，且降级不改变棋局结果。
+- 🐛 **`_VCF_NODE_CAP` 的移植坑**：Python 下 12 万节点约合 2.4 秒、基本不触发；
+  C++ 下只要约 0.05 秒，于是**每一档都触发**，大量本可证明的杀棋被判成
+  `EXHAUSTED` —— 引擎在 VCF 上反而比 Python 版更弱。现在它随请求下发。
+
+**难度：三档 → 五档**
+
+- ✨ 入门 / 初级 / 中级 / 高级 / 宗师。参数就是 `engine.py` 的 `DIFFICULTY`，
+  单位与数值可直接对照。
+- 🐛 修掉一处**时间被扣两遍**的 bug：每档只拿到名义时间的
+  `0.85² ≈ 72%`（高级名义 9 s 实测 6544 ms、宗师名义 20 s 实测 14492 ms ——
+  两个不同档位扣出同一个 0.725，说明多出来那次折算在下发路径上）。
+
+**增强搜索（只对高级与宗师开启）**
+
+- ✨ `SearchConfig` 新增 `enhanced` / `lmr` / `extend`，**默认全 0**。
+  `enhanced == 0` 时每一条代码路径与从前**逐位相同** —— 低档与 Python 参考
+  实现的逐字一致因此仍是可验证的护栏。手段是 LMR + 强制着法延伸 + 双路桶
+  置换表（2²⁰ → 2²¹ 条，48 MiB 常驻）+ 迭代预算预估。
+- ✨ 同一时限下中位到达深度 **5–6 → 6–9**；`dense_threat` 上 11.1 s 就到 9 层、
+  没跑满 12.8 s，同局面还出现"层数更深、节点更少、耗时更短"。
+- ✨ A/B（6 s 预算）：增强的高级 vs 从前的高级 **21 胜 9 负，70%**。
+  时限一秒没加 —— 15 s / 20 s 不变，战果全归算法。
+
+**开局库**
+
+- ✨ 离线把最强配置在开局前四手的最优着法固化成表（41 项，覆盖盘上 ≤3 子），
+  命中即零延迟返回。**只有 Python 一份表，C++ 侧没有镜像** —— 否则两侧分叉
+  时 C++ 会安静地答出旧的弱着法。表外一律回落搜索；**空盘仍走天元，不经表**。
+
+**打包：Release 从 6 个产物变 8 个**
+
+- 🐛 **修掉一个一直在出货的静默缺陷：Release 上每一个产物都是纯 Python 引擎版。**
+  `config._candidates()` 找引擎的第一顺位就是 `sys._MEIPASS/<binary_name>`，
+  设计上本来就要求 C++ 引擎随包分发 —— 但从前每个 job 都既不跑 CMake 也不带
+  `--add-binary`。后果是 4/5 档全靠 `engine_local` 兜底，慢 20–30 倍、层数也少，
+  而用户看到的只是"高级怎么又慢又弱"。现在两份产物都带引擎，并且
+  **建完断言引擎确实在包里**。
+- ✨ **Linux 四个架构各一份安装包 + 一份裸可执行文件，共 8 个**：新增
+  x86 32 位（i386）与 arm 32 位（armv7）。四个架构由**同一份脚本**
+  （`packaging/build_in_container.sh`）在目标架构的 Debian bookworm 容器里产出
+  —— 因为 **PyInstaller 不能交叉编译**，且 PyPI 上没有 i386 / armhf 的 PyQt5
+  wheel（容器里走 apt，venv 因此要 `--system-site-packages`）。
+- 🐛 **打包版不再写 `game_log`**。这原本还是个崩溃：`.deb` 装到 `/opt` 后包内
+  目录 root 所有、权限 755，非 root 用户开一局就 `PermissionError`。现在冻结
+  运行默认不落盘，需要时用 `GOMOKU_AI_LOGDIR=<目录>` 指回来。
+- 📝 **Windows 移出 Release**。这个项目只在 Linux 上开发与验证过，Windows 适配
+  没有实测过 —— 把没验证过的产物放上去等于让用户当测试。配方保留在 workflow
+  里，手动 dispatch 才跑。
+- 📝 `release` job 现在依赖 `test`，并且在发版前**断言资产恰好 8 个**：某个架构
+  被跳过不会让 `needs` 失败，少了产物的 Release 会静默地只发 6 个。
+
+**UI**
+
+- 🐛 **棋盘坐标标注改为按墨迹定位**：从前数字偏左（"1"与"19"各偏 1 px 与 16 px）、
+  字母偏上。根因是 `AlignBottom`/`AlignRight` 对的是**字体包围盒**（含下伸与
+  字侧边距），而不是视觉墨迹；且行号若各自取框，`1` 与 `19` 的墨迹高度不同会
+  让整列基线上下跳。改为用全体数字的墨迹框定一条共用基线，逐串按自己的墨迹
+  居中/右对齐。
+
 ### v2.0.2 (2026-09-24)
 
 **引擎**
@@ -940,7 +1063,8 @@ git show d232fa7:README.md | sed -n '236,401p'
   `--onefile`），拷到哪都能跑。两份产物各有各的用处：onedir 启动快，适合
   装到硬盘上；onefile 免安装，代价是每次启动要先把运行时解包到临时目录。
 - 📝 **仓库地址迁移**：`iamlinxuhan/GomokuAI` → `iamlinxuhan/GomokuAI-Py`，
-  README 里的 Releases / clone 链接随之更新。
+  README 里的 Releases / clone 链接随之更新。（这一条后来**又移回来了** ——
+  仓库名现在是 `iamlinxuhan/GomokuAI`，见 v3.0.0。）
 - 📝 `.gitignore` 补上 `dist-installer/`（Inno 的输出目录）—— 它**不**被
   原有的 `dist/` 覆盖：带斜杠的模式只匹配同名的目录。
 

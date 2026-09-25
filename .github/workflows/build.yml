@@ -6,28 +6,61 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      build_windows:
+        description: '同时构建 Windows 产物（未经验证，不进 Release）'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
+
+# ============================================================================
+#  产物清单（Linux 四架构 × 安装包 + 裸可执行文件 = 8）
+#
+#    GomokuAI_For_Linux_AMD        GomokuAI_For_Linux_AMD.deb     amd64    .deb
+#    GomokuAI_For_Linux_ARM        GomokuAI_For_Linux_ARM.pkg     arm64    .pkg
+#    GomokuAI_For_Linux_X86        GomokuAI_For_Linux_X86.deb     i386     .deb
+#    GomokuAI_For_Linux_ARM32      GomokuAI_For_Linux_ARM32.pkg   armhf    .pkg
+#
+#  **Windows 不在 Release 里。** 项目只在 Linux 上开发与验证，Windows 那份
+# 适配没有实测过，也没有人能验证 —— 把没验证过的产物放进 Release，等于让
+# 用户去当测试。那个 job 保留着，但只在手动 dispatch 时跑，见下面 `windows`。
+#
+#  安装包形态按指令集分工：x86 系给 `.deb`（Debian/Ubuntu 的装机主力），
+#  ARM 系给 `.pkg`（tar.gz + install.sh，不绑定发行版 —— ARM 上跑什么发行版
+#  的都有，树莓派、Fedora ARM、Arch ARM 各不相同）。这是沿用 v2.x 的既有
+#  分工，没有改动已有产物的形态。
+#
+#  **每个包都内嵌 C++ 计算核心。** v2.x 的三个 job 都漏了这件事（既不跑
+#  CMake 也不带 --add-binary），于是 Release 上每一个产物都是纯 Python 引擎版，
+#  4/5 档全靠 engine_local 兜底 —— 而 config._candidates() 第一候选就是
+#  `_MEIPASS/gomoku_engine`，设计上本来就要求它进包。配方见
+#  packaging/build_in_container.sh 的 ②④ 两段。
+# ============================================================================
 
 jobs:
 
   # ============================================================
   #  测试 — 每次 push / PR 都跑
   #
-  #  放在这里而不是塞进下面三个打包 job：它们只在打 tag 时触发，而
-  #  "改坏了但还没发版"恰恰是回归最该被挡住的时候。两条 Qt 用例只
-  #  import 不构造 QApplication，因此无需 display 即可跑完。
+  #  放在这里而不是塞进打包 job：那些只在打 tag 或手动 dispatch 时触发，
+  #  而"改坏了但还没发版"恰恰是回归最该被挡住的时候。三条 Qt 用例只 import
+  #  不构造 QApplication，因此无需 display 即可跑完。
   # ============================================================
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # 3.11 = Windows 打包用的版本（见下方 build-windows）；3.13 = 开发环境
-        # 实际在跑的版本。刻意不测 3.12 —— 两个端点覆盖"发出去的"与"开发的"，
-        # 中间那个既不发布也不开发。
-        python-version: ['3.11', '3.13']
+        # 三个版本各有来路，都不是凑数：
+        #   3.11 = Debian bookworm 的系统 Python，**四个架构的产物都是用它建的**
+        #          （打包统一走 bookworm 容器，见 packaging/）
+        #   3.12 = ubuntu-24.04 runner 的系统 Python，开发机的 venv 通常是它
+        #   3.13 = 开发环境实际在跑的版本
+        # 发出去的与开发的都覆盖到；中间那个 3.12 之所以留着，是因为它正是
+        # runner 上 `python3` 的版本，本地开发也多半是它。
+        python-version: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
 
@@ -50,24 +83,128 @@ jobs:
         # 正确性、增量一致性、时间合规、题库、VCF、棋型这些**全部保留**。
         run: python -m pytest -q -m "not perf"
 
+
   # ============================================================
-  #  Windows — Inno Setup 安装包 + 免安装单文件版
-  #  纯 CPU：引擎不再依赖 PyTorch（GPU 分支在原版中从未生效，已整体删除）。
-  #  连带收益是包体积——旧版为了塞 CUDA 运行时，要先清磁盘、再拆成两个包
-  #  才不超 GitHub 的 2GB 上限；现在只剩 numpy + PyQt5，一个包绰绰有余。
+  #  Linux 四架构 — 一个矩阵，四份配方同一份脚本
   #
-  #  **为什么从 .7z 换成 .exe。** 旧的 7z 里是一个 install.bat：双击看到黑
-  #  窗口、没有安装向导、"添加或删除程序"里查无此物（卸载要靠另一个 .bat）、
-  #  失败时只能 `pause` 让人自己看。这些正是"安装程序"该做的事。
+  #  为什么全都在容器里建（而不是像 v2.x 那样用 runner 自带的解释器）：
+  #  **PyInstaller 不能交叉编译**。amd64 runner 上建不出 i386 与 armv7 的
+  #  二进制，必须换 userland；四个架构因此统一走 bookworm 容器，产物也就
+  #  统一是 Python 3.11 建的。armv7 再叠一层 QEMU（没有 32 位 ARM runner）。
   #
-  #  两份产物各有各的用处，不是二选一：
-  #  * `GomokuAI_Setup_v<ver>.exe` —— onedir 打成安装包，有向导、有卸载项、
-  #    有开始菜单/桌面快捷方式。收进了 `installer/GomokuAI.iss`。
-  #  * `GomokuAI_Portable_v<ver>.exe` —— onefile，单文件免安装，解压即用，
-  #    拷到 U 盘就能跑。代价是每次启动都要先把上百 MB 解包到临时目录。
+  #  `fail-fast: false` 是刻意的：32 位那两条是这套流程里最新的部分，一个
+  #  架构挂了不应该把另外三个的诊断信息一起吃掉。
   # ============================================================
-  build-windows:
+  build-linux:
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # suffix 同时是裸可执行文件的名字后缀与安装包的基名。
+          # deb_arch / kind 决定第 ⑤ 段走哪条配方。
+          - name: amd64
+            suffix: AMD
+            platform: linux/amd64
+            runs_on: ubuntu-latest
+            qemu: false
+            kind: deb
+            deb_arch: amd64
+          - name: arm64
+            suffix: ARM
+            platform: linux/arm64
+            # 原生 arm64 runner，比在 x86 上跑 QEMU 快一个数量级。
+            runs_on: ubuntu-24.04-arm
+            qemu: false
+            kind: pkg
+            deb_arch: arm64
+          - name: i386
+            suffix: X86
+            platform: linux/386
+            runs_on: ubuntu-latest
+            # i386 不需要 QEMU：x86 主机内核自带 32 位 ELF 支持，宿主的
+            # CPU 直接执行，只是换了一套 32 位 userland。
+            qemu: false
+            kind: deb
+            deb_arch: i386
+          - name: armv7
+            suffix: ARM32
+            platform: linux/arm/v7
+            runs_on: ubuntu-latest
+            # 唯独这一条必须翻译执行。
+            qemu: true
+            kind: pkg
+            deb_arch: armhf
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        # 四个架构与 release job 都要这个号码，只算一次 —— 与 requirements
+        # 清单同一个理由：同一个事实写在多处，改一处漏一处就会得到版本号
+        # 不一致的两份产物。
+        run: |
+          raw="${GITHUB_REF_NAME}"
+          if [[ "$raw" =~ ^v[0-9] ]]; then ver="${raw#v}"
+          elif [[ "$raw" =~ ^[0-9] ]]; then ver="$raw"
+          else ver="0.0.0"; fi
+          echo "APP_VERSION=$ver" >> "$GITHUB_ENV"
+          echo "版本号: $ver"
+
+      - name: Set up QEMU
+        # 只在 armv7 那条上跑。注册 binfmt 处理器之后，宿主内核就能执行
+        # 容器里的 armv7 指令。
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+
+      - name: Build inside ${{ matrix.name }} container
+        env:
+          SUFFIX: ${{ matrix.suffix }}
+          KIND: ${{ matrix.kind }}
+          DEB_ARCH: ${{ matrix.deb_arch }}
+        run: |
+          docker run --rm \
+            --platform ${{ matrix.platform }} \
+            -v "${GITHUB_WORKSPACE}:/src" -w /src \
+            -e SUFFIX -e KIND -e DEB_ARCH -e APP_VERSION \
+            debian:bookworm \
+            bash packaging/build_in_container.sh
+
+      - name: Fix ownership
+        # 容器里是 root，挂载出来的文件在宿主上就是 root 所有。runner 用户
+        # 读得到但删不掉 —— 不修的话下面 upload 之后的清理步骤会莫名其妙
+        # 地失败，而且报错与真正的原因隔了好几层。
+        run: sudo chown -R "$(id -u):$(id -g)" .
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux_${{ matrix.suffix }}_installer
+          path: GomokuAI_For_Linux_${{ matrix.suffix }}.${{ matrix.kind }}
+
+      - name: Upload standalone executable
+        # 注意：artifact 这一趟**不带可执行位**（upload-artifact 只存字节），
+        # 所以用户下到的文件必须自己 `chmod +x`。Release 资产本来也没有权限
+        # 这回事，不用额外处理 —— 只在 README 里说清楚。
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux_${{ matrix.suffix }}_bin
+          path: dist/GomokuAI_For_Linux_${{ matrix.suffix }}
+
+
+  # ============================================================
+  #  Windows — 不进 Release，默认也不跑
+  #
+  #  项目只在 Linux 上开发与验证，Windows 适配没有实测过。两道门都刻意挡着：
+  #  tag 不触发（产物漏不进 Release），手动 dispatch 也要显式勾
+  #  `build_windows` 才跑 —— 否则每次验证 Linux 四架构都会多挂一个已知会红的
+  #  job，噪声正好盖住真正要看的信号。
+  #
+  #  保留而不是删掉：Inno Setup 那份配方（installer/GomokuAI.iss）是能用的，
+  #  等 Windows 侧真正验证过之后，把这行 `if` 改成 tag 条件就能重新进 Release。
+  # ============================================================
+  windows:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,34 +219,31 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      - name: Build C++ engine
+        # 与 Linux 侧同样的理由：不把引擎带进包，4/5 档就退回本地 Python
+        # 参考实现。Windows 上 CMake 与 MSVC 是 runner 自带的。
+        run: |
+          cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build cpp/build --config Release -j
+          cpp\build\Release\gomoku_engine.exe --verify-tables --selftest
+
       - name: Resolve version
-        # 三个步骤都要这个号码，只算一次 —— 与 requirements 清单同一个理由：
-        # 同一个事实写在多处，改一处漏一处就会得到两份产物版本号不一致。
-        #
-        # tag 推送时是 `vX.Y.Z` 去掉 v；workflow_dispatch（手动试跑）没有版本
-        # 号可用，落成 0.0.0 —— 手动触发的产物进不了 Release（`release` job
-        # 只在 tag 上跑），把分支名标上去只会更让人误会。
         shell: pwsh
         run: |
           $raw = '${{ github.ref_name }}'
-          $ver = if ($raw -match '^v[0-9]') { $raw.Substring(1) } else { '0.0.0' }
+          $ver = if ($raw -match '^v[0-9]') { $raw.Substring(1) } elseif ($raw -match '^[0-9]') { $raw } else { '0.0.0' }
           "APP_VERSION=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           Write-Host "版本号: $ver"
 
       - name: Build (onedir)
-        # 安装包的原料。onedir 而不是 onefile：onefile 每次启动都要把上百 MB
-        # 解包到临时目录，PyQt5 程序的首启动会明显变慢 —— 装到硬盘上的那份
-        # 没有任何理由付这个代价。
         run: |
           pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
-            main.py
+            --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
 
       - name: Build portable (onefile)
-        # 免安装的那份。与上一份用不同的 --name，否则两者共用 build/ 与
-        # dist/ 下的同名中间目录，第二次构建会捡第一次的缓存而漏东西。
         run: |
           pyinstaller --onefile --windowed --icon="五子棋.ico" --name "GomokuAI_Portable" `
-            main.py
+            --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
 
       - name: Install Inno Setup
         # choco 装的是当前最新版。**不假设它带简体中文语言文件** —— Inno
@@ -123,8 +257,6 @@ jobs:
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { throw "找不到 ISCC：$iscc" }
 
-          # 中文界面只在**编译器自带那份 .isl** 存在时才挂上。用自带的而不是
-          # 把 .isl 收进仓库：语言文件与编译器同源，不会有版本错配。
           $isccArgs = @("/DAppVersion=$env:APP_VERSION")
           if (Test-Path (Join-Path (Split-Path $iscc -Parent) "Languages\ChineseSimplified.isl")) {
             Write-Host "编译器自带中文语言文件，安装向导显示中文"
@@ -141,8 +273,7 @@ jobs:
 
       - name: Collect portable artifact
         shell: pwsh
-        run: |
-          Copy-Item "dist\GomokuAI_Portable.exe" "GomokuAI_Portable_v$env:APP_VERSION.exe"
+        run: Copy-Item "dist\GomokuAI_Portable.exe" "GomokuAI_Portable_v$env:APP_VERSION.exe"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -158,223 +289,15 @@ jobs:
 
 
   # ============================================================
-  #  Linux AMD64 — 免安装裸可执行文件 + .deb（onedir → /opt/）
-  #  纯 CPU：不再需要 pytorch/pytorch 那个预装 CUDA 的镜像，
-  #  换回普通 runner —— 镜像本身就有 ~7GB，而它提供的东西（CUDA 运行时）
-  #  现在一件都用不上。顺带省掉了"清磁盘"那一步。
-  #
-  #  两份产物都要：.deb 管"装进系统、有菜单项、能卸载"，裸可执行文件管
-  #  "下下来 chmod +x 就跑、不要 root、不碰系统目录"。
-  # ============================================================
-  build-linux-amd:
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            python3-venv binutils libgl1 libglib2.0-0 libxkbcommon-x11-0 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
-            libxcb-xinerama0 libxcb-xkb1 libxkbcommon0 \
-            libegl1 libfontconfig1 libdbus-1-3
-
-      - name: Setup venv & install pip deps
-        # runner 的 python3 是 24.04 的系统解释器，受 PEP 668 保护，直接
-        # pip install 会以 externally-managed-environment 退出。用 venv 隔离，
-        # 与 ARM job 的做法一致。
-        run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install -r requirements-dev.txt
-
-      - name: Build (onedir)
-        # .deb 的原料。
-        run: |
-          .venv/bin/pyinstaller --onedir --windowed --name "gomoku-ai" main.py
-
-      - name: Build standalone executable (onefile)
-        # 免安装版本：单个 ELF，下下来 `chmod +x` 就能跑。与上一份用不同的
-        # --name，否则两者共用 build/ 与 dist/ 下的同名中间目录，第二次构建
-        # 会捡起第一次的缓存。
-        run: |
-          .venv/bin/pyinstaller --onefile --windowed --name "GomokuAI_For_Linux_AMD" main.py
-          ls -lh dist/GomokuAI_For_Linux_AMD
-          file dist/GomokuAI_For_Linux_AMD
-
-      - name: Package .deb
-        shell: bash
-        run: |
-          raw="${GITHUB_REF_NAME}"
-          if [[ "$raw" =~ ^v[0-9] ]]; then VERSION="${raw#v}"
-          elif [[ "$raw" =~ ^[0-9] ]]; then VERSION="$raw"
-          else VERSION="0.0.0-$(date -u +%Y%m%d-%H%M%S)"; fi
-          echo "VERSION=$VERSION"
-
-          PKG_DIR="deb_build"
-          APP_DIR="${PKG_DIR}/opt/gomoku-ai"
-          BIN_DIR="${PKG_DIR}/usr/local/bin"
-          DESK_DIR="${PKG_DIR}/usr/share/applications"
-          mkdir -p "${APP_DIR}" "${BIN_DIR}" "${DESK_DIR}" "${PKG_DIR}/DEBIAN"
-
-          cp -r dist/gomoku-ai/* "${APP_DIR}/"
-          chmod -R 755 "${APP_DIR}"
-
-          # 启动脚本
-          printf '%s\n%s\n' '#!/bin/bash' 'exec /opt/gomoku-ai/gomoku-ai "$@"' > "${BIN_DIR}/gomoku-ai"
-          chmod 755 "${BIN_DIR}/gomoku-ai"
-
-          # .desktop 文件
-          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            '[Desktop Entry]' \
-            'Name=五子棋AI' \
-            'Name[zh_CN]=五子棋AI' \
-            'Comment=Gomoku AI - Negamax/PVS + Transposition Table + Quiescence & VCF (CPU)' \
-            'Exec=/usr/local/bin/gomoku-ai' \
-            'Terminal=false' \
-            'Type=Application' \
-            'Categories=Game;BoardGame;' \
-            > "${DESK_DIR}/gomoku-ai.desktop"
-
-          # DEBIAN/control
-          # 界面全靠中文，而这几个基础库一个字体都不带 —— 最小系统上装完
-          # 全是方框。用 `|` 串出候选链，任意一个 CJK 字体已存在即满足，
-          # 不必为了一个棋盘拖 60MB 的 Noto CJK 下来。
-          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            "Package: gomoku-ai" \
-            "Version: ${VERSION}" \
-            "Section: games" \
-            "Priority: optional" \
-            "Architecture: amd64" \
-            "Maintainer: iamlinxuhan" \
-            "Depends: libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0, fonts-noto-cjk | fonts-wqy-microhei | fonts-wqy-zenhei | fonts-arphic-uming" \
-            "Description: 五子棋AI - 位棋盘增量评估 + Negamax/PVS + 置换表 + 静止搜索/VCF 连续冲四 (纯 CPU)" \
-            > "${PKG_DIR}/DEBIAN/control"
-
-          # 打包前再清理一次，确保有足够空间
-          df -h /
-          pip cache purge 2>/dev/null || true
-          rm -rf /tmp/pip-* /tmp/tmp* 2>/dev/null || true
-          df -h /
-
-          # 使用 gzip 压缩（比 zstd 省磁盘，兼容性更好）
-          dpkg-deb -Zgzip --build "${PKG_DIR}" "GomokuAI_For_Linux_AMD.deb"
-          ls -lh "GomokuAI_For_Linux_AMD.deb"
-
-      - name: Upload .deb
-        uses: actions/upload-artifact@v4
-        with:
-          name: GomokuAI_For_Linux_AMD_deb
-          path: GomokuAI_For_Linux_AMD.deb
-
-      - name: Upload standalone executable
-        # 注意：artifact 这一趟**不带可执行位**（upload-artifact 只存字节），
-        # 所以用户下到的文件必须自己 `chmod +x`。Release 资产本来也没有权限
-        # 这回事，不用额外处理 —— 只在 README 里说清楚。
-        uses: actions/upload-artifact@v4
-        with:
-          name: GomokuAI_For_Linux_AMD_bin
-          path: dist/GomokuAI_For_Linux_AMD
-
-
-  # ============================================================
-  #  Linux ARM64 — 免安装裸可执行文件 + .pkg（apt PyQt5，跳过源码编译）
-  #  与 AMD64 那份对称：一份进系统、一份免安装。
-  # ============================================================
-  build-linux-arm:
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install system dependencies (含 apt PyQt5 跳过慢速源码编译)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            python3-venv python3-dev python3-pyqt5 \
-            binutils libgl1 libglib2.0-0 libxkbcommon-x11-0 \
-            libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
-            libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
-            libxcb-xinerama0 libxcb-xkb1 libxkbcommon0 \
-            libegl1 libfontconfig1 libdbus-1-3 \
-            qtbase5-dev qtchooser qt5-qmake qtbase5-dev-tools
-
-      - name: Setup venv & install pip deps
-        # 唯一**不**从 requirements-dev.txt 装依赖的 job：上面 apt 那份
-        # `python3-pyqt5` 已经提供 PyQt5，而 pip 只认自己那份元数据 ——
-        # 喂给它 requirements-dev.txt，它会把 PyQt5 从源码重编一遍 Qt，
-        # 慢到不可接受（这正是这个 job 用 apt 的原因）。所以这里只列
-        # 清单里剩下的两个，改动 requirements.txt 时记得同步。
-        run: |
-          python3 -m venv --system-site-packages .venv
-          .venv/bin/pip install --upgrade pip
-          .venv/bin/pip install numpy pyinstaller
-          .venv/bin/python -c "from PyQt5.QtWidgets import QApplication; print('PyQt5 OK')"
-
-      - name: Build (onedir)
-        # .pkg 的原料。
-        run: |
-          .venv/bin/pyinstaller --onedir --windowed --name "gomoku-ai-arm" main.py
-
-      - name: Build standalone executable (onefile)
-        # 与 AMD64 那份同源同参数，只差架构（runner 就是 arm64）。
-        run: |
-          .venv/bin/pyinstaller --onefile --windowed --name "GomokuAI_For_Linux_ARM" main.py
-          ls -lh dist/GomokuAI_For_Linux_ARM
-          file dist/GomokuAI_For_Linux_ARM
-
-      - name: Package .pkg
-        run: |
-          PKG_NAME="GomokuAI_For_Linux_ARM"
-          PKG_DIR="${PKG_NAME}/gomoku-ai-arm"
-          mkdir -p "${PKG_DIR}"
-          cp -r dist/gomoku-ai-arm/* "${PKG_DIR}/"
-          chmod -R 755 "${PKG_DIR}"
-          printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
-            '#!/bin/bash' \
-            '# 五子棋AI ARM64 版安装脚本' \
-            'set -e' \
-            'APP_DIR="/opt/gomoku-ai-arm"' \
-            'echo "Installing GomokuAI (ARM)..."' \
-            'sudo mkdir -p "${APP_DIR}"' \
-            'sudo cp -r gomoku-ai-arm/* "${APP_DIR}/"' \
-            'sudo chmod -R 755 "${APP_DIR}"' \
-            'sudo ln -sf "${APP_DIR}/gomoku-ai-arm" /usr/local/bin/gomoku-ai' \
-            'echo "Done! Run: gomoku-ai"' \
-            > "${PKG_NAME}/install.sh"
-          chmod 755 "${PKG_NAME}/install.sh"
-          tar -czf "${PKG_NAME}.tar.gz" "${PKG_NAME}"
-          mv "${PKG_NAME}.tar.gz" "${PKG_NAME}.pkg"
-          ls -lh "${PKG_NAME}.pkg"
-
-      - name: Upload .pkg
-        uses: actions/upload-artifact@v4
-        with:
-          name: GomokuAI_For_Linux_ARM_pkg
-          path: GomokuAI_For_Linux_ARM.pkg
-
-      - name: Upload standalone executable
-        uses: actions/upload-artifact@v4
-        with:
-          name: GomokuAI_For_Linux_ARM_bin
-          path: dist/GomokuAI_For_Linux_ARM
-
-
-  # ============================================================
   #  GitHub Release (仅 tag 推送时触发)
   # ============================================================
   release:
-    # `test` 必须在这里 —— 否则测试挂了照样能发版（三个 build job 都不依赖它，
+    # `test` 必须在这里 —— 否则测试挂了照样能发版（four build job 都不依赖它，
     # 而 `softprops/action-gh-release` 也不看测试结果）。CI 跑的是
     # `-m "not perf"`，所以这条闸门不受 runner 快慢影响。
     needs:
       - test
-      - build-windows
-      - build-linux-amd
-      - build-linux-arm
+      - build-linux
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -386,6 +309,28 @@ jobs:
 
       - name: List release files
         run: ls -lah release/
+
+      - name: Assert exactly 8 assets, one per arch
+        # **数一遍再发。** 三个 build job 里任何一个被跳过（`if` 写错、架构
+        # 不可用）都不会让这个 job 失败 —— `needs` 只保证"跑过的那些成功"，
+        # 挡不住"某一条压根没跑"。少了产物的 Release 会静默地只发 6 个，
+        # 用户下不到自己架构那份，而错误现场在几周后才会出现。
+        #
+        # Windows 的 job 不进 Release，所以这里恰好是 4 架构 × 2 = 8。
+        run: |
+          n=$(ls -1 release/ | wc -l)
+          echo "Release 资产：$n 个"
+          ls -1 release/
+          if [ "$n" -ne 8 ]; then
+            echo "!! 期望 8 个资产（4 架构 × 安装包/裸可执行），实际 $n 个" >&2
+            exit 1
+          fi
+          for s in AMD ARM X86 ARM32; do
+            for f in "GomokuAI_For_Linux_$s" "GomokuAI_For_Linux_$s".*; do
+              [ -e "release/$f" ] || { echo "!! 缺少 $s 的产物：$f" >&2; exit 1; }
+            done
+          done
+          echo "8 个资产齐全，四架构各一份安装包 + 一份裸可执行文件"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

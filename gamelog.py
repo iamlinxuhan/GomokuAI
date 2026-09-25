@@ -8,15 +8,62 @@
 迁出动机：`engine.py` 与 `main.py` 都需要坐标格式化，而 `engine.py` 不能
 反向 import UI 层，故把这一小块放入独立的、零依赖的模块。
 
-依赖：仅标准库 `os` / `time`。
+依赖：仅标准库 `os` / `sys` / `time`。
 """
 
 from __future__ import annotations
 
 import os
+import sys
 import time
 
 BOARD_SIZE = 19
+
+# --------------------------------------------------------------- 打包版不写日志
+#
+# PyInstaller 冻结之后 ``__file__`` 指向包内目录（onedir 是
+# ``<安装目录>/_internal``）。`.deb` 装到 ``/opt`` 后那个目录是 root 所有、
+# 权限 755，于是构造 ``GameLogger`` 时那句 ``open(..., 'w')`` 直接
+# ``PermissionError`` —— **非 root 用户开一局就崩**，而这跟 AI 一点关系都没有。
+# 即使装到可写位置，后果也只是在用户硬盘上堆 ``game_log_*.txt``：这份日志是
+# 给开发者诊断 AI 决策用的（`tools/positions.py` 的题库来源），发行版的用户
+# 既看不懂也用不上，需要的人自己会 clone 代码。
+#
+# 所以：**冻结运行时默认不写任何文件**，日志调用全部退化成空操作。
+# 需要远程排查某个用户的现场时，用 ``GOMOKU_AI_LOGDIR=<目录>`` 指回来。
+LOG_DIR_ENV = "GOMOKU_AI_LOGDIR"
+
+
+def _resolve_log_dir() -> str | None:
+    """本次运行应当把日志写到哪个目录；``None`` 表示不写日志。"""
+    override = os.environ.get(LOG_DIR_ENV)
+    if override:
+        return override
+    if getattr(sys, "frozen", False):
+        return None
+    # 源码运行（开发）：写到自己所在目录 —— 与历史行为逐字一致。
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+class _NullSink:
+    """不写日志时的空出口。
+
+    必须**长得像个文件对象**：`main.py` 有几处绕过 `GameLogger` 的方法
+    直接 ``self.logger.f.write(...)``，还读 ``self.logger.f.closed``。
+    所以这里给的是替换品，而不是把 ``f`` 置成 ``None`` 让调用方去判空 ——
+    后者要把判断散到每一个调用点上，漏一处就是一个 ``AttributeError``。
+    """
+
+    closed = False
+
+    def write(self, *_args) -> int:
+        return 0
+
+    def flush(self) -> None:
+        pass
+
+    def close(self) -> None:
+        self.closed = True
 
 # 列名字母表：跳 I（与棋谱惯例一致）。**全应用唯一定义** —— 棋盘上的坐标标注
 # 必须调 `col_letter()`，不要再写 `chr(65 + i)`。历史上棋盘用的是不跳 I 的
@@ -55,6 +102,10 @@ class GameLogger:
       - AI搜索参数(target_depth, 实际搜到层数, best_val)
       - 最终胜负结果
 
+    **冻结运行（PyInstaller 打包版）默认不写盘**，全部方法退化成空操作，
+    ``filepath`` 为 ``None`` —— 理由见本模块顶部那段。想要日志就用环境变量
+    ``GOMOKU_AI_LOGDIR=<目录>`` 指回来，或显式传 ``log_dir``。
+
     用法：
       logger = GameLogger()           # 创建（自动生成带时间戳的文件名）
       logger.log_human(step, r, c)    # 记录人类落子
@@ -64,8 +115,14 @@ class GameLogger:
     """
 
     def __init__(self, log_dir=None):
+        # ``log_dir`` 显式传入（测试与冒烟脚本就是这么用的）时一律照写；
+        # 只有走默认解析、且解析结果为 ``None``（冻结运行）才不写。
         if log_dir is None:
-            log_dir = os.path.dirname(os.path.abspath(__file__))
+            log_dir = _resolve_log_dir()
+        if log_dir is None:
+            self.filepath = None
+            self.f = _NullSink()
+            return
         os.makedirs(log_dir, exist_ok=True)
         ts = time.strftime("%Y%m%d_%H%M%S")
         self.filepath = os.path.join(log_dir, f"game_log_{ts}.txt")
