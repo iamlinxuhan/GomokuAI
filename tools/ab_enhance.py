@@ -51,8 +51,8 @@ _ANCHOR_FLAGS = '''        if cfg.get("enhance"):
             req["extend"] = 1
 '''
 
-#: 两个臂各自的服务端端口起点。默认的 8888 必须让开 —— 否则与正在跑的
-#: 游戏 / 建库 / bench 撞在一起，或者两个臂互相撞。
+#: 两个臂各自的服务端端口起点。必须与应用自己的端口池（``config.PORT_POOL``）
+#: 分开 —— 否则与正在跑的游戏 / 建库 / bench 撞在一起，或者两个臂互相撞。
 AB_PORT = 8901
 
 _ARMS = {
@@ -151,8 +151,9 @@ def main():
         raise SystemExit("--arm off 就是两侧同配置，得到的一定是 50%，没有信息量")
 
     with tempfile.TemporaryDirectory(prefix="ab_enhance_") as tmpdir:
-        # 一个臂一个端口。**不能两个臂都用 config.PORT(8888)** —— 见
-        # `_patch_source` 里那段：第二个服务端 bind 失败、轮询却连上了第一个，
+        # 一个臂一个端口，两条臂都**不碰应用的端口池**（`config.PORT` 一设就
+        # 只用这一个，见 engine._port_candidates）。**不能两个臂共用一个端口** ——
+        # 见 `_patch_source` 里那段：第二个服务端 bind 失败、轮询却连上了第一个，
         # 于是两个臂共用一个进程与一块置换表，A/B 被拉向"打平"。
         enh = _make_arm(tmpdir, args.arm, args.time, AB_PORT)
         base = _make_arm(tmpdir, "off", args.time, AB_PORT + 1)

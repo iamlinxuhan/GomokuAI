@@ -5,7 +5,8 @@
 #   ./build/gomoku_engine --selftest
 #
 # 产物 gomoku_engine 是一个**本地 TCP 服务端**，Python 侧的 engine.py 会自动
-# 拉起它（见 engine.py 的 config 段）。也可以手工跑：默认监听 127.0.0.1:8888。
+# 拉起它并显式传 --port（见 config.py 的 PORT_POOL）。手工跑时不给 --port 才
+# 落到下面这个默认值；应用本身从不使用它。
 #
 # 零第三方依赖：只用标准库 + 平台 socket（后者条件编译收敛在 tcp_server.cpp）。
 

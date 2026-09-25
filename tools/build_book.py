@@ -278,18 +278,19 @@ def main():
                     help="每个节点的搜索预算（秒）。默认 20 = 宗师的真实预算")
     ap.add_argument("--fresh", action="store_true", help="忽略缓存重新搜")
     ap.add_argument("--port", type=int, default=0,
-                    help="另起一个服务端端口。默认 0 = 用 config.PORT(8888)。"
-                         "**游戏开着的时候必须给一个别的端口** —— 服务端的规矩"
-                         "是'最后连上的客户端胜出'，用它自己的 8888 会把游戏"
-                         "那条连接顶掉，游戏会静默降级到 Python 本地实现")
+                    help="另起一个服务端端口。默认 0 = 走应用的端口池"
+                         "（config.PORT_POOL）。**游戏开着的时候必须给一个"
+                         "别的端口** —— 服务端的规矩是'最后连上的客户端胜出'，"
+                         "用池子里的号会把游戏那条连接顶掉，游戏会静默降级到"
+                         "Python 本地实现")
     args = ap.parse_args()
     if E.binary_path() is None:
         raise SystemExit(
             "找不到 C++ 引擎可执行文件。开局库必须由最强配置生成 —— "
             "用 Python 本地实现代替会慢两个数量级、而且更弱。")
     if args.port:
-        # `_spawn_and_wait` 在**调用时**读 config.HOST/PORT，所以改在这里
-        # 就能让这次建库自成一个服务端，不碰 8888。
+        # `config.PORT` 一设就**只用这一个**（被占则退到内核端口，不回池子），
+        # 见 engine._port_candidates —— 所以这次建库自成一体，不碰游戏的池子。
         E.config.PORT = args.port
     build(args)
 

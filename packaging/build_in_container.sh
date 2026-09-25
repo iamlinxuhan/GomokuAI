@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 在**目标架构**的 Debian bookworm 容器里完成一次完整打包。
 #
-#     SUFFIX=AMD KIND=deb DEB_ARCH=amd64 APP_VERSION=3.0.0 \
+#     SUFFIX=AMD KIND=deb DEB_ARCH=amd64 APP_VERSION=3.0.1 \
 #       bash packaging/build_in_container.sh
 #
 # 为什么四个架构全都走容器：**PyInstaller 不能交叉编译**。64 位 runner 上

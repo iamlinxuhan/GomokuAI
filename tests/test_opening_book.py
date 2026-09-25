@@ -19,6 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import engine
 import engine_local as EL
 from opening_book import BOOK, BOOK_STONES
 from tools.selfplay import CENTER, OPENING_SECOND_MOVES
@@ -128,6 +129,45 @@ def test_nonstandard_first_move_still_searches(new_engine):
     assert info["nodes"] > 0, "回落之后必须真的搜索（nodes=%r）" % (info["nodes"],)
     assert board[r][c] == 0 and abs(r - 0) + abs(c - 0) > 1, \
         "回落搜索不该给出紧贴角落里那颗子的固定偏移点 (r=%r c=%r)" % (r, c)
+
+
+def test_engine_row_says_book_while_the_book_is_driving(monkeypatch):
+    """面板上「引擎」那一行：走开局库时报「开局库」，不报 C++ / Python。
+
+    这一行读的就是 `engine.engine_label()`，所以断言它等于什么，就是断言用户
+    看到什么。**空盘那一手也算** —— 天元同样是查表（`reason='开局库'`）。
+
+    **反向验证**：把 `engine.ai_move` 里那两处 `_note("book")` 删掉，这条立刻
+    变红（空盘与库命中都将是「—」，而库命中之后若再走一次远程搜索就会变成
+    「C++」）—— 那正是需要它挡住的两件事。
+    """
+    _require_book()
+    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", None)
+
+    engine.ai_move(_board(), BLACK, 1)
+    assert engine.engine_label() == "开局库", \
+        "空盘天元也是查表得出的，面板不该报 %r" % (engine.engine_label(),)
+
+    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", None)
+    engine.ai_move(_board((9, 9, 1)), WHITE, 1)
+    assert engine.engine_label() == "开局库"
+
+
+def test_note_book_agrees_with_the_book_branches(monkeypatch):
+    """`note_book()` 与 `ai_move` 的开局库分支必须报**同一个值**。
+
+    `main.py` 的 AI 先手第一着走的是 `opening_move`（不经过 `ai_move`），
+    指示器得由 `note_book()` 单独记一笔。两条路各写一个字符串时，改了一处
+    忘了另一处，症状是同一个开局库里的一手时而在面板上叫「开局库」、时而叫
+    别的 —— 而这两处相隔几百行，没有任何编译期检查会拦下它。
+    """
+    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", None)
+    engine.note_book()
+    via_note = engine.engine_label()
+
+    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", None)
+    engine.ai_move(_board(), BLACK, 1)
+    assert engine.engine_label() == via_note
 
 
 def test_midgame_is_never_looked_up(new_engine):

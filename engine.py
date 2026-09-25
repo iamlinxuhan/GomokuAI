@@ -96,7 +96,8 @@ __all__ = [
     "BONUS_DOUBLE_FOUR", "BONUS_DOUBLE_THREE", "BONUS_FOUR_THREE",
     "LINE_SCORES", "LV_FOUR", "LV_FOUR_LIVE", "LV_ONE", "LV_THREE_LIVE",
     "LV_THREE_SLEEP", "LV_TWO_LIVE", "LV_TWO_SLEEP", "STATIC_MAX",
-    "engine_label", "binary_path", "DIFFICULTY", "DIFFICULTY_NAMES",
+    "engine_label", "current_port", "note_book", "binary_path",
+    "DIFFICULTY", "DIFFICULTY_NAMES",
     "difficulty_name",
 ]
 
@@ -264,10 +265,29 @@ def _cfg_for(level: int) -> dict:
 #: (本地)"会让用户以为已经降级 —— 而实际上 C++ 完全正常。
 _ENGINE_ACTIVE = None
 
-_LABELS = {"cpp": "C++", "local": "Python (本地)"}
+#: ``"book"`` 是**开局库**：那一手是查表得来的，既没进过搜索、也没走过 TCP。
+#: 标成 ``C++`` 或 ``Python (本地)`` 都是假话 —— 而这两个当中的一个恰好是
+#: 用户最需要区分的（"是不是降级了"），拿它去盖住一次查表会让面板失去意义。
+_LABELS = {"cpp": "C++", "local": "Python (本地)", "book": "开局库"}
 
 #: 还没发生过搜索时的占位符。留着这个状态而不是猜一个答案。
 _UNKNOWN = "—"
+
+
+def current_port():
+    """当前这条 TCP 连接用的服务端端口；**没有连接时返回 ``None``**。
+
+    与 `engine_label` 一样**不探测**：只读已经建立的那条连接。连接是惰性的
+    （第一次真正的远程搜索才建立），所以开局头几手这里必然是 ``None`` ——
+    那一刻确实还没有端口，报一个"还在池子里"的号就是编。
+    """
+    sock = _CLIENT._sock
+    if sock is None:
+        return None
+    try:
+        return sock.getpeername()[1]
+    except OSError:
+        return None
 
 
 def engine_label() -> str:
@@ -278,6 +298,17 @@ def engine_label() -> str:
     后台线程里更新，UI 下一帧刷新时自然读到新值。
     """
     return _LABELS.get(_ENGINE_ACTIVE, _UNKNOWN)
+
+
+def note_book() -> None:
+    """把面板上那一行标成「开局库」。
+
+    **给 `main.py` 的 AI 先手第一着用**：那一手由 `opening_move` 直接给出
+    （见 `_ai_first_move`），根本不经过 `ai_move`，所以自动更新指示器的那条路
+    在这里是断的。它同样是查表、同样没走过 TCP，因此和 `ai_move` 里那两条
+    开局库分支报同一个值。
+    """
+    _note("book")
 
 
 def _note(active: str, exc: BaseException = None) -> None:
@@ -316,6 +347,80 @@ class _RemoteError(RuntimeError):
     还是超时 —— 三者的处置完全相同，为它们各写一条 ``except`` 只会让降级
     路径出现三种略有差异的行为。
     """
+
+
+def _port_candidates() -> list:
+    """按顺序给出候选端口：显式覆盖（``config.PORT``）**或**端口池 —— 二者互斥。
+
+    * **设了 ``config.PORT``** —— 调用方（``tools/ab_enhance.py``、
+      ``tools/build_book.py``、测试）要的是"一个**独享**的服务端"。所以只给
+      这一个，池子**不能**跟上来兜底：A/B 的两条臂各要一个互不相同的服务端，
+      一旦某一臂被挤进池子，两条臂就可能共用同一个服务端与同一块置换表 ——
+      而它们一个是 ``enhanced=0``、一个是 ``enhanced=1``，索引几何都不同
+      （见 ``cpp/src/search.cpp`` 的 ``lookup``），共用会把结论系统性地拉向
+      "打平"。独享端口被外人占了就退到内核端口（见 ``_free_port``），
+      仍然不去碰池子。
+    * **没设** —— 这就是应用自己的路径：按 ``PORT_POOL`` 的顺序逐个试。
+
+    两种模式都不做去重之外的加工：池子里 15 个都是写死的常量，没有随机数，
+    因此"这一次用的端口"在下一次运行时仍然会被先试到。
+    """
+    if config.PORT:
+        return [int(config.PORT)]
+    return list(config.PORT_POOL)
+
+
+def _connect_to(port):
+    """连 ``port``；没人在监听（或连不上）返回 ``None``。
+
+    **"连得上"只说明有人在监听，不说明那是我们的引擎** —— 判断在调用方，
+    它必须再过一次 hello 校验。
+    """
+    try:
+        return socket.create_connection((config.HOST, port),
+                                        config.CONNECT_TIMEOUT)
+    except OSError:
+        return None
+
+
+def _port_is_free(port) -> bool:
+    """``port`` 现在能不能被我们 bind（也就是"没被占、也没被挡"）。
+
+    用 ``SO_REUSEADDR`` 探测，**和 C++ 服务端 (``tcp_server.cpp``) 一致** ——
+    服务端就是这么 bind 的，所以"它能绑上"才是这一格能否使用的正确判据；
+    不带这个选项会把"端口还留着几条 TIME_WAIT 连接"误判成被占用。
+
+    绑定成功立刻关掉。这里必然存在一个"关掉到服务端 bind 之间"的窗口，但那
+    只是竞态，`_spawn_and_wait` 会兜住它（bind 失败 → 服务端启动即退出 →
+    报错 → 换下一格）。
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        s.bind((config.HOST, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _free_port() -> int:
+    """让内核给一个当前空闲的端口号。
+
+    **只在端口池 15 个全部不可用时才用到**（见 `_ServerClient._connect`），
+    所以它不参与"端口可预测"那条设计 —— 代价是这一层拉起的服务端，下一次
+    运行认不出来。
+
+    bind 到 0 再读回端口，然后**立刻关掉**。也**不能**把这个 socket 留着给
+    服务端复用：服务端是另一个进程。
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((config.HOST, 0))
+        return s.getsockname()[1]
+    finally:
+        s.close()
 
 
 class _ServerClient:
@@ -387,43 +492,97 @@ class _ServerClient:
 
         返回已连接的 socket。任何一步失败都抛 ``_RemoteError``。
         """
-        # 先试着连现成的监听者：可能是上一次运行留下的服务端，也可能是
-        # 另一个窗口拉起来的。**能连上就不要再拉一个** —— 两个进程抢同一个
-        # 端口，第二个会在 bind 上失败。
-        sock = None
-        try:
-            sock = socket.create_connection((config.HOST, config.PORT),
-                                            config.CONNECT_TIMEOUT)
-        except OSError:
-            sock = None
+        # ① 端口池逐个试（顺序见 config.PORT_POOL）。每个端口都是"先看有没有
+        #    人在监听，再决定是复用还是自己拉"，见 `_try_port`。
+        for port in _port_candidates():
+            sock = self._try_port(port)
+            if sock is not None:
+                return sock
 
-        if sock is None:
-            if not config.AUTOSTART:
-                raise _RemoteError("没有服务端在监听，且已禁用自动拉起")
-            sock = self._spawn_and_wait()
+        if not config.AUTOSTART:
+            raise _RemoteError("没有可用的服务端，且已禁用自动拉起")
 
-        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        # ② 池子里 15 个**全部不可用**（都被人占着、或都拉不起来）：退回
+        #    "让内核给一个空闲端口"。这一层没有确定的端口号，所以它只能排在
+        #    池子后面 —— 池子的价值正是"端口可预测"，让下一次运行的自己能把
+        #    上一次的残留服务端认出来复用。
+        for _ in range(3):
+            sock = self._try_port(_free_port())
+            if sock is not None:
+                return sock
+        raise _RemoteError("端口池与内核分配的端口都拿不到可用的服务端")
+
+    def _try_port(self, port):
+        """在 ``port`` 上拿到一条**通过 hello 校验**的连接；拿不到返回 ``None``。
+
+        顺序是"先看有没有人在监听":
+
+        * **有人在监听** —— 握手过了就复用它（另一个窗口拉起的服务端、上一次
+          运行留下的残留进程，都属于这一种）；握手不过说明**占着这个端口的
+          东西不是我们的引擎**（实测是一份旧版本程序：它的引擎叫
+          ``gomoku_server``、不认识 ``hello``，会回一个 ``type=error`` 的
+          "未知消息类型"），这时换下一个端口，**绝不就此退回 Python** ——
+          那等于整块丢掉 C++ 引擎（慢 20~30 倍、层数还少），而"端口被占了"
+          这件事用户在界面上既看不见也想不到。
+        * **没人在监听** —— 先确认端口没被阻塞（`_port_is_free`），再在上面
+          拉起自己的服务端。拉起失败（刚好被别人抢走、被防火墙挡、可执行
+          文件缺失）同样换下一个。
+
+        **每一步都必须过 hello 校验，不能只看"连得上"。** `_spawn_and_wait`
+        的就绪判据是"端口能被连上"，而在"我们的服务端 bind 失败"之后，第一个
+        能被连上的是**占着那个端口的那个人** —— 只看连得上，就会把别人的
+        服务端当成自己的。
+        """
+        sock = _connect_to(port)
+        if sock is not None:
+            return self._verified(sock)
+
+        if not config.AUTOSTART:
+            return None
+        if not _port_is_free(port):
+            return None                 # 被占/被挡，不值得再试这一格
+
         try:
+            sock, proc = self._spawn_and_wait(port)
+        except _RemoteError:
+            return None
+        ok = self._verified(sock)
+        if ok is None:
+            if proc.poll() is None:
+                _kill(proc)             # 拉起来的不是我们的引擎，收拾掉
+            return None
+        self._proc = proc
+        return ok
+
+    def _verified(self, sock):
+        """过 hello 校验并把它登记成当前连接；不是我们的引擎则关掉、返回 None。"""
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self._handshake(sock)
         except Exception:
             try:
                 sock.close()
             except Exception:
                 pass
-            raise
+            return None
         self._sock = sock
         self._read_buf = b""
         return sock
 
-    def _spawn_and_wait(self):
-        """拉起服务端并等它 bind 成功。"""
+    def _spawn_and_wait(self, port):
+        """在 ``port`` 上拉起服务端并等它 bind 成功。返回 ``(sock, proc)``。
+
+        ``proc`` 交还给调用方、不在这里记进 ``self._proc``：连上之后还要过
+        hello 校验，校验不过的那一份要由调用方收拾掉，也不该让 ``atexit``
+        的 ``shutdown`` 以后还惦记着它。
+        """
         path = config.find_binary()
         if path is None:
             raise _RemoteError("找不到 %s（先跑 cmake --build cpp/build）"
                                % config.binary_name())
         try:
             proc = subprocess.Popen(
-                [path, "--host", config.HOST, "--port", str(config.PORT)],
+                [path, "--host", config.HOST, "--port", str(port)],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 # 独立进程组：退出时只杀我们自己拉起的这一个，不波及父进程。
@@ -442,7 +601,7 @@ class _ServerClient:
                 raise _RemoteError("引擎启动即退出（code=%s）%s"
                                    % (proc.returncode, _drain_stderr(proc)))
             try:
-                sock = socket.create_connection((config.HOST, config.PORT),
+                sock = socket.create_connection((config.HOST, port),
                                                 config.CONNECT_TIMEOUT)
             except OSError:
                 if time.monotonic() >= deadline:
@@ -451,8 +610,7 @@ class _ServerClient:
                                        % config.START_TIMEOUT)
                 time.sleep(0.02)
                 continue
-            self._proc = proc
-            return sock
+            return sock, proc
 
     def _handshake(self, sock) -> None:
         """``hello`` 校验：确认对面是同一套刻度和同一个棋盘。
@@ -796,12 +954,14 @@ def ai_move(board, ai_player, depth, cancel=None):
     键格式不匹配从未走到过那里，所以它今天不是现有行为。
     """
     if not _has_stones(board):
-        # **不动指示器。** 开局库走本地是设计，不是降级 —— 把这一手记成
-        # "Python (本地)" 会让面板在整局第一步就报出一个假警。它也不改变
-        # 任何东西：开局库是查表，不是搜索。
+        # 面板上记「开局库」，**不记 "Python (本地)"**：查表不是降级，标成
+        # Python 会让面板在整局第一步就报出一个假警。它也不走 C++ —— 开局是
+        # 唯一必须零延迟的一手，一次网络往返换不来任何东西。
+        _note("book")
         return _local.ai_move(board, ai_player, depth, cancel=cancel)
     if _local.book_lookup(board, ai_player) is not None:
-        # 同上：查表不是降级，指示器不动。
+        # 同上：查表不是降级，也不是 C++，报「开局库」。
+        _note("book")
         return _local.ai_move(board, ai_player, depth, cancel=cancel)
 
     try:

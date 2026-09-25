@@ -506,11 +506,20 @@ class GamePanel(QFrame):
         # 变弱。不把当前生效的引擎摆出来，"为什么刚才那步只要 0.1 秒、这步要 7
         # 秒"就无从解释。取值来自 engine.engine_label()，只读不探测。
         self.engine_row = InfoRow("引擎", "—")
+        # 端口是**诊断**的下一格：引擎那一行只说"用了谁"，不说"在哪"。
+        # 池子里 15 格、还可能退到内核端口，出问题时（某个端口被别的程序占着、
+        # 或者旧版本程序的残留服务端还活着）第一个要问的就是"它到底连在哪一格"。
+        # 取值来自 engine.current_port()，与引擎那一行同源：只读已建立的连接。
+        self.port_row = InfoRow("当前 TCP 端口", "—")
+        self.port_row.setToolTip(
+            "当前这条 C++ 引擎连接用的端口。\n"
+            "「—」= 这一步没走 TCP：开局库查表（不搜索），"
+            "或引擎已降级到本地 Python。")
         self.undo_row = InfoRow("悔棋次数", "3")
         self.moves_row = InfoRow("步数", "0")
         self.time_row = InfoRow("用时", "00:00")
-        for row in (self.difficulty_row, self.engine_row, self.undo_row,
-                    self.moves_row, self.time_row):
+        for row in (self.difficulty_row, self.engine_row, self.port_row,
+                    self.undo_row, self.moves_row, self.time_row):
             info.addWidget(row)
         layout.addLayout(info)
 
@@ -583,6 +592,8 @@ class GamePanel(QFrame):
         # 界面，不会出现"界面上写 3 级、代码里是中级"这种两处对不上的情形。
         self.difficulty_row.set_value(engine.difficulty_name(difficulty))
         self.engine_row.set_value(engine.engine_label())
+        port = engine.current_port()
+        self.port_row.set_value(str(port) if port else "—")
         self.undo_row.set_value(str(undo_count))
         self.moves_row.set_value(str(move_count))
         if status == "进行中":
@@ -1031,6 +1042,10 @@ class GomokuGame(QMainWindow):
         """AI先手的第一着，由 engine.opening_move 决定（确定性，无随机）。"""
         if not self.ai_first_move_done:
             self.ai_first_move_done = True
+            # 这一手不经过 engine.ai_move（所以指示器不会自动更新），但面板上
+            # 该显示的仍然是「开局库」：它是查表得来的天元，既不是 C++ 也不是
+            # 降级后的 Python。不记的话这一行的初始值会一直是「—」。
+            engine.note_book()
             mv = opening_move(self.board, 1)
             if mv is None:                      # 理论上不会发生
                 mv = (BOARD_SIZE // 2, BOARD_SIZE // 2)
