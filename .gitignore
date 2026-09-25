@@ -7,3 +7,7 @@ venv/
 .vscode/
 .DS_Store
 game_log_*.txt
+
+# C++ 构建目录：CMakeCache 里含本机绝对路径，产物是机器相关的二进制，不入库。
+# 构建方式见 README（cmake -B cpp/build && cmake --build cpp/build）。
+cpp/build/

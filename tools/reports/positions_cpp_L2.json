@@ -1,0 +1,217 @@
+{
+ "engine": "cpp",
+ "level": 2,
+ "results": [
+  {
+   "id": "A1_block_closed_four",
+   "group": "basic",
+   "source": "手工构造",
+   "to_move": 1,
+   "move": [
+    9,
+    9
+   ],
+   "move_sgf": "K10",
+   "score": -2410,
+   "score_type": "static",
+   "depth": 4,
+   "reason": "连续冲四防守(VCF)",
+   "elapsed_ms": 135.2,
+   "checks": {
+    "must_play": true,
+    "avoid": true
+   },
+   "notes": {},
+   "ok": true,
+   "note": "白方 (9,5)-(9,8) 四连，左端 (9,4) 被黑占 → 冲四，(9,9) 是唯一成五点。黑走别处则白 (9,9) 成五。"
+  },
+  {
+   "id": "A2_win_in_one",
+   "group": "basic",
+   "source": "手工构造",
+   "to_move": 1,
+   "move": [
+    9,
+    4
+   ],
+   "move_sgf": "E10",
+   "score": 10000000,
+   "score_type": "mate",
+   "depth": 1,
+   "reason": "连续冲四(VCF)",
+   "elapsed_ms": 95.9,
+   "checks": {
+    "must_play": true
+   },
+   "notes": {
+    "mate_seen": true
+   },
+   "ok": true,
+   "note": "黑方活四 (9,5)-(9,8)，(9,4)/(9,9) 任一即成五；同时白方行 8 有活三（静态评估会给出可观的防守价值）。这是 B1 的最小复现：取胜线必须压过任何静态分。注：胜局只硬性检查着法；分数仅作记录（旧引擎经威胁层快速通道落子，返回 val=0/dep=0，分数无意义）。"
+  },
+  {
+   "id": "A3_lost_to_live_four",
+   "group": "basic",
+   "source": "手工构造",
+   "to_move": 1,
+   "move": [
+    0,
+    1
+   ],
+   "move_sgf": "B1",
+   "score": -9999999,
+   "score_type": "mate",
+   "depth": 1,
+   "reason": "PVS搜索(对手有VCF·无挡点)",
+   "elapsed_ms": 96.1,
+   "checks": {
+    "mate_detected": true,
+    "mate_sign": true
+   },
+   "notes": {},
+   "ok": true,
+   "note": "白方活四，(9,4) 与 (9,9) 两处成五点，黑只能堵一处 → 必败。要求引擎报出负的将杀分，而不是被静态分掩盖。"
+  },
+  {
+   "id": "A4_double_four",
+   "group": "basic",
+   "source": "手工构造",
+   "to_move": 1,
+   "move": [
+    9,
+    9
+   ],
+   "move_sgf": "K10",
+   "score": 9999998,
+   "score_type": "mate",
+   "depth": 1,
+   "reason": "连续冲四(VCF)",
+   "elapsed_ms": 91.8,
+   "checks": {
+    "must_play": true
+   },
+   "notes": {
+    "mate_seen": true
+   },
+   "ok": true,
+   "note": "黑走 (9,9) 同时形成两个冲四：行 9 的 (9,6)-(9,9)（左端 (9,5) 被白堵，成五点 (9,10)）与列 9 的 (6,9)-(9,9)（上端 (5,9) 被白堵，成五点 (10,9)）。白只能堵一处 → 黑必胜。验证跨线组合（双四）是否被判为必胜。注：同 A2，胜局只硬性检查着法；旧引擎此处返回 val=79438.9（静态量级），说明组合棋型的识别依赖威胁层而非搜索。"
+  },
+  {
+   "id": "A5_block_open_three",
+   "group": "basic",
+   "source": "手工构造",
+   "to_move": 1,
+   "move": [
+    9,
+    6
+   ],
+   "move_sgf": "G10",
+   "score": -2810,
+   "score_type": "static",
+   "depth": 4,
+   "reason": "连续冲四防守(VCF)",
+   "elapsed_ms": 112.1,
+   "checks": {
+    "must_play": true,
+    "avoid": true
+   },
+   "notes": {},
+   "ok": true,
+   "note": "白方行 9 活三，(9,6) 与 (9,10) 皆空。黑必须挡一端，否则白成活四必杀。允许堵任一端。"
+  },
+  {
+   "id": "B1_blunder_233336_p10",
+   "group": "historic",
+   "source": "game_log_20260606_233336.txt 第 10 手（白）",
+   "to_move": 2,
+   "move": [
+    12,
+    7
+   ],
+   "move_sgf": "H13",
+   "score": -9999995,
+   "score_type": "mate",
+   "depth": 3,
+   "reason": "PVS搜索(对手有VCF·无挡点)",
+   "elapsed_ms": 103.9,
+   "checks": {
+    "mate_detected": true,
+    "mate_sign": true
+   },
+   "notes": {},
+   "ok": true,
+   "note": "黑方**双活三**：主对角线 (8,8)(9,9)(10,10)，以及行 8 的跳活三 (8,8)(8,10)(8,11)（(8,9) 一落即活四）。两者共用 (8,8)，白挡得住一条挡不住另一条 —— **白方已必败**。当日白走 K9=(8,9)：挡掉行 8，黑随即 H8=(7,7) 在主对角线成活四，白 M12 挡一端，黑 G7 连五。\n**期望曾经写错**：原为 must_play=[(7,7),(11,11)]（即\"必须挡对角线\"），那是以旧引擎的视角写的 —— 旧引擎看不到行 8 的跳活三，于是把它当成一个只有单侧威胁的局面。手工核过：白不论挡哪条都输，所以这条题的正确期望是 `mate_sign=-1`（报出必败），而不是\"走哪一格\"。实测 L1/L2/L3 都返回 val=-9999995（五步内被将死）。"
+  },
+  {
+   "id": "B2_lost_233336_p12",
+   "group": "historic",
+   "source": "game_log_20260606_233336.txt 第 12 手（白）",
+   "to_move": 2,
+   "move": [
+    5,
+    5
+   ],
+   "move_sgf": "F6",
+   "score": -9999999,
+   "score_type": "mate",
+   "depth": 1,
+   "reason": "PVS搜索(对手有VCF·无挡点)",
+   "elapsed_ms": 92.0,
+   "checks": {
+    "mate_detected": true,
+    "mate_sign": true
+   },
+   "notes": {},
+   "ok": true,
+   "note": "黑方主对角线活四 (7,7)-(10,10)，(6,6)/(11,11) 两处成五，白必败。当日白走 M12（候选分 580700440 ≈ 连五分值的 58 倍），黑 G7 连五。要求：负将杀分能被识别（旧引擎此处已返回 -10000002 但着法仍错）。"
+  },
+  {
+   "id": "B3_blunder_232014_p34",
+   "group": "historic",
+   "source": "game_log_20260606_232014.txt 第 34 手（白），由 @31 快照 + 第 32/33 手推得",
+   "to_move": 2,
+   "move": [
+    6,
+    11
+   ],
+   "move_sgf": "M7",
+   "score": 9999994,
+   "score_type": "mate",
+   "depth": 2,
+   "reason": "PVS搜索",
+   "elapsed_ms": 95.7,
+   "checks": {
+    "mate_detected": true,
+    "mate_sign": true
+   },
+   "notes": {},
+   "ok": true,
+   "note": "当日白走 M14（候选分 34239660），旧引擎 val=-10000000 进入拼命模式；黑随后 K14，再于第 37 手 H16 连五。\n**期望曾经写错**：原为 mate_sign=-1（认为白必败），那是照抄旧引擎的 -1e7 写的 —— 而那个数正是旧引擎\"进入拼命模式\"的标志，不是它算出了必败。白方在这里其实**有杀**：列 11 上白有 (7,11)(8,11)(10,11)，落 M7=(6,11) 后 (9,11) 成为成五点，此后白一路冲四（M7 → O9 → L6 → K5），黑每一步都被迫去挡，第四手白连五。实测 L1/L2/L3 都返回 val=9999994（六步内成五），且这条线在 tests/test_search_mate.py 里会被重走一遍对账（分值距离 vs 实际手数）。"
+  },
+  {
+   "id": "B4_selfplay_g2_p17",
+   "group": "historic",
+   "source": "tools/reports/selfplay_legacy_vs_legacy_smoke.json 第 2 局第 17 手（白）",
+   "to_move": 2,
+   "move": [
+    7,
+    8
+   ],
+   "move_sgf": "J8",
+   "score": -527530,
+   "score_type": "static",
+   "depth": 4,
+   "reason": "PVS搜索(对手有VCF·无挡点)",
+   "elapsed_ms": 268.1,
+   "checks": {},
+   "notes": {
+    "opp_vcf": "此门面无法访问 VCF 探针（需直接对 engine_local 运行）"
+   },
+   "ok": null,
+   "note": "旧引擎在此返回 -11797248.7（标为必败），随后黑方经威胁层于第 18/20 手连五。用于确认失败模式在自对弈中可复现。\n**期望改过一次，改的理由值得记下来。** 原来写的是 `mate_sign=-1`（\"引擎会报出白方必败\"）。2026-09-19 复核发现这个期望是错的，而且错得有意思：\n① 旧引擎的 -11797248.7 **不是**它算出来的必败。它的真将杀分约定是`±(1e7 + depth)`，而 -1.18e7 落在复合静态分的量程里 —— 那是\"拼命模式\"（`legacy_engine.py` 的攻防加权混合）给出的一个很大的负数。把这个数当成\"已识别必败\"，正是旧引擎分值体系不可读的后果之一。\n② 黑方**确实**有连续冲四杀（Phase 5 的 VCF 证明）：黑 (7,4) 造出五 E10=(9,6)，白被迫去挡；黑再走 (8,11) 直接成活四（成五点 N8 与 H13），白挡不住。VCF 给出 5 手、3 手两级深度。\n③ 但 VCF 证明的是\"**轮到黑方时**黑方能连冲四取胜\"，而这里轮到的是**白方** —— 白先动手就有机会去占黑的起手点。逐格验过：白的 7 个防守候选（黑的所有成四点 (7,4)/(7,12)/(8,11)/(9,6)/(12,7)/(12,9)/(13,6)）走完，黑方**每一条**仍然是 VCF 必胜 —— 所以这条威胁白拆不干净，但它仍然不等于\"白已必败\"：白或许有非冲四的守法，白自己也没有比对手更快的冲四。**VCF 是威胁检测器，不是败局证明器。**\n④ 因此这条题现在的期望是 `opp_vcf=True` —— 断言那个**已被证明**的事实（对手存在 VCF），而不是那个没被证明的（白必败）。新引擎在这里返回静态分 (-557920)，主搜索 24 层内看不到这条 5 手的 VCF，因为白方在根上会去拆它 —— 引擎的\"不表态\"与\"白没输\"是两回事。"
+  }
+ ],
+ "pass_rate": 1.0,
+ "n_scored": 8,
+ "n_unevaluable": 1
+}

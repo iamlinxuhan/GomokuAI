@@ -1523,12 +1523,18 @@ class Engine:
 
     # ------------------------------------------------------------ 根节点
 
-    def _root(self, bd, me, depth, first_move, alpha, beta):
+    def _root(self, bd, me, depth, first_move, alpha, beta, collect=None):
         """根节点的一轮搜索。返回 ``(move, value)``。
 
         根与普通节点的区别只有一处：**不必为"某条线路被剪掉"负责**，因为根层
         要返回的永远是分值最高的那条路。所以这里不做 PVS 的零窗口试探 ——
         根层少一层间接，且根层节点数占总数的比例极小。
+
+        ``collect`` 非空时顺带把每个候选的 ``(move, value)`` 收进去 —— 偏置
+        重排要用（见 `_apply_bias`，与 C++ 的 `root()` 逐字对应）。**只有偏置
+        开启时才传它**：根层全量收集与渴望窗口不能并存，渴望窗口会用窄窗剪掉
+        一部分根着法，那些着法就没有分值可比（`_search` 里两条路径的取舍与此
+        一致）。
         """
         moves = self._ordered_moves(bd, me, first_move, 0)
         if not moves:
@@ -1536,12 +1542,18 @@ class Engine:
         nxt = 3 - me
         best = -INF
         best_move = moves[0]
+        if collect is not None:
+            collect.clear()
         for mv in moves:
             if bd.make(mv, me):
                 bd.unmake(mv, me)
+                if collect is not None:
+                    collect.append((mv, WIN_SCORE))
                 return (mv, WIN_SCORE)
             v = -self._negamax(bd, depth - 1, -beta, -alpha, nxt, 1)
             bd.unmake(mv, me)
+            if collect is not None:
+                collect.append((mv, v))
             if v > best:
                 best = v
                 best_move = mv
@@ -1550,6 +1562,66 @@ class Engine:
             if alpha >= beta:
                 break
         return (best_move, best)
+
+    # ------------------------------------------------------------ 进攻激励
+
+    def _apply_bias(self, bd, me, attack, defence, tolerance, vals, best_val):
+        """在一个分值带内，把"己方棋型最厚"的那一手挑出来。
+
+        ⚠️ **本档配置里已经没有任何档位使用它了 —— 它是被量出来的**。
+        给初级/中级加 `tolerance=3000` 的偏置后，同档自我对打（偏置开 vs
+        偏置关、交替执黑）中级是 **0—8**、初级 **2—6**；把带宽压到 0（纯同分
+        重排）仍是 **6—14**，对称权重 **7—13**。结论是这条机制本身与搜索的
+        判断相反（详见 `engine.py` 的 DIFFICULTY 注释与 `tools/PLAN_ENGINE.md`
+        的 B24），因此**降级到本地兜底时不再启用它**。
+
+        留着这段实现有一个具体理由：**C++ 侧的 `applyBias` 是活的**（入门档
+        在用它），而这两份代码互为镜像，`tools/positions.py` 的逐字一致检验
+        是"C++ 移植是否忠实"的唯一廉价护栏。Python 这一侧删掉，C++ 那一侧就
+        失去了可比对的参考实现。改动任一侧之前，先看 B24 的实测数据。
+
+        以下是这段实现的原始说明 ——
+
+        搜索本身照常跑（健全、零和），这里只拿根节点各候选的分值做一次重排：
+        先按 ``best_val - tolerance`` 划出容差带，带内再按
+        ``attack × own − defence × opp`` 取最大。
+
+        **为什么不是"把偏置注入 `evaluate`"**：`evaluate` 必须严格零和
+        （`evaluate(b,1) == -evaluate(b,2)`，`tests/test_eval.py` 钉住），而
+        negamax 的正确性完全依赖零和。一旦按"己方攻×1.5、对手威胁×0.5"注入
+        evaluate，两者不再互为相反数，搜索变成不健全的，且 ``best_val``
+        （面板两张图的唯一数据源）会带上随 ``me`` 变化的偏置。所以偏置只能
+        活在**根节点**上 —— 那里才知道"轮到谁"，也只需要影响"选哪一手"。
+
+        ``tolerance`` 是这套东西的**全部代价**：取值内的着法即使搜索分低一点
+        也会被选中（低多少由带宽决定），带外的一律出局。带宽为 0 时退化成
+        "只在同分着法之间重排"，一分不牺牲；这也是为什么入门档用 0。
+
+        **为什么不照旧引擎那样在每片叶子上把对手威胁打 0.85 折**：那正是这个
+        机制的来路（旧 `evaluate_board` 的 ``ai_score - human_score * 0.85``，
+        注释写着"让AI在均势时不再偏向纯防守"），但它不可迁移 —— 它让评估与
+        "谁在评估"有关，破坏了零和。带宽 3000 是它在根节点上的等价物：对手一条
+        活三的 15%（旧版的让步幅度）正是 4500，而 3000 比它更小。
+
+        杀棋结论不可被改写：``is_mate(v)`` 的候选一律跳过（`_search` 也不会在
+        ``best_val`` 是杀棋分时调这里）。
+        """
+        opp = 3 - me
+        floor_val = best_val - int(tolerance)
+        pick = -1
+        pick_score = 0.0
+        for mv, v in vals:
+            if v < floor_val or is_mate(v):
+                continue
+            bd.make(mv, me)
+            own = bd.score_sum[me - 1] + _combo_bonus(bd.threat_agg[me - 1])
+            oth = bd.score_sum[opp - 1] + _combo_bonus(bd.threat_agg[opp - 1])
+            bd.unmake(mv, me)
+            s = attack * own - defence * oth
+            if pick < 0 or s > pick_score:
+                pick = mv
+                pick_score = s
+        return pick
 
     # ------------------------------------------------------------ 连续冲四
 
@@ -1736,6 +1808,14 @@ class Engine:
         # —— 两侧不再是各自写死的两个 3。
         cfg = DIFFICULTY.get(level) or DIFFICULTY[max(DIFFICULTY)]
         limit = cfg["time"] if time_limit is None else time_limit
+        bias = cfg.get("bias") or {}
+        bias_attack = float(bias.get("attack", 0.0))
+        bias_defence = float(bias.get("defence", 0.0))
+        bias_tolerance = float(bias.get("tolerance", 0.0))
+        # 与 C++ 逐字相同的判据：两个权重都为 0 就等于没有偏置，连渴望窗口都
+        # 不动。单靠 `bias` 这个键在不在来判断会让"下发全 0"的请求走进另一条
+        # 搜索路径 —— 而那条路径与旧版不同源，parity 会莫名其妙地断。
+        bias_on = bias_attack != 0.0 or bias_defence != 0.0
         self._cancel = cancel
         self._qply = cfg["qply"]
         self.timed_out = False
@@ -1764,6 +1844,9 @@ class Engine:
         best_val = 0
         done = 0
         first = best_move
+        # 最后一轮**跑完的**迭代收到的根候选表（偏置重排用）。跑不完的那一轮
+        # 不算 —— 它的分值只覆盖了一部分候选，拿它重排等于用半张表做决定。
+        root_vals = []
 
         # ---- VCF 快速通道（Phase 5）----
         #
@@ -1825,10 +1908,11 @@ class Engine:
                 self.timed_out = False       # 交给下面迭代循环自己处理时间
 
         for depth in range(1, cfg["max_depth"] + 1):
-            if depth < 3 or best_val <= -STATIC_MAX:
+            if bias_on or depth < 3 or best_val <= -STATIC_MAX:
                 aspiration = False
             else:
                 aspiration = True
+            cur_vals = [] if bias_on else None
             try:
                 if aspiration:
                     d = _ASPIRATION
@@ -1843,12 +1927,15 @@ class Engine:
                     else:
                         mv, val = self._root(bd, me, depth, first, -INF, INF)
                 else:
-                    mv, val = self._root(bd, me, depth, first, -INF, INF)
+                    mv, val = self._root(bd, me, depth, first, -INF, INF,
+                                         cur_vals)
             except SearchAborted:
                 break
             if mv < 0:
                 break
             best_move, best_val, done, first = mv, val, depth, mv
+            if bias_on:
+                root_vals = cur_vals
             # 已找到必胜（或被将死）就不必再深搜：更深的迭代只会重复同一结论，
             # 却要花掉数倍时间。`is_mate` 的分带保证了它不会与静态分混淆。
             if is_mate(val):
@@ -1866,6 +1953,20 @@ class Engine:
             # 搜索最终选的正是 VCF 算出来的那个挡点。"挡点"是 VCF 证明的，
             # 分值仍是搜索给的 —— reason 只说走法的来路，不说分值的来路。
             info['reason'] = '连续冲四防守(VCF)'
+
+        if bias_on and root_vals and not is_mate(best_val):
+            # ⚠️ `bd` 从搜索里回来时**可能是脏的**，重建一次再交给偏置 ——
+            # 与 C++ `think()` 里那段逐字同理（见 `cpp/src/search.cpp` 的
+            # `applyBias` 调用点）：迭代加深的最后一轮被时限打断时，
+            # `SearchAborted` 从 `_negamax` 里抛出来，沿途每一层的
+            # `bd.make()` 都没走到配对的 `unmake`，那条被放弃的路径上的棋子
+            # 全留在根棋盘上。搜索结果不受影响（抛出的那一刻这一轮就被丢掉
+            # 了），但 `_apply_bias` 是搜索**之后**读这张棋盘的。
+            bd = Board.from_array(board)
+            picked = self._apply_bias(bd, me, bias_attack, bias_defence,
+                                      bias_tolerance, root_vals, best_val)
+            if picked >= 0:
+                best_move = picked
 
         dt = (time.monotonic() - t0) * 1000.0
         info.update({

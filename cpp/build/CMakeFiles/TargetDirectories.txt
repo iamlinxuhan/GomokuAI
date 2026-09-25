@@ -1,3 +1,0 @@
-/home/linxuhan/桌面/GomokuAI-PyC/GomokuAI/cpp/build/CMakeFiles/gomoku_engine.dir
-/home/linxuhan/桌面/GomokuAI-PyC/GomokuAI/cpp/build/CMakeFiles/edit_cache.dir
-/home/linxuhan/桌面/GomokuAI-PyC/GomokuAI/cpp/build/CMakeFiles/rebuild_cache.dir

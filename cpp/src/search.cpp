@@ -918,6 +918,24 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
         }
 
         if (biasOn && !rootVals.empty() && !isMate(bestVal)) {
+            // ⚠️ `bd` 从搜索里回来时**可能是脏的**，重建一次再交给偏置。
+            //
+            // 迭代加深的最后一轮被时限打断时，`SearchAborted` 从 `negamax` 里抛
+            // 出来，沿途每一层的 `bd.make()` 都没走到配对的 `unmake`（这条搜索
+            // 路径刻意不维护撤销栈，见 board.h 的注释），于是那条被放弃的路径上
+            // 的棋子全部留在根棋盘上。搜索本身不受影响 —— 抛出的那一刻这一轮的
+            // 结果就被丢掉了。但 `applyBias` 是搜索**之后**读这张棋盘的，它读到
+            // 的会是"真实局面 + 半条搜索路径"，`own/opp` 因此完全失真。
+            //
+            // 这不是推测：`[start] 子=5` 与 `[entry] 子=13` 是实测（同一局面、
+            // 同一进程）。失真的后果是偏置的选点**随机器负载漂移** —— 被放弃的
+            // 路径取决于在哪一毫秒撞上截止，而不同路径给出不同的 `own/opp`。
+            // 未修之前，入门档的"贪吃系数"实际是在一张幻影盘面上做重排。
+            //
+            // 修法是从请求重建根棋盘，而不是给搜索加撤销栈：重建是一次 361 格
+            // 的拷贝，只在一轮被打断之后发生，代价可忽略；撤销栈则要在热路径上
+            // 多一次 push/pop 并改掉所有 make/unmake 的配对方式。
+            bd = Board::fromArray(board);
             const int picked = applyBias(bd, me, cfg, rootVals, bestVal);
             if (picked >= 0) bestMove = picked;
         }
