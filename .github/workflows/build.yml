@@ -1,9 +1,20 @@
 name: Build and Release
 
 on:
+  # **只在打 tag 时自动跑。** 早先这里还有 `branches: ['**']`，而 GitHub 把
+  # "推分支"与"推 tag"当成**两个独立事件** —— 一次发版于是起两条 run：一条跟
+  # 着 main 那次推送，只跑 test（build-linux 与 release 都被 `refs/tags/` 挡
+  # 着），一条跟着 tag，跑四架构并发布。发版时没有人想看前一条，手动取消又会
+  # 在 Actions 列表里留一条 cancelled，于是干脆不触发它。
+  #
+  # 代价要如实说：**改坏了不再在"推送时"被拦住，而是等到打 tag 时才暴露** ——
+  # `test` 那条从"每次 push 都跑"变成"发版前跑一次"（它仍是 `release` 的
+  # needs，所以烂代码发不出去，只是发现得晚）。想在推送时就验，用下面那条
+  # 手动 dispatch（它能跑 test，也能顺带出四架构产物）。
   push:
-    branches: ['**']
     tags: ['v*']
+  # PR 保留着：它不因推 main 而触发（这个仓库平时也不开 PR），但万一哪天真
+  # 开了分支，合并前那次"改坏了"仍能被挡住。不要了删掉这一行即可。
   pull_request:
   workflow_dispatch:
     inputs:
@@ -42,11 +53,18 @@ permissions:
 jobs:
 
   # ============================================================
-  #  测试 — 每次 push / PR 都跑
+  #  测试 — 打 tag / PR / 手动 dispatch 时跑
   #
-  #  放在这里而不是塞进打包 job：那些只在打 tag 或手动 dispatch 时触发，
-  #  而"改坏了但还没发版"恰恰是回归最该被挡住的时候。三条 Qt 用例只 import
-  #  不构造 QApplication，因此无需 display 即可跑完。
+  #  **它是发布闸门，不是每次提交的哨兵。** `release` 的 `needs` 里有它，所以
+  #  测试红了就发不出去 —— 这是它今天最主要的作用（`build-linux` 只跑 C++ 自
+  #  检，全程不跑一条 pytest：能编过与棋是对的，是两件事）。
+  #
+  #  它**不在关键路径上**：三个版本并行、各 7 分钟，而 armv7 那条构建要 11 分
+  #  钟，删掉它一分钟也省不下来。
+  #
+  #  独立成 job 而不是塞进打包 job：打包那些只在 tag 或 dispatch 时触发，而
+  #  "改坏了但还没发版"同样该被挡住 —— 它们跑的是同一份源码。三条 Qt 用例只
+  #  import 不构造 QApplication，因此无需 display 即可跑完。
   # ============================================================
   test:
     runs-on: ubuntu-latest
