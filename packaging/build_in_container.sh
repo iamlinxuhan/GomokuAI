@@ -1,44 +1,57 @@
 #!/usr/bin/env bash
 # 在**目标架构**的 Debian bookworm 容器里完成一次完整打包。
 #
-#     SUFFIX=AMD KIND=deb DEB_ARCH=amd64 APP_VERSION=3.0.1 \
+#     FAMILY=AMD BITS=x86_64 EXT=deb DEB_ARCH=amd64 APP_VERSION=3.0.1 \
 #       bash packaging/build_in_container.sh
 #
 # 为什么四个架构全都走容器：**PyInstaller 不能交叉编译**。64 位 runner 上
 # 建不出 i386 与 armv7 的二进制，只能靠容器换 userland（armv7 再叠一层
-# QEMU）。四个架构共用这一份脚本，架构之间的差异就只剩下面四个环境变量 ——
-# 上一版把 .deb 与 .pkg 的配方各抄在 workflow 里，加一个架构要改三处。
+# QEMU）。四个架构共用这一份脚本，架构之间的差异就只剩下面几个环境变量 ——
+# 上一版把 .deb 与 tar.gz 的配方各抄在 workflow 里，加一个架构要改三处。
 #
-# 环境变量：
-#   SUFFIX       产物名后缀，也是裸可执行文件的名字后缀：AMD / ARM / X86 / ARM32
-#   KIND         安装包形态：deb | pkg
-#   DEB_ARCH     KIND=deb 时的 Architecture 字段：amd64 / i386
+# 环境变量（前两个就是产物名里的那两格，见下）：
+#   FAMILY       架构家族：AMD | ARM。**这一格是族名，不是型号** —— AMD 那两格
+#                卖的是 x86 家族，Intel 机器下的是同一份。
+#   BITS         位数，两族各用本名：x86_64 | x86_32 | arm64 | arm32
+#   EXT          安装包容器格式，也是它的后缀：deb | tar.gz
+#   DEB_ARCH     EXT=deb 时的 Architecture 字段：amd64 / i386
 #   APP_VERSION  版本号（CI 从 tag 传入；手动跑给个 0.0.0）
 #
-# 产物（写在 /src 下）：
-#   dist/GomokuAI_For_Linux_<SUFFIX>            裸可执行文件（onefile）
-#   GomokuAI_For_Linux_<SUFFIX>.deb | .pkg      安装包（由 dist/gomoku-ai 的 onedir 收成）
+# 产物名（写在 /src 下）：
+#
+#   GomokuAI_Linux_<FAMILY>_<BITS>_run           裸可执行文件（onefile，无后缀）
+#   GomokuAI_Linux_<FAMILY>_<BITS>_setup.<EXT>   安装包（由 dist/gomoku-ai 的 onedir 收成）
+#
+# 早先这套名字是 `GomokuAI_For_Linux_<SUFFIX>`，SUFFIX ∈ AMD / X86 / ARM / ARM32
+# —— **一格既当族名又当位数，而位数恰恰是最容易装错的那个信息**：`_AMD` 与
+# `_X86` 其实都是 x86 家族（一个 64 位一个 32 位），`_ARM` 与 `_ARM32` 同理，
+# 光看名字分不出谁是谁，下错就是一句 `Exec format error`。而且 `_X86` 撞上
+# 业界"x86 默认指 32 位"的惯例，`_AMD` 又让 Intel 用户以为与自己无关。现在
+# 族名与位数拆成两格，64 位/32 位一眼可见。
 set -euo pipefail
 
-: "${SUFFIX:?需要一个产物名后缀，如 AMD}"
-: "${KIND:?需要 KIND=deb 或 KIND=pkg}"
+: "${FAMILY:?需要一个架构家族名，如 AMD}"
+: "${BITS:?需要一个位数列，如 x86_64 / x86_32 / arm64 / arm32}"
+: "${EXT:?需要 EXT=deb 或 EXT=tar.gz}"
 : "${APP_VERSION:=0.0.0}"
 DEB_ARCH="${DEB_ARCH:-amd64}"
 
-if [ "$KIND" != "deb" ] && [ "$KIND" != "pkg" ]; then
-    echo "KIND 只能是 deb 或 pkg，收到 '$KIND'" >&2
+if [ "$EXT" != "deb" ] && [ "$EXT" != "tar.gz" ]; then
+    echo "EXT 只能是 deb 或 tar.gz，收到 '$EXT'" >&2
     exit 2
 fi
-if [ "$KIND" = "deb" ] && [ -z "${DEB_ARCH:-}" ]; then
-    echo "KIND=deb 时必须给 DEB_ARCH" >&2
+if [ "$EXT" = "deb" ] && [ -z "${DEB_ARCH:-}" ]; then
+    echo "EXT=deb 时必须给 DEB_ARCH" >&2
     exit 2
 fi
 
-PKG_NAME="GomokuAI_For_Linux_${SUFFIX}"
+BASE="GomokuAI_Linux_${FAMILY}_${BITS}"     # 名字的前两格，两份产物共用
+RUN_NAME="${BASE}_run"                      # 免安装裸文件（无后缀）
+PKG_NAME="${BASE}_setup"                    # 安装包基名，实际文件还要接 ".${EXT}"
 cd /src
 
 echo "=============================================================="
-echo " 架构容器内打包：SUFFIX=$SUFFIX KIND=$KIND DEB_ARCH=$DEB_ARCH"
+echo " 架构容器内打包：FAMILY=$FAMILY BITS=$BITS EXT=$EXT DEB_ARCH=$DEB_ARCH"
 echo " 目标架构：$(dpkg --print-architecture)   Python：$(python3 -V)"
 echo "=============================================================="
 
@@ -104,11 +117,11 @@ echo "---- PyInstaller: onedir（安装包原料）----"
     --add-binary "cpp/build/gomoku_engine:." main.py
 
 echo "---- PyInstaller: onefile（裸可执行文件）----"
-.venv-build/bin/pyinstaller --onefile --windowed --name "${PKG_NAME}" \
+.venv-build/bin/pyinstaller --onefile --windowed --name "${RUN_NAME}" \
     --add-binary "cpp/build/gomoku_engine:." main.py
 
-ls -lh "dist/${PKG_NAME}"
-file "dist/${PKG_NAME}"
+ls -lh "dist/${RUN_NAME}"
+file "dist/${RUN_NAME}"
 
 # 断言引擎确实进包了。**这是最容易静默漏掉的一环**：漏了不会报错，只会让
 # 所有档位的 AI 都退回 Python 参考实现。onedir 与 onefile 用的是同一个
@@ -149,7 +162,7 @@ DEB_DEPENDS="libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0, fonts-noto-cj
 
 DEB_DESC="五子棋AI - 位棋盘增量评估 + Negamax/PVS + 置换表 + 静止搜索/VCF 连续冲四 (纯 CPU)"
 
-if [ "$KIND" = "deb" ]; then
+if [ "$EXT" = "deb" ]; then
     echo "---- 打包 .deb (${DEB_ARCH}) ----"
     PKG_DIR="deb_build"
     rm -rf "$PKG_DIR"
@@ -177,31 +190,33 @@ if [ "$KIND" = "deb" ]; then
         > "${PKG_DIR}/DEBIAN/control"
 
     # gzip 而不是 zstd：兼容性更好（旧 dpkg 也能解），代价只是包大一点。
-    dpkg-deb -Zgzip --build "${PKG_DIR}" "${PKG_NAME}.deb"
-    ls -lh "${PKG_NAME}.deb"
-    # 只看前几行摘要，但**不能用 `head`**：见下面 .pkg 那一处的说明。
-    dpkg-deb --info "${PKG_NAME}.deb" | sed -n '1,12p'
+    dpkg-deb -Zgzip --build "${PKG_DIR}" "${PKG_NAME}.${EXT}"
+    ls -lh "${PKG_NAME}.${EXT}"
+    # 只看前几行摘要，但**不能用 `head`**：见下面 tar.gz 那一处的说明。
+    dpkg-deb --info "${PKG_NAME}.${EXT}" | sed -n '1,12p'
 
 else
-    echo "---- 打包 .pkg (tar.gz + install.sh) ----"
-    rm -rf "$PKG_NAME"
-    mkdir -p "${PKG_NAME}/${APP_DIR_NAME}"
-    cp -r "dist/${APP_DIR_NAME}/." "${PKG_NAME}/${APP_DIR_NAME}/"
-    chmod -R 755 "${PKG_NAME}/${APP_DIR_NAME}"
+    echo "---- 打包 .tar.gz（tar + install.sh）----"
+    # 目录名用 BASE（不带 _setup）：解包出来的那个目录是给用户 cd 进去的，
+    # "_setup" 只在文件名里有意义。
+    rm -rf "$BASE"
+    mkdir -p "${BASE}/${APP_DIR_NAME}"
+    cp -r "dist/${APP_DIR_NAME}/." "${BASE}/${APP_DIR_NAME}/"
+    chmod -R 755 "${BASE}/${APP_DIR_NAME}"
 
     # 一个可执行位都没有的 tar 包是最常见的踩坑点：解出来 chmod +x 忘了做，
     # 安装脚本自己就 `Permission denied`。这里显式写死 755 再打。
-    printf '%s\n' "$DESKTOP_ENTRY" > "${PKG_NAME}/gomoku-ai.desktop"
+    printf '%s\n' "$DESKTOP_ENTRY" > "${BASE}/gomoku-ai.desktop"
 
-    cat > "${PKG_NAME}/install.sh" <<EOF
+    cat > "${BASE}/install.sh" <<EOF
 #!/bin/bash
-# 五子棋AI ${SUFFIX} 版安装脚本。不需要联网，不需要编译。
+# 五子棋AI ${FAMILY} ${BITS} 版安装脚本。不需要联网，不需要编译。
 set -e
 
 APP_DIR="${OPT_DIR}"
 SRC_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 
-echo "Installing GomokuAI (${SUFFIX}) to \${APP_DIR} ..."
+echo "Installing GomokuAI (${FAMILY} ${BITS}) to \${APP_DIR} ..."
 sudo mkdir -p "\${APP_DIR}"
 sudo cp -r "\${SRC_DIR}/${APP_DIR_NAME}/." "\${APP_DIR}/"
 sudo chmod -R 755 "\${APP_DIR}"
@@ -217,9 +232,9 @@ sudo rm -rf /opt/gomoku-ai-arm
 
 echo "Done! Run: gomoku-ai"
 EOF
-    chmod 755 "${PKG_NAME}/install.sh"
-    tar -czf "${PKG_NAME}.pkg" "$PKG_NAME"
-    ls -lh "${PKG_NAME}.pkg"
+    chmod 755 "${BASE}/install.sh"
+    tar -czf "${PKG_NAME}.${EXT}" "$BASE"
+    ls -lh "${PKG_NAME}.${EXT}"
     # 列几行证明包不是空的。**这里绝不能写 `| head -5`** —— 本脚本开头是
     # `set -euo pipefail`，而 `head` 读够 5 行就退出、关掉管道；tar 那边还有
     # 几万行要写（onedir 包 5 万个条目），写进已关闭的管道会收到 SIGPIPE，
@@ -227,16 +242,16 @@ EOF
     # `set -e` 随即中止脚本 —— **包已经打好了，却在最后一行显示失败**。
     #
     # 这就是 ARM64 / ARM32 两个 job 红、amd64 / i386 两个绿的全部原因：红的
-    # 那两条走的是这个 .pkg 分支，绿的那两条走 .deb 分支。上面 .deb 分支的
+    # 那两条走的是这个 tar.gz 分支，绿的那两条走 .deb 分支。上面 .deb 分支的
     # `dpkg-deb --info | head -12` 只是**碰巧**躲过去了 —— 它的输出远小于
     # 64 KiB 的管道缓冲区，dpkg-deb 写完全部输出就退出了，head 还没来得及关
     # 管子。加长 control 描述或让文件数变多，同一颗雷就会在 deb 分支上炸。
     #
     # `sed -n '1,5p'` 读满 5 行也**继续读到 EOF**，生产者因此永远写不爆管道。
-    tar -tzf "${PKG_NAME}.pkg" | sed -n '1,5p'
+    tar -tzf "${PKG_NAME}.${EXT}" | sed -n '1,5p'
 fi
 
 echo "=============================================================="
 echo " 完成："
-ls -lh "dist/${PKG_NAME}" "${PKG_NAME}".* 2>/dev/null || true
+ls -lh "dist/${RUN_NAME}" "${PKG_NAME}".* 2>/dev/null || true
 echo "=============================================================="

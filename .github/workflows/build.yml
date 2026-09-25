@@ -29,19 +29,33 @@ permissions:
 # ============================================================================
 #  产物清单（Linux 四架构 × 安装包 + 裸可执行文件 = 8）
 #
-#    GomokuAI_For_Linux_AMD        GomokuAI_For_Linux_AMD.deb     amd64    .deb
-#    GomokuAI_For_Linux_ARM        GomokuAI_For_Linux_ARM.pkg     arm64    .pkg
-#    GomokuAI_For_Linux_X86        GomokuAI_For_Linux_X86.deb     i386     .deb
-#    GomokuAI_For_Linux_ARM32      GomokuAI_For_Linux_ARM32.pkg   armhf    .pkg
+#  名字是四格：GomokuAI_Linux_<家族>_<位数>_<run|setup>.<后缀>
+#
+#    GomokuAI_Linux_AMD_x86_64_run     GomokuAI_Linux_AMD_x86_64_setup.deb
+#    GomokuAI_Linux_AMD_x86_32_run     GomokuAI_Linux_AMD_x86_32_setup.deb
+#    GomokuAI_Linux_ARM_arm64_run      GomokuAI_Linux_ARM_arm64_setup.tar.gz
+#    GomokuAI_Linux_ARM_arm32_run      GomokuAI_Linux_ARM_arm32_setup.tar.gz
+#
+#  **家族与位数必须是两格。** 早先是 `GomokuAI_For_Linux_<SUFFIX>`，SUFFIX ∈
+#  AMD / X86 / ARM / ARM32 —— 一格既当族名又当位数，而位数恰恰是最容易装错的
+#  那个信息：`AMD` 与 `X86` 都是 x86 家族（一个 64 位一个 32 位），`ARM` 与
+#  `ARM32` 同理，光看名字分不出谁是谁，下错就是一句 `Exec format error`。
+#  而且 `X86` 撞上"x86 默认指 32 位"的惯例，`AMD` 又让 Intel 用户以为与己无关
+#  （那正是他们该下的那份）。现在 `AMD_x86_64` 与 `AMD_x86_32` 一眼可辨。
+#
+#  家族名 AMD 覆盖整个 x86 家族（含 Intel 与虚拟机），ARM 覆盖整个 ARM 家族；
+#  位数那格两族各用本名，不复用对方的词。
 #
 #  **Windows 不在 Release 里。** 项目只在 Linux 上开发与验证，Windows 那份
 # 适配没有实测过，也没有人能验证 —— 把没验证过的产物放进 Release，等于让
 # 用户去当测试。那个 job 保留着，但只在手动 dispatch 时跑，见下面 `windows`。
 #
 #  安装包形态按指令集分工：x86 系给 `.deb`（Debian/Ubuntu 的装机主力），
-#  ARM 系给 `.pkg`（tar.gz + install.sh，不绑定发行版 —— ARM 上跑什么发行版
+#  ARM 系给 `.tar.gz`（tar + install.sh，不绑定发行版 —— ARM 上跑什么发行版
 #  的都有，树莓派、Fedora ARM、Arch ARM 各不相同）。这是沿用 v2.x 的既有
-#  分工，没有改动已有产物的形态。
+#  分工，没有改动已有产物的形态；只有后缀从 `.pkg` 改成了 `.tar.gz` ——
+#  `.pkg` 是 macOS 的安装包扩展名，Linux 上并不存在这种格式，用户在 Linux
+#  的下载页上看见它会去找 `installer` 命令。
 #
 #  **每个包都内嵌 C++ 计算核心。** v2.x 的三个 job 都漏了这件事（既不跑
 #  CMake 也不带 --add-binary），于是 Release 上每一个产物都是纯 Python 引擎版，
@@ -120,39 +134,43 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # suffix 同时是裸可执行文件的名字后缀与安装包的基名。
-          # deb_arch / kind 决定第 ⑤ 段走哪条配方。
+          # family / bits 就是产物名前两格（见文件头的产物清单），
+          # ext / deb_arch 决定第 ⑤ 段走哪条配方。
           - name: amd64
-            suffix: AMD
+            family: AMD
+            bits: x86_64
             platform: linux/amd64
             runs_on: ubuntu-latest
             qemu: false
-            kind: deb
+            ext: deb
             deb_arch: amd64
           - name: arm64
-            suffix: ARM
+            family: ARM
+            bits: arm64
             platform: linux/arm64
             # 原生 arm64 runner，比在 x86 上跑 QEMU 快一个数量级。
             runs_on: ubuntu-24.04-arm
             qemu: false
-            kind: pkg
+            ext: tar.gz
             deb_arch: arm64
           - name: i386
-            suffix: X86
+            family: AMD
+            bits: x86_32
             platform: linux/386
             runs_on: ubuntu-latest
             # i386 不需要 QEMU：x86 主机内核自带 32 位 ELF 支持，宿主的
             # CPU 直接执行，只是换了一套 32 位 userland。
             qemu: false
-            kind: deb
+            ext: deb
             deb_arch: i386
           - name: armv7
-            suffix: ARM32
+            family: ARM
+            bits: arm32
             platform: linux/arm/v7
             runs_on: ubuntu-latest
             # 唯独这一条必须翻译执行。
             qemu: true
-            kind: pkg
+            ext: tar.gz
             deb_arch: armhf
     steps:
       - uses: actions/checkout@v4
@@ -177,14 +195,15 @@ jobs:
 
       - name: Build inside ${{ matrix.name }} container
         env:
-          SUFFIX: ${{ matrix.suffix }}
-          KIND: ${{ matrix.kind }}
+          FAMILY: ${{ matrix.family }}
+          BITS: ${{ matrix.bits }}
+          EXT: ${{ matrix.ext }}
           DEB_ARCH: ${{ matrix.deb_arch }}
         run: |
           docker run --rm \
             --platform ${{ matrix.platform }} \
             -v "${GITHUB_WORKSPACE}:/src" -w /src \
-            -e SUFFIX -e KIND -e DEB_ARCH -e APP_VERSION \
+            -e FAMILY -e BITS -e EXT -e DEB_ARCH -e APP_VERSION \
             debian:bookworm \
             bash packaging/build_in_container.sh
 
@@ -197,8 +216,8 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: linux_${{ matrix.suffix }}_installer
-          path: GomokuAI_For_Linux_${{ matrix.suffix }}.${{ matrix.kind }}
+          name: linux_${{ matrix.family }}_${{ matrix.bits }}_installer
+          path: GomokuAI_Linux_${{ matrix.family }}_${{ matrix.bits }}_setup.${{ matrix.ext }}
 
       - name: Upload standalone executable
         # 注意：artifact 这一趟**不带可执行位**（upload-artifact 只存字节），
@@ -206,8 +225,8 @@ jobs:
         # 这回事，不用额外处理 —— 只在 README 里说清楚。
         uses: actions/upload-artifact@v4
         with:
-          name: linux_${{ matrix.suffix }}_bin
-          path: dist/GomokuAI_For_Linux_${{ matrix.suffix }}
+          name: linux_${{ matrix.family }}_${{ matrix.bits }}_run
+          path: dist/GomokuAI_Linux_${{ matrix.family }}_${{ matrix.bits }}_run
 
 
   # ============================================================
@@ -328,34 +347,39 @@ jobs:
       - name: List release files
         run: ls -lah release/
 
-      - name: Assert exactly 8 assets, one per arch
-        # **数一遍再发。** 三个 build job 里任何一个被跳过（`if` 写错、架构
+      - name: Assert the release holds exactly these 8 assets
+        # **数一遍再发。** 四个 build job 里任何一个被跳过（`if` 写错、架构
         # 不可用）都不会让这个 job 失败 —— `needs` 只保证"跑过的那些成功"，
         # 挡不住"某一条压根没跑"。少了产物的 Release 会静默地只发 6 个，
         # 用户下不到自己架构那份，而错误现场在几周后才会出现。
         #
-        # Windows 的 job 不进 Release，所以这里恰好是 4 架构 × 2 = 8。
-        #
-        # **`release/` 这个前缀必须写在通配符那一侧。** 写成
-        # `for f in "...$s" "...$s".*; do [ -e "release/$f" ]` 时，`.*` 是在
-        # **当前目录**（$GITHUB_WORKSPACE，本 job 没有 checkout，因而是个空目录）
-        # 里展开的：没有匹配 → 词原样保留 `GomokuAI_For_Linux_AMD.*` → `-e` 拿
-        # 一个字面量 `*` 去问，永远为假。于是 8 个资产**明明全在**，发布会栽在
-        # 一条假报警上（v3.0.1 首次实跑就是这么红的），而报出来的理由偏偏是
-        # "缺少 AMD 的产物"。
+        # **这里是 8 个名字逐个写死的，不是通配符。** 早先那版是
+        # `for s in AMD ARM X86 ARM32; do [ -e "release/GomokuAI_For_Linux_$s" ] …`
+        # 那一套，两处都踩过：① 匹配用的是 `"…$s".*`，而 `.*` 是在**当前目录**
+        # （$GITHUB_WORKSPACE，本 job 没有 checkout，因而是空目录）里展开的，
+        # 没有匹配就原样留成一个字面量 `*`，`-e` 永远为假 —— 8 个资产**明明
+        # 全在**，发布会栽在一条假报警上（v3.0.1 首次实跑就是这么红的）；
+        # ② 就算把前缀补对，`.*` 也放过了任何后缀，`.deb` 换成 `.rpm` 照样
+        # 绿。逐个写死两个毛病一起消掉：名字、后缀、数量全在一条 `diff` 里。
         run: |
-          n=$(ls -1 release/ | wc -l)
-          echo "Release 资产：$n 个"
-          ls -1 release/
-          if [ "$n" -ne 8 ]; then
-            echo "!! 期望 8 个资产（4 架构 × 安装包/裸可执行），实际 $n 个" >&2
+          want=$(printf '%s\n' \
+            GomokuAI_Linux_AMD_x86_64_run \
+            GomokuAI_Linux_AMD_x86_64_setup.deb \
+            GomokuAI_Linux_AMD_x86_32_run \
+            GomokuAI_Linux_AMD_x86_32_setup.deb \
+            GomokuAI_Linux_ARM_arm64_run \
+            GomokuAI_Linux_ARM_arm64_setup.tar.gz \
+            GomokuAI_Linux_ARM_arm32_run \
+            GomokuAI_Linux_ARM_arm32_setup.tar.gz | sort)
+          got=$(ls -1 release/ | sort)
+          echo "Release 资产：$(printf '%s\n' "$got" | wc -l) 个"
+          printf '%s\n' "$got"
+          if [ "$want" != "$got" ]; then
+            echo "!! Release 资产与预期不符" >&2
+            diff <(printf '%s\n' "$want") <(printf '%s\n' "$got") >&2 || true
+            echo "   （左 = 应有，右 = 实际；4 架构 × 安装包/裸可执行 = 8）" >&2
             exit 1
           fi
-          for s in AMD ARM X86 ARM32; do
-            for f in "release/GomokuAI_For_Linux_$s" "release/GomokuAI_For_Linux_$s".*; do
-              [ -e "$f" ] || { echo "!! 缺少 $s 的产物：${f#release/}" >&2; exit 1; }
-            done
-          done
           echo "8 个资产齐全，四架构各一份安装包 + 一份裸可执行文件"
 
       - name: Create GitHub Release

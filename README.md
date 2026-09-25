@@ -64,18 +64,25 @@
 
 **Release 上只有 Linux，四个架构各一对（共 8 个）：**
 
+文件名是四格：`GomokuAI_Linux_<家族>_<位数>_<run|setup>.<后缀>`。
+`run` 是免安装的裸可执行文件（**没有后缀**），`setup` 是安装包。
+
 | 架构 | 安装包（推荐） | 免安装裸文件 | 装法 |
 |---|---|---|---|
-| x86_64 | `GomokuAI_For_Linux_AMD.deb` | `GomokuAI_For_Linux_AMD` | `sudo dpkg -i` → 菜单里的「五子棋AI」 |
-| arm64 | `GomokuAI_For_Linux_ARM.pkg` | `GomokuAI_For_Linux_ARM` | 解包后 `sudo ./install.sh` |
-| x86 32 位 | `GomokuAI_For_Linux_X86.deb` | `GomokuAI_For_Linux_X86` | 同 amd64 |
-| arm 32 位 | `GomokuAI_For_Linux_ARM32.pkg` | `GomokuAI_For_Linux_ARM32` | 同 arm64 |
+| x86_64 | `GomokuAI_Linux_AMD_x86_64_setup.deb` | `GomokuAI_Linux_AMD_x86_64_run` | `sudo dpkg -i` → 菜单里的「五子棋AI」 |
+| x86 32 位 | `GomokuAI_Linux_AMD_x86_32_setup.deb` | `GomokuAI_Linux_AMD_x86_32_run` | 同上 |
+| arm64 | `GomokuAI_Linux_ARM_arm64_setup.tar.gz` | `GomokuAI_Linux_ARM_arm64_run` | 解包后 `sudo ./install.sh` |
+| arm 32 位 | `GomokuAI_Linux_ARM_arm32_setup.tar.gz` | `GomokuAI_Linux_ARM_arm32_run` | 同上 |
+
+**家族名 `AMD` 覆盖整个 x86 家族**（Intel、AMD、虚拟机都下这一份），`ARM`
+覆盖整个 ARM 家族；**位数那两格才是关键** —— `AMD_x86_64` 与 `AMD_x86_32`
+差一位，下错就是一句 `Exec format error`。
 
 不确定装哪个就用安装包：它会在 `Depends:` 里声明图形库与 CJK 字体候选链，
 装完菜单里就有入口。裸文件声明不了依赖 —— 缺什么就报什么。
 
-`uname -m` 对应关系：`x86_64` → AMD，`aarch64` → ARM，`i686` → X86，
-`armv7l` / `armv6l` → ARM32。
+`uname -m` 对应关系：`x86_64` → `AMD_x86_64`，`i686` → `AMD_x86_32`，
+`aarch64` → `ARM_arm64`，`armv7l` / `armv6l` → `ARM_arm32`。
 
 **没有 Windows 版。** 这个项目只在 Linux 上开发与验证过，Windows 侧的适配
 没有实测过。CI 里那份配方（Inno Setup，见「打包」一节）保留着，但没有进
@@ -86,8 +93,8 @@ Release —— 把没验证过的产物放上去等于让用户当测试。
 Linux 的免安装版是**裸可执行文件，没有扩展名**，下载后要先给可执行位：
 
 ```bash
-chmod +x GomokuAI_For_Linux_AMD
-./GomokuAI_For_Linux_AMD
+chmod +x GomokuAI_Linux_AMD_x86_64_run
+./GomokuAI_Linux_AMD_x86_64_run
 ```
 
 （Release 资产不携带文件权限，这一步谁都替不了你。）
@@ -97,7 +104,7 @@ chmod +x GomokuAI_For_Linux_AMD
 既看不懂也用不上）。需要它时用环境变量指个目录：
 
 ```bash
-GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_For_Linux_AMD
+GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_AMD_x86_64_run
 ```
 
 ### 运行方式二：从源码运行
@@ -812,14 +819,14 @@ GomokuAI/
 
 ### Linux
 
-四个架构（amd64 / arm64 / i386 / armv7）由**同一份脚本**产出，差异只有四个
-环境变量。在目标架构的 Debian bookworm 容器里跑：
+四个架构（amd64 / arm64 / i386 / armv7）由**同一份脚本**产出，差异只有几个
+环境变量 —— 前两个就是产物名里的家族与位数那两格：
 
 ```bash
-# SUFFIX=AMD KIND=deb DEB_ARCH=amd64 | SUFFIX=ARM KIND=pkg | …
+# FAMILY=AMD BITS=x86_64 EXT=deb DEB_ARCH=amd64 | FAMILY=ARM BITS=arm64 EXT=tar.gz | …
 docker run --rm --platform linux/amd64 \
     -v "$PWD:/src" -w /src \
-    -e SUFFIX=AMD -e KIND=deb -e DEB_ARCH=amd64 -e APP_VERSION=3.0.1 \
+    -e FAMILY=AMD -e BITS=x86_64 -e EXT=deb -e DEB_ARCH=amd64 -e APP_VERSION=3.0.1 \
     debian:bookworm \
     bash packaging/build_in_container.sh
 ```
@@ -832,7 +839,7 @@ docker run --rm --platform linux/amd64 \
 
 脚本做的六件事，依次是：apt 装图形库与编译链 → CMake 建引擎并跑
 `--verify-tables --selftest` → 建 venv → 两次 PyInstaller（都带 `--add-binary`）
-→ 断言引擎确实进包 → 按 `KIND` 收成 `.deb` 或 `.pkg`。
+→ 断言引擎确实进包 → 按 `EXT` 收成 `.deb` 或 `.tar.gz`。
 
 **本机没有对应架构时不要硬试。** `docker run --platform` 会替你处理（装了
 QEMU 的话），但真正的判据只有一条：产物在目标机器上跑得起来。CI 是唯一
@@ -873,8 +880,11 @@ PyQt5 程序的首次窗口会明显慢一拍。所以：装到硬盘上的那�
 
 | 形态 | 给谁 | 能做什么 |
 |---|---|---|
-| `.deb` | x86_64 / i386 | `Depends:` 里声明 `libgl1`、xcb 那几个库与 CJK 字体候选链；进菜单、可在包管理器里卸载 |
-| `.pkg` | arm64 / armhf | 同上，但是 tar.gz + `install.sh` —— ARM 上跑什么发行版的都有（树莓派、Fedora ARM、Arch ARM），绑死 dpkg 会挡掉一半人 |
+| `.deb` | `AMD_x86_64` / `AMD_x86_32` | `Depends:` 里声明 `libgl1`、xcb 那几个库与 CJK 字体候选链；进菜单、可在包管理器里卸载 |
+| `.tar.gz` | `ARM_arm64` / `ARM_arm32` | 同上，但是 tar + `install.sh` —— ARM 上跑什么发行版的都有（树莓派、Fedora ARM、Arch ARM），绑死 dpkg 会挡掉一半人 |
+
+（后缀原本是 `.pkg`，改成了 `.tar.gz`：`.pkg` 是 macOS 的安装包扩展名，
+Linux 上并不存在这种格式，用户在下载页上看见它会去找 `installer` 命令。）
 
 **`install.sh` 里 `chmod -R 755` 与 `tar` 的顺序不能再调。** 一个可执行位都
 没有的 tar 包是最常见的踩坑点：解出来忘了 `chmod +x`，安装脚本自己就先
@@ -1143,6 +1153,32 @@ git show d232fa7:README.md | sed -n '236,401p'
   两条路报同一个值这件事由 `tests/test_opening_book.py` 直接断言。
 - 🔒 两行都只读已建立的连接，**不做任何探测**：在 UI 线程上发起一次可能超时的
   网络调用是不能接受的。
+
+**产物改名：一格后缀 → 家族、位数、用途三格**
+
+- ✨ `GomokuAI_For_Linux_<SUFFIX>`（SUFFIX ∈ AMD / X86 / ARM / ARM32）换成
+  `GomokuAI_Linux_<家族>_<位数>_<run|setup>.<后缀>`。老名字**一格既当族名又当
+  位数，而位数恰恰是最容易装错的那个信息**：`AMD` 与 `X86` 都是 x86 家族（一个
+  64 位一个 32 位），`ARM` 与 `ARM32` 同理，光看名字分不出谁是谁，下错就是一句
+  `Exec format error`；而 `X86` 又撞上"x86 默认指 32 位"的惯例、`AMD` 让 Intel
+  用户以为与自己无关（那正是他们该下的那份）。现在 `AMD_x86_64` 与 `AMD_x86_32`
+  一眼可辨。
+- ✨ 后缀 `.pkg` → `.tar.gz`：`.pkg` 是 **macOS** 的安装包扩展名，Linux 上并不
+  存在这种格式，用户在下载页上看见它会去找 `installer` 命令。
+- ✨ 裸可执行文件从"仅仅没有扩展名"变成显式的 `_run`，与安装包 `_setup` 成对。
+- 🔧 **CI 只在打 tag 时自动跑。** 原来 `push` 同时挂了 `branches: ['**']` 与
+  `tags: ['v*']`，而 GitHub 把"推分支"与"推 tag"当成两个独立事件 —— 一次发版
+  起两条 run，前一条只有 test（build 与 release 都被 `refs/tags/` 挡着），没人
+  要看。取消它又会在列表里留一条 cancelled，于是干脆不触发。代价是**改坏了要
+  等到打 tag 才暴露**，但 `release` 的 `needs` 里仍有 `test`，烂代码照样发不
+  出去，只是发现得晚。
+- 🔒 **发版闸门重写。** 原来那版 `Assert exactly 8 assets` 用通配符逐个架构去找，
+  两处都踩过：匹配写成 `"…$s".*` 时 `.*` 是在**当前目录**（release job 没有
+  checkout，因而是空目录）里展开的，没有匹配就原样留成一个字面量 `*`，`-e`
+  永远为假 —— 8 个资产**明明全在**，发布会栽在一条"缺少 AMD 的产物"的假报警上
+  （v3.0.1 首次实跑就是这么红的）；就算把前缀补对，`.*` 也放过了任何后缀，
+  `.deb` 换成 `.rpm` 照样绿。现在 8 个名字**逐个写死**，与 `ls -1 release/`
+  做一次 `diff`，名字、后缀、数量三件事一条断言全包。
 
 ### v2.0.2 (2026-09-24)
 
