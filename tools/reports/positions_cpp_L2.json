@@ -16,7 +16,7 @@
    "score_type": "static",
    "depth": 4,
    "reason": "连续冲四防守(VCF)",
-   "elapsed_ms": 135.2,
+   "elapsed_ms": 138.9,
    "checks": {
     "must_play": true,
     "avoid": true
@@ -39,7 +39,7 @@
    "score_type": "mate",
    "depth": 1,
    "reason": "连续冲四(VCF)",
-   "elapsed_ms": 95.9,
+   "elapsed_ms": 91.8,
    "checks": {
     "must_play": true
    },
@@ -55,15 +55,15 @@
    "source": "手工构造",
    "to_move": 1,
    "move": [
-    0,
-    1
+    9,
+    4
    ],
-   "move_sgf": "B1",
+   "move_sgf": "E10",
    "score": -9999999,
    "score_type": "mate",
-   "depth": 1,
+   "depth": 4,
    "reason": "PVS搜索(对手有VCF·无挡点)",
-   "elapsed_ms": 96.1,
+   "elapsed_ms": 91.9,
    "checks": {
     "mate_detected": true,
     "mate_sign": true
@@ -86,7 +86,7 @@
    "score_type": "mate",
    "depth": 1,
    "reason": "连续冲四(VCF)",
-   "elapsed_ms": 91.8,
+   "elapsed_ms": 100.1,
    "checks": {
     "must_play": true
    },
@@ -110,7 +110,7 @@
    "score_type": "static",
    "depth": 4,
    "reason": "连续冲四防守(VCF)",
-   "elapsed_ms": 112.1,
+   "elapsed_ms": 111.9,
    "checks": {
     "must_play": true,
     "avoid": true
@@ -125,15 +125,15 @@
    "source": "game_log_20260606_233336.txt 第 10 手（白）",
    "to_move": 2,
    "move": [
-    12,
+    7,
     7
    ],
-   "move_sgf": "H13",
+   "move_sgf": "H8",
    "score": -9999995,
    "score_type": "mate",
-   "depth": 3,
+   "depth": 4,
    "reason": "PVS搜索(对手有VCF·无挡点)",
-   "elapsed_ms": 103.9,
+   "elapsed_ms": 171.9,
    "checks": {
     "mate_detected": true,
     "mate_sign": true
@@ -148,15 +148,15 @@
    "source": "game_log_20260606_233336.txt 第 12 手（白）",
    "to_move": 2,
    "move": [
-    5,
-    5
+    6,
+    6
    ],
-   "move_sgf": "F6",
+   "move_sgf": "G7",
    "score": -9999999,
    "score_type": "mate",
-   "depth": 1,
+   "depth": 4,
    "reason": "PVS搜索(对手有VCF·无挡点)",
-   "elapsed_ms": 92.0,
+   "elapsed_ms": 95.8,
    "checks": {
     "mate_detected": true,
     "mate_sign": true
@@ -179,7 +179,7 @@
    "score_type": "mate",
    "depth": 2,
    "reason": "PVS搜索",
-   "elapsed_ms": 95.7,
+   "elapsed_ms": 100.1,
    "checks": {
     "mate_detected": true,
     "mate_sign": true
@@ -202,7 +202,7 @@
    "score_type": "static",
    "depth": 4,
    "reason": "PVS搜索(对手有VCF·无挡点)",
-   "elapsed_ms": 268.1,
+   "elapsed_ms": 271.9,
    "checks": {},
    "notes": {
     "opp_vcf": "此门面无法访问 VCF 探针（需直接对 engine_local 运行）"

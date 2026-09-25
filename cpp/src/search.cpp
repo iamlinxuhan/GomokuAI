@@ -96,6 +96,11 @@ void Engine::reset() {
         killers_[i][0] = -1;
         killers_[i][1] = -1;
     }
+    // "普通对弈的深度"也要清（见 `normalDepth_` 的注释）。它不是缓存，而是
+    // **这盘棋学到的统计量**；留着它会让同一进程里先后跑的几局互相影响 ——
+    // 测试与 A/B 就不可复现了，而"可复现"正是这仓库 parity 护栏的全部前提。
+    normalDepth_ = 0;
+    normalDepthLevel_ = -1;
 }
 
 void Engine::poll() {
@@ -500,6 +505,21 @@ void Engine::root(Board& bd, int me, int depth, int firstMove, int32_t alpha,
     int bestMove = moves[0];
     if (collect != nullptr) collect->clear();
 
+    // 对手的**即成五点**（下一手落上就成五）与**四点**（下一手造出四或五）。
+    //
+    // 并列的**杀棋分**、且是**我方被杀**时，优先占住这样的点。理由：分值相同
+    // 意味着"怎么走都是同一个死法"，此时 `v > best` 不再含任何信息，选点退化
+    // 成由排序（TT 着法 / 杀手 / 历史）决定 —— 实测会往角上点 A1。而占住对手的
+    // 要点是唯一还有意义的一手：对手若走出缓手，这一手就是生路。
+    //
+    // **只在我方被杀的杀棋分并列时生效**：静态分并列与"我方必胜"并列都保持
+    // 原样，正常着法路径一字不动，因此低档与参考实现的逐字一致不受影响
+    // （`engine_local._root` 同款）。必胜时不做这个偏好是刻意的 —— 那时并列的
+    // 几手本来就都能赢，改成防守只会让人疑惑"你怎么不直接赢"。
+    const Bits361 oppFive = fivePoints(bd.bitsOf(nxt), bd.bitsOf(me));
+    const Bits361 oppHot = hotPoints(bd.bitsOf(nxt), bd.bitsOf(me));
+    int bestRank = -1;
+
     for (int i = 0; i < ord.n; ++i) {
         const int mv = moves[i];
         if (bd.make(mv, me)) {
@@ -512,9 +532,18 @@ void Engine::root(Board& bd, int me, int depth, int firstMove, int32_t alpha,
         const int32_t v = -negamax(bd, depth - 1, -beta, -alpha, nxt, 1);
         bd.unmake(mv, me);
         if (collect != nullptr) collect->push_back({mv, v});
+        // 这一手占住对手要点的程度：挡即成五点 2 分，挡四点 1 分，其余 0 分。
+        const int rank =
+            oppFive.test(mv) ? 2 : (oppHot.test(mv) ? 1 : 0);
         if (v > best) {
             best = v;
             bestMove = mv;
+            bestRank = rank;
+        } else if (v == best && isMate(v) && v < 0 && rank > bestRank) {
+            // 并列的杀棋分：换成那手占住对手要点的。**分值不变**，只是不再由
+            // 排序噪声决定 —— 见上面 `oppFive` / `oppHot` 的注释。
+            bestMove = mv;
+            bestRank = rank;
         }
         if (v > alpha) alpha = v;
         if (alpha >= beta) break;
@@ -815,6 +844,16 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
         int64_t prevPrevIterNodes = 0;    // 上上轮，用来估有效分支因子
         double lastIterSec = 0.0;
 
+        // ---- 被判死刑时的加码额度（见 constants.h 的 ESCAPE_EXTRA） ----
+        // 档位变了就把"普通深度"作废：同一个 `Engine` 会连着服务不同档位。
+        if (cfg.maxDepth != normalDepthLevel_) {
+            normalDepth_ = 0;
+            normalDepthLevel_ = cfg.maxDepth;
+        }
+        const int normalDep =
+            normalDepth_ > 0 ? normalDepth_ : ESCAPE_FALLBACK_NORMAL;
+        escapeTarget_ = std::min(cfg.maxDepth, normalDep + ESCAPE_EXTRA);
+
         for (int depth = 1; depth <= cfg.maxDepth; ++depth) {
             // ---- 这一轮值不值得开 ----
             //
@@ -892,9 +931,17 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
             prevPrevIterNodes = prevIterNodes;
             prevIterNodes = nodes_ - iterT0;
             lastIterSec = nowSec() - iterSecT0;
-            // 已找到必胜（或被将死）就不必再深搜：更深的迭代只会重复同一结论，
-            // 却要花掉数倍时间。
-            if (isMate(val)) break;
+            // 已找到**必胜**就不必再深搜：更深的迭代只会重复同一结论，却要
+            // 花掉数倍时间。
+            //
+            // ⚠️ 这里**只对"我赢了"成立**。`isMate(val)` 对"我被将死"同样为真，
+            // 而那正是绝不能收工的情形 —— 那正是"直接放弃"。被判死刑时继续
+            // 加深，用更广的搜索找出路；允许搜到第几层由 `escapeTarget_` 卡死
+            // （普通深度 +1，且严格小于 +2，见 constants.h 的 ESCAPE_EXTRA）。
+            if (isMate(val)) {
+                if (val > 0) break;
+                if (depth >= escapeTarget_) break;
+            }
         }
 
         // VCF 兜底：搜索没找到**更快**的杀棋时，用 VCF 的结论。判据只需比较
@@ -939,6 +986,13 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
             const int picked = applyBias(bd, me, cfg, rootVals, bestVal);
             if (picked >= 0) bestMove = picked;
         }
+
+        // ---- 记下"普通对弈的深度"（见 constants.h 的 ESCAPE_EXTRA） ----
+        // **只记没有杀棋结论的那些手**：出了杀棋就不再是"普通对弈"，把它当
+        // 样本会让本档的普通深度被自己的应急搜索一层层顶高。位置在这里而不是
+        // 迭代循环里，是因为下面的 VCF 兜底**可以**把 `bestVal` 换成杀棋分
+        // （`haveVcfWin` 那一支），而那只手同样不该算样本。
+        if (done > 0 && !isMate(bestVal)) normalDepth_ = done;
 
         const double dt = (nowSec() - t0) * 1000.0;
         info->depth = done;

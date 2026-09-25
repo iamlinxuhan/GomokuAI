@@ -80,18 +80,29 @@ def main():
                                     time_limit=args.budget)
         br, bc = divmod(idx, E.BOARD_SIZE)
         best = (br, bc)
-        mine = -info["best_val"]
 
-        # 这一手与最佳着法的差距：把最佳着法顶掉、换成实际走的那手，
-        # 再搜一层看对手怎么答 —— 差距用"实际着法之后的最佳应对"衡量。
+        # 这一手与最佳着法的差距。**两项必须用同一把尺子**：都量"这一手落下
+        # 之后，轮到对手时对手能拿到的最高分"。于是
+        #     gap = 实走之后对手的分 − 最佳着法之后对手的分
+        # 正数就是亏了。两项同源（同一档、同一时限、都以对手为行棋方），因此
+        # 可以相减。
+        #
+        # ⚠️ 早先这里是 `(-info2["best_val"]) - mine`，而 `mine = -info["best_val"]`
+        # 是**己方在父局面里自己搜出来的分**。两项既不同源（父局面浅搜 vs 子局面
+        # 深搜），符号上还是把黑方的分与白方的分相减。它报出的"第 24 手差距
+        # −559570"就是这么来的 —— 用同一把尺子重测，实际走法与最佳着法**完全
+        # 相等**。工具的量尺错了，不是棋错了。
+        def opp_score_after(mv):
+            b2 = board.copy()
+            b2[mv] = player
+            E.new_game()
+            _, inf = E._ENGINE.think(b2, 3 - player, args.level,
+                                     time_limit=args.budget)
+            return inf["best_val"]
+
         gap = None
         if best != cell:
-            b2 = board.copy()
-            b2[cell] = player
-            E.new_game()
-            _, info2 = E._ENGINE.think(b2, 3 - player, args.level,
-                                       time_limit=args.budget)
-            gap = (-info2["best_val"]) - mine
+            gap = opp_score_after(cell) - opp_score_after(best)
 
         mark = "" if best == cell else "  <-- 有更好的"
         gt = f"  差距 {gap:+d}" if gap is not None else ""

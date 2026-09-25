@@ -1,0 +1,1592 @@
+{
+ "black": "legacy",
+ "white": "cpp",
+ "black_level": 2,
+ "white_level": 3,
+ "seed": 20260919,
+ "games": 4,
+ "load_ms": 12.7,
+ "results": [
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 16.7,
+     "score": 2185,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "紧贴人类-第二步"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 6070.8,
+     "score": -910,
+     "depth": 6,
+     "nodes": 8102912,
+     "nps": 1361545,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 3346.2,
+     "score": -252.29999999999995,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 5950.8,
+     "score": -990,
+     "depth": 6,
+     "nodes": 7582720,
+     "nps": 1274391,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 3516.2,
+     "score": 140.39999999999998,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 5950.7,
+     "score": -1140,
+     "depth": 6,
+     "nodes": 7496704,
+     "nps": 1259915,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 3396.4,
+     "score": 2385.1000000000004,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 5951.5,
+     "score": -1140,
+     "depth": 6,
+     "nodes": 6197248,
+     "nps": 1041446,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 3574.0,
+     "score": 3559.0,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 5950.7,
+     "score": -570,
+     "depth": 6,
+     "nodes": 6568960,
+     "nps": 1104008,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 3626.3,
+     "score": 2515.25,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 5951.2,
+     "score": 650,
+     "depth": 6,
+     "nodes": 5510144,
+     "nps": 925997,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 3658.1,
+     "score": 2975.550000000001,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      4,
+      9
+     ],
+     "ms": 5951.0,
+     "score": 1390,
+     "depth": 6,
+     "nodes": 5928960,
+     "nps": 996432,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      11,
+      9
+     ],
+     "ms": 3444.5,
+     "score": -24278.35,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      12,
+      9
+     ],
+     "ms": 5950.9,
+     "score": 559580,
+     "depth": 5,
+     "nodes": 4841472,
+     "nps": 813683,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      3,
+      10
+     ],
+     "ms": 3344.2,
+     "score": -27617.699999999997,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 4.1,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 1818,
+     "nps": 548185,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 3698.9,
+     "score": -4283045.05,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      5,
+      9
+     ],
+     "ms": 2.1,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 885,
+     "nps": 661165,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 85.5,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      3,
+      9
+     ],
+     "ms": 0.6,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 6070.8,
+   "total_ms": 79441.7,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     8
+    ]
+   ],
+   "wall_ms": 79445.7,
+   "plies": 23,
+   "index": 0,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 0.3,
+     "score": 1080,
+     "depth": 9,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 8662.9,
+     "score": 826.7,
+     "depth": 5,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 64.6,
+     "score": 80,
+     "depth": 4,
+     "nodes": 22213,
+     "nps": 1396179,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      6,
+      12
+     ],
+     "ms": 8143.2,
+     "score": -11322.0,
+     "depth": 5,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 78.6,
+     "score": 370,
+     "depth": 4,
+     "nodes": 91465,
+     "nps": 1172417,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 8113.7,
+     "score": -11696.5,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      6,
+      7
+     ],
+     "ms": 27.8,
+     "score": -20,
+     "depth": 4,
+     "nodes": 33629,
+     "nps": 1232430,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 8151.7,
+     "score": 1630.050000000001,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      11,
+      12
+     ],
+     "ms": 9.8,
+     "score": 820,
+     "depth": 4,
+     "nodes": 16232,
+     "nps": 1800427,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 8146.9,
+     "score": -26641.25,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 32.4,
+     "score": 2040,
+     "depth": 4,
+     "nodes": 54359,
+     "nps": 1715338,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 8402.6,
+     "score": -8495.45,
+     "depth": 5,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      6,
+      10
+     ],
+     "ms": 44.1,
+     "score": 2530,
+     "depth": 4,
+     "nodes": 62750,
+     "nps": 1450517,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      6,
+      9
+     ],
+     "ms": 69.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 69.8,
+     "score": 2770,
+     "depth": 4,
+     "nodes": 92120,
+     "nps": 1332935,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 7895.2,
+     "score": -861881.2999999999,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      5,
+      9
+     ],
+     "ms": 79.0,
+     "score": 4170,
+     "depth": 4,
+     "nodes": 101874,
+     "nps": 1298669,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 8122.2,
+     "score": -1220583.7,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      3,
+      7
+     ],
+     "ms": 125.9,
+     "score": 9999970,
+     "depth": 4,
+     "nodes": 143632,
+     "nps": 1148492,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      4,
+      8
+     ],
+     "ms": 87.2,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      3,
+      13
+     ],
+     "ms": 102.8,
+     "score": 9999972,
+     "depth": 4,
+     "nodes": 118965,
+     "nps": 1165766,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      4,
+      12
+     ],
+     "ms": 100.6,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      5,
+      7
+     ],
+     "ms": 143.1,
+     "score": 9999974,
+     "depth": 4,
+     "nodes": 139991,
+     "nps": 985578,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      4,
+      6
+     ],
+     "ms": 94.2,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 26,
+     "player": "black",
+     "pos": [
+      4,
+      7
+     ],
+     "ms": 194.4,
+     "score": 9999976,
+     "depth": 4,
+     "nodes": 177390,
+     "nps": 915560,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 27,
+     "player": "white",
+     "pos": [
+      2,
+      7
+     ],
+     "ms": 97.9,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 28,
+     "player": "black",
+     "pos": [
+      5,
+      10
+     ],
+     "ms": 138.5,
+     "score": 9999978,
+     "depth": 4,
+     "nodes": 162240,
+     "nps": 1178061,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 29,
+     "player": "white",
+     "pos": [
+      5,
+      8
+     ],
+     "ms": 100.0,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 30,
+     "player": "black",
+     "pos": [
+      4,
+      10
+     ],
+     "ms": 68.7,
+     "score": 9999992,
+     "depth": 4,
+     "nodes": 86736,
+     "nps": 1274499,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 31,
+     "player": "white",
+     "pos": [
+      7,
+      10
+     ],
+     "ms": 98.9,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 32,
+     "player": "black",
+     "pos": [
+      3,
+      11
+     ],
+     "ms": 1.8,
+     "score": 9999994,
+     "depth": 2,
+     "nodes": 399,
+     "nps": 334339,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 33,
+     "player": "white",
+     "pos": [
+      2,
+      12
+     ],
+     "ms": 97.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 34,
+     "player": "black",
+     "pos": [
+      3,
+      10
+     ],
+     "ms": 1.9,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 646,
+     "nps": 556126,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 35,
+     "player": "white",
+     "pos": [
+      2,
+      10
+     ],
+     "ms": 100.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 36,
+     "player": "black",
+     "pos": [
+      3,
+      9
+     ],
+     "ms": 1.6,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 667,
+     "nps": 854829,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 37,
+     "player": "white",
+     "pos": [
+      3,
+      12
+     ],
+     "ms": 8119.5,
+     "score": -10000003,
+     "depth": 5,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 38,
+     "player": "black",
+     "pos": [
+      3,
+      8
+     ],
+     "ms": 0.8,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 8662.9,
+   "total_ms": 75790.1,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     9
+    ]
+   ],
+   "wall_ms": 75796.1,
+   "plies": 38,
+   "index": 1,
+   "swapped": true,
+   "a_side": "white"
+  },
+  {
+   "winner": "white",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      10
+     ],
+     "ms": 15.5,
+     "score": 2185,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "紧贴人类-第二步"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 6044.0,
+     "score": -320,
+     "depth": 7,
+     "nodes": 7482368,
+     "nps": 1257006,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 3380.8,
+     "score": -287.79999999999995,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      8,
+      9
+     ],
+     "ms": 5951.3,
+     "score": -990,
+     "depth": 6,
+     "nodes": 8442880,
+     "nps": 1418784,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      8,
+      11
+     ],
+     "ms": 3605.9,
+     "score": 140.39999999999998,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      13
+     ],
+     "ms": 5951.7,
+     "score": -1140,
+     "depth": 6,
+     "nodes": 8643584,
+     "nps": 1452412,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 3344.3,
+     "score": 2386.25,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      7,
+      12
+     ],
+     "ms": 5951.0,
+     "score": -1140,
+     "depth": 6,
+     "nodes": 6690816,
+     "nps": 1124443,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 3653.6,
+     "score": 3398.25,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      12,
+      7
+     ],
+     "ms": 5951.0,
+     "score": 340,
+     "depth": 7,
+     "nodes": 5981184,
+     "nps": 1005180,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      8,
+      12
+     ],
+     "ms": 3576.8,
+     "score": 2359.3500000000004,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      8,
+      13
+     ],
+     "ms": 5950.8,
+     "score": 650,
+     "depth": 6,
+     "nodes": 5719040,
+     "nps": 961149,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 3337.5,
+     "score": 2945.1000000000004,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      9,
+      13
+     ],
+     "ms": 5952.0,
+     "score": 1980,
+     "depth": 5,
+     "nodes": 5060608,
+     "nps": 850350,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 3548.1,
+     "score": -24637.1,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 5950.9,
+     "score": 559100,
+     "depth": 5,
+     "nodes": 5368832,
+     "nps": 902281,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      6,
+      13
+     ],
+     "ms": 3503.4,
+     "score": -28687.65,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      9,
+      12
+     ],
+     "ms": 870.3,
+     "score": 9999994,
+     "depth": 4,
+     "nodes": 677082,
+     "nps": 778573,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      11,
+      13
+     ],
+     "ms": 3485.8,
+     "score": -10000000,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 21,
+     "player": "white",
+     "pos": [
+      9,
+      14
+     ],
+     "ms": 0.9,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 186,
+     "nps": 1386053,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 22,
+     "player": "black",
+     "pos": [
+      9,
+      15
+     ],
+     "ms": 3419.8,
+     "score": -10000002,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 23,
+     "player": "white",
+     "pos": [
+      6,
+      11
+     ],
+     "ms": 1.1,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 196,
+     "nps": 606942,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 24,
+     "player": "black",
+     "pos": [
+      10,
+      15
+     ],
+     "ms": 3546.9,
+     "score": -10000002,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 25,
+     "player": "white",
+     "pos": [
+      5,
+      10
+     ],
+     "ms": 0.8,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 6044.0,
+   "total_ms": 86994.2,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     10
+    ]
+   ],
+   "wall_ms": 86998.0,
+   "plies": 25,
+   "index": 2,
+   "swapped": false,
+   "a_side": "black"
+  },
+  {
+   "winner": "black",
+   "reason": "five",
+   "moves": [
+    {
+     "n": 1,
+     "player": "white",
+     "pos": [
+      8,
+      11
+     ],
+     "src": "opening",
+     "ms": 0.0
+    },
+    {
+     "n": 2,
+     "player": "black",
+     "pos": [
+      9,
+      8
+     ],
+     "ms": 0.3,
+     "score": 250,
+     "depth": 8,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "开局库"
+    },
+    {
+     "n": 3,
+     "player": "white",
+     "pos": [
+      9,
+      11
+     ],
+     "ms": 8184.2,
+     "score": 2263.300000000001,
+     "depth": 5,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 4,
+     "player": "black",
+     "pos": [
+      9,
+      7
+     ],
+     "ms": 94.5,
+     "score": -70,
+     "depth": 4,
+     "nodes": 58393,
+     "nps": 1411422,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 5,
+     "player": "white",
+     "pos": [
+      9,
+      6
+     ],
+     "ms": 43.4,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 6,
+     "player": "black",
+     "pos": [
+      8,
+      8
+     ],
+     "ms": 41.8,
+     "score": -510,
+     "depth": 4,
+     "nodes": 59759,
+     "nps": 1450381,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 7,
+     "player": "white",
+     "pos": [
+      7,
+      11
+     ],
+     "ms": 9005.5,
+     "score": 29383.65,
+     "depth": 5,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 8,
+     "player": "black",
+     "pos": [
+      10,
+      11
+     ],
+     "ms": 36.4,
+     "score": 0,
+     "depth": 4,
+     "nodes": 37461,
+     "nps": 1046635,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 9,
+     "player": "white",
+     "pos": [
+      6,
+      11
+     ],
+     "ms": 8289.0,
+     "score": -12445.899999999998,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 10,
+     "player": "black",
+     "pos": [
+      5,
+      11
+     ],
+     "ms": 19.3,
+     "score": 1460,
+     "depth": 4,
+     "nodes": 13432,
+     "nps": 715462,
+     "reason": "连续冲四防守(VCF)"
+    },
+    {
+     "n": 11,
+     "player": "white",
+     "pos": [
+      7,
+      9
+     ],
+     "ms": 7885.2,
+     "score": -41790.9,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 12,
+     "player": "black",
+     "pos": [
+      10,
+      10
+     ],
+     "ms": 47.2,
+     "score": 2440,
+     "depth": 4,
+     "nodes": 50867,
+     "nps": 1090597,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 13,
+     "player": "white",
+     "pos": [
+      7,
+      7
+     ],
+     "ms": 7925.3,
+     "score": -4318907.5,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 14,
+     "player": "black",
+     "pos": [
+      7,
+      8
+     ],
+     "ms": 41.3,
+     "score": 2510,
+     "depth": 4,
+     "nodes": 47934,
+     "nps": 1175960,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 15,
+     "player": "white",
+     "pos": [
+      6,
+      8
+     ],
+     "ms": 7868.1,
+     "score": -54236.45,
+     "depth": 4,
+     "nodes": null,
+     "nps": null,
+     "reason": "PVS搜索"
+    },
+    {
+     "n": 16,
+     "player": "black",
+     "pos": [
+      10,
+      8
+     ],
+     "ms": 1.3,
+     "score": 9999996,
+     "depth": 1,
+     "nodes": 250,
+     "nps": 394657,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 17,
+     "player": "white",
+     "pos": [
+      11,
+      8
+     ],
+     "ms": 92.8,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 18,
+     "player": "black",
+     "pos": [
+      10,
+      9
+     ],
+     "ms": 1.4,
+     "score": 9999998,
+     "depth": 1,
+     "nodes": 259,
+     "nps": 361529,
+     "reason": "连续冲四(VCF)"
+    },
+    {
+     "n": 19,
+     "player": "white",
+     "pos": [
+      8,
+      10
+     ],
+     "ms": 102.7,
+     "score": 0,
+     "depth": 0,
+     "nodes": null,
+     "nps": null,
+     "reason": "威胁检测"
+    },
+    {
+     "n": 20,
+     "player": "black",
+     "pos": [
+      10,
+      7
+     ],
+     "ms": 0.6,
+     "score": 10000000,
+     "depth": 1,
+     "nodes": 0,
+     "nps": 0,
+     "reason": "连续冲四(VCF)"
+    }
+   ],
+   "illegal": 0,
+   "errors": 0,
+   "max_move_ms": 9005.5,
+   "total_ms": 49680.3,
+   "opening": [
+    [
+     9,
+     9
+    ],
+    [
+     8,
+     11
+    ]
+   ],
+   "wall_ms": 49683.3,
+   "plies": 20,
+   "index": 3,
+   "swapped": true,
+   "a_side": "white"
+  }
+ ],
+ "summary": {
+  "a_name": "legacy",
+  "a_wins": 0,
+  "a_losses": 4,
+  "draws": 0,
+  "win_rate": 0.0,
+  "illegal": 0,
+  "errors": 0,
+  "total_wall_s": 292.0,
+  "games_done": 4,
+  "games_planned": 4,
+  "partial": false
+ }
+}

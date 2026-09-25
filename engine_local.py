@@ -1088,6 +1088,20 @@ _ASPIRATION = 120           # 渴望窗口初值
 _ASP_WINDOW_MUL = 4         # 失败后窗口放大倍数
 _ASP_FAILS = 3              # 连续失败几次后放弃渴望、走全窗口
 
+# ---- 被判死刑时不许认命（与 `cpp/src/constants.h` 的 ESCAPE_* 逐字同值）----
+# 迭代加深原本在**任何**杀棋结论上收工，不分敌我。可 `is_mate(val)` 对"我赢了"
+# 与"我被将死"同时成立，于是被证明必败时搜索当场停在第 1 层，剩下的算力全被
+# 扔掉，返回的着法由排序决定 —— 与局面无关，所以会往角上点 A1。
+#
+# 现在只对"我赢了"收工。被将死的那一侧继续加深：层数更高、窗口更宽，一来
+# 有可能找到浅层没看到的解法，二来**即使找不到**，各着法的杀棋距离也会在同
+# 一个深度下算出来，于是 `v > best` 能挑出被杀最晚的那一手。
+_ESCAPE_EXTRA = 1           # 目标：比普通深度深一层
+_ESCAPE_CAP = 2             # 硬顶：深出来的层数严格小于这个数
+_ESCAPE_FALLBACK_NORMAL = 4  # 本档还没搜过正常局面时的保守估计
+assert -_ESCAPE_CAP < _ESCAPE_EXTRA < _ESCAPE_CAP, \
+    "全力找出路的深度必须落在 (普通-2, 普通+2) 开区间内"
+
 
 def _flag_of(value, alpha_orig, beta):
     """置换表条目类型。**抽成纯函数是为了能单测**（B2 回归）。
@@ -1255,6 +1269,10 @@ class Engine:
         self._vcf_nodes = 0
         self._vcf_node_cap = _VCF_NODE_CAP
         self._vcf_deadline = 0.0
+        # "普通对弈的深度" —— 见 `_ESCAPE_EXTRA`。取最近一次而不是最大值：
+        # 最大值会锚在开局那个虚高的层数上，而中局真实的普通深度更低。
+        self._normal_depth = 0
+        self._normal_depth_level = -1
 
     # ------------------------------------------------------------ 生命周期
 
@@ -1264,6 +1282,11 @@ class Engine:
         self.tt_age = 0
         self.history = [[0] * CELLS, [0] * CELLS]
         self.killers = [[-1, -1] for _ in range(MAX_PLY + 2)]
+        # "普通对弈的深度"也要清（见 `_ESCAPE_EXTRA`）。它不是缓存，而是**这盘
+        # 棋学到的统计量**；留着它会让同一进程里先后跑的几局互相影响 —— 测试
+        # 与 A/B 就不可复现了，而"可复现"正是 parity 护栏的全部前提。
+        self._normal_depth = 0
+        self._normal_depth_level = -1
 
     def _poll(self):
         """时间/取消轮询。**只在 `_ABORT_MASK` 的整数倍处调用** —— 见 `_tick`。
@@ -1544,6 +1567,20 @@ class Engine:
         best_move = moves[0]
         if collect is not None:
             collect.clear()
+        # 对手的**即成五点**（下一手落上就成五）与**四点**（下一手造出四或五）。
+        #
+        # 并列的**杀棋分**、且是**我方被杀**时，优先占住这样的点。理由：分值相同
+        # 意味着"怎么走都是同一个死法"，此时 `v > best` 不再含任何信息，选点退化
+        # 成由排序（TT 着法 / 杀手 / 历史）决定 —— 实测会往角上点 A1。而占住对手
+        # 的要点是唯一还有意义的一手：对手若走出缓手，这一手就是生路。
+        #
+        # **只在我方被杀的杀棋分并列时生效**：静态分并列与"我方必胜"并列都保持
+        # 原样，正常着法路径一字不动，因此与参考实现的逐字一致不受影响
+        # （`cpp/src/search.cpp` 的 `root()` 同款）。必胜时不做这个偏好是刻意的
+        # —— 那时并列的几手本来就都能赢，改成防守只会让人疑惑"你怎么不直接赢"。
+        opp_five = _five_points(bd.bits_of(nxt), bd.bits_of(me))
+        opp_hot = _hot_points(bd.bits_of(nxt), bd.bits_of(me))
+        best_rank = -1
         for mv in moves:
             if bd.make(mv, me):
                 bd.unmake(mv, me)
@@ -1554,9 +1591,18 @@ class Engine:
             bd.unmake(mv, me)
             if collect is not None:
                 collect.append((mv, v))
+            # 这一手占住对手要点的程度：挡即成五点 2 分，挡四点 1 分，其余 0 分。
+            rank = 2 if (opp_five >> mv) & 1 else (
+                1 if (opp_hot >> mv) & 1 else 0)
             if v > best:
                 best = v
                 best_move = mv
+                best_rank = rank
+            elif v == best and is_mate(v) and v < 0 and rank > best_rank:
+                # 并列的杀棋分：换成那手占住对手要点的。**分值不变**，只是不再
+                # 由排序噪声决定 —— 见上面 `opp_five` / `opp_hot` 的注释。
+                best_move = mv
+                best_rank = rank
             if v > alpha:
                 alpha = v
             if alpha >= beta:
@@ -1907,6 +1953,15 @@ class Engine:
                 info['vcf_state'] = VCF_EXHAUSTED
                 self.timed_out = False       # 交给下面迭代循环自己处理时间
 
+        # ---- 被判死刑时的加码额度（见 `_ESCAPE_EXTRA`） ----
+        # 档位变了就把"普通深度"作废：同一个 `Engine` 会连着服务不同档位。
+        if cfg["max_depth"] != self._normal_depth_level:
+            self._normal_depth = 0
+            self._normal_depth_level = cfg["max_depth"]
+        normal_dep = (self._normal_depth if self._normal_depth > 0
+                      else _ESCAPE_FALLBACK_NORMAL)
+        escape_target = min(cfg["max_depth"], normal_dep + _ESCAPE_EXTRA)
+
         for depth in range(1, cfg["max_depth"] + 1):
             if bias_on or depth < 3 or best_val <= -STATIC_MAX:
                 aspiration = False
@@ -1936,10 +1991,18 @@ class Engine:
             best_move, best_val, done, first = mv, val, depth, mv
             if bias_on:
                 root_vals = cur_vals
-            # 已找到必胜（或被将死）就不必再深搜：更深的迭代只会重复同一结论，
-            # 却要花掉数倍时间。`is_mate` 的分带保证了它不会与静态分混淆。
+            # 已找到**必胜**就不必再深搜：更深的迭代只会重复同一结论，却要
+            # 花掉数倍时间。`is_mate` 的分带保证了它不会与静态分混淆。
+            #
+            # ⚠️ 这里**只对"我赢了"成立**。`is_mate(val)` 对"我被将死"同样为真，
+            # 而那正是绝不能收工的情形 —— 那正是"直接放弃"。被判死刑时继续
+            # 加深，用更广的搜索找出路；允许搜到第几层由 `escape_target` 卡死
+            # （普通深度 +1，且严格小于 +2，见 `_ESCAPE_EXTRA`）。
             if is_mate(val):
-                break
+                if val > 0:
+                    break
+                if depth >= escape_target:
+                    break
 
         # VCF 兜底：搜索没找到**至少一样快**的杀棋时，用 VCF 的结论。
         # 判据只需比较分值 —— 杀棋分随距离单调（越短越大），所以"搜索的分
@@ -1967,6 +2030,14 @@ class Engine:
                                       bias_tolerance, root_vals, best_val)
             if picked >= 0:
                 best_move = picked
+
+        # ---- 记下"普通对弈的深度"（见 `_ESCAPE_EXTRA`） ----
+        # **只记没有杀棋结论的那些手**：出了杀棋就不再是"普通对弈"，把它当样本
+        # 会让本档的普通深度被自己的应急搜索一层层顶高。位置在这里而不是迭代
+        # 循环里，是因为上面的 VCF 兜底**可以**把 `best_val` 换成杀棋分
+        # （`vcf_win` 那一支），而那只手同样不该算样本。
+        if done > 0 and not is_mate(best_val):
+            self._normal_depth = done
 
         dt = (time.monotonic() - t0) * 1000.0
         info.update({
