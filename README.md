@@ -11,7 +11,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-3.0.2-brightgreen)
+![Version](https://img.shields.io/badge/version-3.0.3-brightgreen)
 
 > **v2.0.0 是一次彻底重写**，评估与搜索层整体替换、界面重构为统一设计系统。
 > 旧版的"分层 TSS 威胁响应""多线防守""拼命模式"**已被删除** —— 它们的判断
@@ -826,7 +826,7 @@ GomokuAI/
 # FAMILY=AMD BITS=x86_64 EXT=deb DEB_ARCH=amd64 | FAMILY=ARM BITS=arm64 EXT=tar.gz | …
 docker run --rm --platform linux/amd64 \
     -v "$PWD:/src" -w /src \
-    -e FAMILY=AMD -e BITS=x86_64 -e EXT=deb -e DEB_ARCH=amd64 -e APP_VERSION=3.0.2 \
+    -e FAMILY=AMD -e BITS=x86_64 -e EXT=deb -e DEB_ARCH=amd64 -e APP_VERSION=3.0.3 \
     debian:bookworm \
     bash packaging/build_in_container.sh
 ```
@@ -904,7 +904,7 @@ CI 不做任何补偿 —— 补偿不了，只能在 README 里写清楚。
 winget install JRSoftware.InnoSetup
 
 # 编译（AppVersion 通常由 CI 从 tag 传入）
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=3.0.2 installer\GomokuAI.iss
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=3.0.3 installer\GomokuAI.iss
 ```
 
 输出到 `dist-installer/GomokuAI_Setup_v<版本>.exe`。它装进
@@ -1014,11 +1014,14 @@ git show d232fa7:README.md | sed -n '236,401p'
 
 ## 📝 更新日志
 
-### v3.0.2 (2026-09-26)
+### v3.0.3 (2026-09-26)
 
 小版本。**只动难度选择页，引擎、时限、算法一个数字没改** —— 修的是那一页上
 两处"看得见但说不出哪里不对"的地方：暗色主题下强度条的子看不见，以及宗师那
 张条的最后一颗被卡片边缘切掉半颗。
+
+> v3.0.2 那个 tag 指向的提交没过 `test`（见末节），**没有产出 Release**，因此
+> 这里把它并入 v3.0.3：下面两条 UI 修复的第一个可下载版本是 v3.0.3。
 
 **暗色主题下，难度卡的黑子与卡面几乎同色**
 
@@ -1051,6 +1054,19 @@ git show d232fa7:README.md | sed -n '236,401p'
 - 🔒 方盒边长**问控件要**（`StoneFace(players[0], diameter).width()`），不在
   `main.py` 里复算 ui_kit 那个 `1.25` —— 抄一份过去就把两个文件钉死了，
   ui_kit 那边一改这里就静默画歪。`main.py` 也不再从 ui_kit 导入 `stone_row`。
+
+**发版流程：一条被注释绊倒的守卫**
+
+- 🐛 v3.0.2 的 tag 推上去后 `test` 三个 Python 版本全红，`release` 被
+  `needs: test` 挡下（**一个资产都没发**）。失败的不是代码，是上面那段解释
+  对比度的**注释**：`tests/test_no_literal_colors.py` 把 `main.py` 里任何
+  `#rrggbb` 都判违规，**注释也不例外** —— 这是有意为之，该测试用正则而非 AST
+  扫（Qt 样式表是字符串里的 CSS，AST 看不见里面的颜色），而"剔除注释与文档
+  字符串"会引入解析复杂度，于是规则取成"注释里也不要写颜色字面量"，改用
+  `theme.XXX` 的名字指代。注释已改引用常量名，并写明为什么只能写名字。
+- 🔒 教训写在这里而不是提交里：**发 tag 前先在本地跑一次
+  `pytest -m "not perf"`**。这条守卫的发现成本是"一次完整的四架构发版"，
+  而本地跑一遍只要 6 分半。
 
 ### v3.0.0 (2026-09-25)
 

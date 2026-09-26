@@ -2,7 +2,7 @@
 ;
 ; 由 .github/workflows/build.yml 的 windows job 调用（**只在手动 dispatch 时**，
 ; 打 tag 不触发 —— Windows 侧未经验证，不进 Release），形如：
-;     ISCC.exe /DAppVersion=3.0.2 /DHasChinese=1 installer\GomokuAI.iss
+;     ISCC.exe /DAppVersion=3.0.3 /DHasChinese=1 installer\GomokuAI.iss
 ;
 ; **为什么用 Inno 而不是继续发 7z。** 旧的 7z 包里是一个 install.bat，靠
 ; xcopy 拷文件 + PowerShell 建快捷方式。它有三个绕不过去的毛病：没有安装
