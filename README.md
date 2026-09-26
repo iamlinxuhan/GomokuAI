@@ -11,7 +11,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-3.0.1-brightgreen)
+![Version](https://img.shields.io/badge/version-3.0.2-brightgreen)
 
 > **v2.0.0 是一次彻底重写**，评估与搜索层整体替换、界面重构为统一设计系统。
 > 旧版的"分层 TSS 威胁响应""多线防守""拼命模式"**已被删除** —— 它们的判断
@@ -826,7 +826,7 @@ GomokuAI/
 # FAMILY=AMD BITS=x86_64 EXT=deb DEB_ARCH=amd64 | FAMILY=ARM BITS=arm64 EXT=tar.gz | …
 docker run --rm --platform linux/amd64 \
     -v "$PWD:/src" -w /src \
-    -e FAMILY=AMD -e BITS=x86_64 -e EXT=deb -e DEB_ARCH=amd64 -e APP_VERSION=3.0.1 \
+    -e FAMILY=AMD -e BITS=x86_64 -e EXT=deb -e DEB_ARCH=amd64 -e APP_VERSION=3.0.2 \
     debian:bookworm \
     bash packaging/build_in_container.sh
 ```
@@ -904,7 +904,7 @@ CI 不做任何补偿 —— 补偿不了，只能在 README 里写清楚。
 winget install JRSoftware.InnoSetup
 
 # 编译（AppVersion 通常由 CI 从 tag 传入）
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=3.0.1 installer\GomokuAI.iss
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=3.0.2 installer\GomokuAI.iss
 ```
 
 输出到 `dist-installer/GomokuAI_Setup_v<版本>.exe`。它装进
@@ -1013,6 +1013,44 @@ git show d232fa7:README.md | sed -n '236,401p'
 ---
 
 ## 📝 更新日志
+
+### v3.0.2 (2026-09-26)
+
+小版本。**只动难度选择页，引擎、时限、算法一个数字没改** —— 修的是那一页上
+两处"看得见但说不出哪里不对"的地方：暗色主题下强度条的子看不见，以及宗师那
+张条的最后一颗被卡片边缘切掉半颗。
+
+**暗色主题下，难度卡的黑子与卡面几乎同色**
+
+- 🐛 难度卡的强度条用的就是**棋盘上那套棋子材质**，而那套材质是**对着木色**
+  校的：黑子本体渐变 `#5c6169 → #0d0f12`，与暗色卡面（`SURFACE #1a1d25`）
+  的最差对比度只有 **1.11 : 1** —— WCAG 对非文本图形的阈值是 3.0 : 1。它在
+  d=60 的颜色页上靠一圈近乎同色的描边与暖色投影还撑得住，到这张 28px 的
+  强度条上就糊成几个黑块。白子反过来：对暗色卡面 **9.92 : 1**，对浅色卡面
+  却只有 **1.02 : 1** —— **没有"安全的那一色"**，只能按当前主题挑。
+- ✨ 强度条按 `theme.current_theme()` 取子色：暗色主题下发白子，浅色下发黑子。
+  **换色不丢信息** —— 这一页的子只表示"几颗"（强度），不表示"哪一方"，那是
+  上一页的事。反过来，**颜色选择页与面板的回合指示不能这么改**，那里的子必须
+  如实显示黑白。
+- 🔒 读主题的时机是安全的：`SelectionScreen` 每次进入都重建，而主题切换只发生
+  在对局中，构造时读到的值不会过期。
+
+**宗师那张卡的强度条被卡片右缘切掉半颗**
+
+- 🐛 `ui_kit.stone_row` 是个纯 hbox：每颗子一个 `1.25×d` 的方盒（多出的 1/4
+  留给接触投影），盒间距固定 `SPACE_XS`。d=28 时五颗要
+  `5×35 + 4×4 = 191px`，而卡片内容区只有 `CARD_PX - 2*SPACE_MD = 136px` ——
+  最后一颗被卡片右缘切掉，宗师那张肉眼**只剩四颗半**。四颗的高级那张同样溢出，
+  只是切得少，不容易注意到。
+- ✨ 新增 `_strength_bar()`，把盒子**重叠摆放**：颗数少时步距照旧（盒宽 +
+  `SPACE_XS`，1~3 档因此与从前逐像素相同），排不下才收紧（4 颗 33px、
+  5 颗 25px），一直收到刚好塞进内容区。
+- 🔒 **压缩的只是盒间距，棋子直径始终是 28。** 缩小棋子是错的那个解：棋子
+  绝对大小一变，"5 颗小的"看着会比"3 颗大的"还弱，而这一页的子只表示强度。
+  这条是被实测打回来的（"有缝隙不好看，我让你左移，不是缩小"），不是推演。
+- 🔒 方盒边长**问控件要**（`StoneFace(players[0], diameter).width()`），不在
+  `main.py` 里复算 ui_kit 那个 `1.25` —— 抄一份过去就把两个文件钉死了，
+  ui_kit 那边一改这里就静默画歪。`main.py` 也不再从 ui_kit 导入 `stone_row`。
 
 ### v3.0.0 (2026-09-25)
 

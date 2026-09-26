@@ -35,7 +35,7 @@ from engine import (BOARD_SIZE, Board, ai_move, check_win, evaluate, is_mate,
 from gamelog import GameLogger
 from ui_kit import (BrandMark, InfoRow, Screen, StoneFace, TurnIndicator,
                     button, card_button, faint_label, hbox, separator,
-                    stone_row, title_label)
+                    title_label)
 
 # ==================== 界面常量 ====================
 CELL_SIZE = 34                      # 设计基准：格距
@@ -638,6 +638,39 @@ class GamePanel(QFrame):
 
 
 # ==================== 选择界面 ====================
+def _strength_bar(players, diameter=28):
+    """N 颗棋子的强度条：**颗数越多排得越紧，棋子本身不缩小**。
+
+    ``ui_kit.stone_row`` 是个纯 hbox —— 每颗子一个 1.25×d 的方盒（多出来的
+    1/4 是留给接触投影的），盒间距固定 ``SPACE_XS``。d=28 时五颗要
+    5×35 + 4×4 = 191px，而卡片内容区只有 ``CARD_PX - 2*SPACE_MD`` = 136px，
+    最后一颗被卡片右缘切掉，宗师那张肉眼只剩四颗半。
+
+    这里改成**盒子重叠摆放**：颗粒少时步距保持原样（盒宽 + SPACE_XS），
+    排不下才收紧，一直收到刚好塞进内容区。压缩的只是盒间距，**直径始终是
+    d** —— 棋子的绝对大小必须恒定，"几颗"才只由长度表示；把子改小会让
+    5 颗小的看着比 3 颗大的还弱，而这一页的子只表示强度，不表示别的。
+
+    d 是多少不该在这里写死：``StoneFace`` 的方盒边长是它自己的实现细节
+    （``round(d * 1.25)``），抄一份过来就等于把两个文件钉死，ui_kit 那边
+    一改这里就静默画歪。直接问控件要尺寸。
+    """
+    # 卡片内容区：card_button 的 contentsMargins 左右各留 SPACE_MD。
+    avail = theme.CARD_PX - 2 * theme.SPACE_MD
+    side = StoneFace(players[0], diameter).width()     # 方盒边长，含投影余量
+    if len(players) == 1:
+        step = side
+    else:
+        step = min(side + theme.SPACE_XS,                  # 今天的盒间距
+                   (avail - side) // (len(players) - 1))   # 排不下时收紧
+    bar = QWidget()
+    bar.setFixedSize(avail, side)
+    x0 = (avail - ((len(players) - 1) * step + side)) // 2
+    for i, player in enumerate(players):
+        StoneFace(player, diameter, bar).move(x0 + i * step, 0)
+    return bar
+
+
 class SelectionScreen(Screen):
     """执棋颜色 / AI难度选择。
 
@@ -691,10 +724,23 @@ class SelectionScreen(Screen):
             tones = ("ghost", "success", "primary", "danger", "danger")
             levels = sorted(engine.DIFFICULTY)
             assert len(tones) == len(levels), "难度卡配色与档位数不同步"
+
+            # 强度条的棋子**按主题取色**。棋盘上那套材质是**对着木色**调的：
+            # 黑子本体的渐变（#5c6169→#0d0f12）与深色卡面（SURFACE #1a1d25）
+            # 只有 **1.11:1**，靠一圈近乎同色的描边（#3a382f）和暖色投影撑着
+            # —— 在 d=60 的颜色页上还看得过去，到这张 28px 的强度条上就糊成
+            # 几个黑块。白子反过来：对深色卡面 9.92:1，对浅色卡面却只有
+            # 1.02:1。所以没有"安全的那一色"，只能按当前主题挑。
+            #
+            # **换色不丢信息**：这一页的子只表示"几颗"（强度），不表示"哪一方"
+            # —— 那是上一页的事。反过来，颜色选择页与面板的回合指示**不能**
+            # 这么改，那里的子必须如实显示黑白。
+            bar_player = 2 if theme.current_theme() == "dark" else 1
             for level, tone in zip(levels, tones):
                 # N 颗子当强度条 —— 用的是棋盘上那套材质，不是另画一个图标。
+                # 排不下时收紧的是**间隙**，不是棋子（见 _strength_bar）。
                 btn = card_button(engine.difficulty_name(level), tone,
-                                  face=stone_row([1] * level),
+                                  face=_strength_bar([bar_player] * level),
                                   sub="思考上限 %g 秒" % engine.DIFFICULTY[level]["time"],
                                   index=f"{level:02d}")
                 btn.clicked.connect(lambda _=False, l=level:
