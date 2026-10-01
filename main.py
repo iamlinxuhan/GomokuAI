@@ -20,7 +20,7 @@ from PyQt5.QtCore import (
     QElapsedTimer, QEasingCurve, QVariantAnimation
 )
 from PyQt5.QtGui import (
-    QPainter, QPen, QBrush, QColor, QMouseEvent
+    QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent
 )
 
 import analysis
@@ -35,7 +35,7 @@ from engine import (BOARD_SIZE, Board, ai_move, check_win, evaluate, is_mate,
 from gamelog import GameLogger
 from ui_kit import (BrandMark, InfoRow, Screen, StoneFace, TurnIndicator,
                     button, card_button, faint_label, hbox, separator,
-                    title_label)
+                    subtitle_label, title_label)
 
 # ==================== 界面常量 ====================
 CELL_SIZE = 34                      # 设计基准：格距
@@ -71,6 +71,25 @@ MIN_W = GAP + MIN_BOARD + theme.SPACE_SM + PANEL_W + GAP     # 766
 # 加留白，格距不再增长。所以 MIN_H 不许越过 766。
 MIN_H = 494
 MAX_SCALE = 1.35                    # 初始尺寸上限：棋盘再大就一眼看不全 19 路了
+
+#: 终局到结算遮罩之间的停顿。
+#:
+#: 遮罩是**整屏**盖住棋盘的，一落子就弹等于把"你输在哪"当场抹掉 —— 2026-10-01
+#: 用户的反馈正是"还没看见 AI 的连五在哪里，就被三个大字遮住了"。这一秒留给
+#: 已经画好的红线与蓝环。两侧（赢、输）都给，平局不给：平局没有连五可看。
+GAME_OVER_DELAY_MS = 1000
+
+# 终局那条红线的颜色。**刻意不随主题走。**
+#
+# 棋盘（木色、网格、棋子）是跨主题固定的，画在棋盘上的东西也必须固定 ——
+# 同一个棋盘不该因为窗口换了主题就换色。更要命的是"另一档"那支根本是照深背景
+# 调的：``DANGER`` 在深色档是一支亮粉，落在橙金木盘上的亮度对比只有 1.06:1，
+# 整条线等同于没画。所以取浅色档那支深红：木盘上 2.30–3.10:1，对白子 5.70:1。
+#
+# 走 ``_PALETTES`` 而不是 ``theme.DANGER``：后者是 PEP 562 的按主题取值，恰恰
+# 是这里要避开的东西。做成 ``theme.LAST_*`` 那样的新跨主题常量更干净，但
+# ``theme.py`` 是冻结的。
+_WIN_LINE_COLOR = theme._PALETTES["light"]["DANGER"]    # 深红
 
 # 棋盘几何的设计基准（1:1）。绘制、命中判定、无头测试全部经由它，
 # 不要再在别处写第二份 `MARGIN + c * CELL_SIZE`。
@@ -250,7 +269,12 @@ class BoardWidget(QWidget):
         self.update()          # 只画一个环，不必重建棋子层
 
     def set_win_cells(self, cells, player):
-        """终局五连高亮（``cells`` 来自 ``engine.win_line``）。"""
+        """终局五连高亮（``cells`` 来自 ``engine.win_line``）。
+
+        ``player`` 只被记下、绘制不读它：红线从五连本身定方向与长度，与是谁赢的
+        无关（这个设计是 2026-10-01 定的，此前按棋子颜色分两支环，已删）。
+        保留这个参数是因为"谁赢了"仍是终局状态的一部分，且 ``tests`` 钉着它。
+        """
         self.win_cells = list(cells) if cells else []
         self.win_player = player
         self.update()
@@ -387,29 +411,55 @@ class BoardWidget(QWidget):
             painter.drawPixmap(QPointF(x - half, y - half - drop), sprite)
             painter.setOpacity(1.0)
 
-        # 终局五连：贯穿光带 + 每颗子一个环（色同最后一手环 —— 墨色只有一份）
+        # 终局五连：一条红线划过（在遮罩弹出前 1 秒画好，见 ``GAME_OVER_DELAY_MS``）
         if self.win_cells:
             first, last = self.win_cells[0], self.win_cells[-1]
             x0, y0 = self.geom.px(*first)
             x1, y1 = self.geom.px(*last)
-            win_col = QColor(theme.LAST_LIGHT if self.win_player == 1
-                             else theme.LAST_DARK)
-            band = QColor(win_col)
-            band.setAlpha(80)
-            band_pen = QPen(band, r * 1.1)
-            band_pen.setCapStyle(Qt.RoundCap)
+            dx, dy = x1 - x0, y1 - y0
+            dist = math.hypot(dx, dy) or 1.0
+            ux, uy = dx / dist, dy / dist
             painter.setBrush(Qt.NoBrush)
-            painter.setPen(band_pen)
-            painter.drawLine(QPointF(x0, y0), QPointF(x1, y1))
-            ring = QPen(win_col, max(2.0, r * 0.26))
-            painter.setPen(ring)
-            for rr, cc in self.win_cells:
-                x, y = self.geom.px(rr, cc)
-                painter.drawEllipse(QPointF(x, y), r * 0.78, r * 0.78)
+
+            # 两端各探出半个格子：横竖 0.5 格，斜线 0.7 格（≈√2/2）。
+            #
+            # 斜线为什么要多那 √2：0.7 格沿对角线分解回 x/y 分量恰好是 0.5 格
+            # （0.7/√2 ≈ 0.495）。取同一个 0.5 的话，斜线的端点会在两个轴向上
+            # 都缩水三成，看着比横竖的短一截 —— 三种方向的"探出量"要按轴对齐
+            # 才一致。
+            #
+            # 方向从**棋盘坐标**判断而不是像素差：``geom.px`` 是浮点，横线的
+            # dy 未必恰好是 0。
+            dr = last[0] - first[0]
+            dc = last[1] - first[1]
+            over = self.geom.cell * (0.7 if (dr and dc) else 0.5)
+
+            # 必须用 ``FlatCap``：``RoundCap`` 会在两端再多画半个笔宽（旧实现是
+            # RoundCap + ``r*1.1`` 的粗笔，两端冒出去将近一个子）。
+            #
+            # 画两遍：先深色衬、再红芯。**单画一条红是不够的** —— 红在橙金木盘
+            # 上的亮度对比只有 2.30–3.10:1，整盘缩到屏幕尺寸就化在木色里了
+            # （2026-10-01 实测：4.5px 的红线在 726px 的盘面上看不出来）。
+            # 衬用跨主题的 ``LAST_DARK``（"白子上的深色环"那支，木盘上 5.38:1），
+            # 它把线从木盘上抬起来；红芯负责"这是一条红线"。
+            a = QPointF(x0 - ux * over, y0 - uy * over)
+            b = QPointF(x1 + ux * over, y1 + uy * over)
+            back_pen = QPen(QColor(theme.LAST_DARK), max(2.0, r * 0.36))
+            back_pen.setCapStyle(Qt.FlatCap)
+            painter.setPen(back_pen)
+            painter.drawLine(a, b)
+            line_pen = QPen(QColor(_WIN_LINE_COLOR), max(2.0, r * 0.20))
+            line_pen.setCapStyle(Qt.FlatCap)
+            painter.setPen(line_pen)
+            painter.drawLine(a, b)
 
         # 最后一手：与棋子**反色**的环。旧的固定红圈叠在白子上只有 2.1:1，
         # 叠在黑子上也发闷。
-        if self.last_move:
+        #
+        # 终局不画（``win_cells`` 非空时）。最后一手必然在五连里，而那个环正好
+        # 套在五连两端的那颗子上、压在红线之上 —— 线于是被切断一截，看着像
+        # "没延长出去"，那颗子也像个还没落定的候选。2026-10-01 用户报的正是这个。
+        if self.last_move and not self.win_cells:
             lr, lc, player = self.last_move
             x, y = self.geom.px(lr, lc)
             color = theme.LAST_LIGHT if player == 1 else theme.LAST_DARK
@@ -441,6 +491,150 @@ class BoardWidget(QWidget):
         return self.geom.to_grid(screen_x, screen_y)
 
 
+# ==================== 主题图标（自绘） ====================
+#
+# 标题行那颗太阳 / 月亮**不用 emoji 字符**，自己画。原因是实测出来的，不是偏好：
+#
+# ``☀``（U+2600）在 Unicode 里是**文本呈现**字符 —— 规范上它默认就该是单色的，
+# 要彩色必须跟一个变体选择符 U+FE0F。而 ``🌙``（U+1F319）虽然是 emoji 呈现，
+# 在本机也被 fontconfig 交给了单色字体。实测：整条 UI 字体链
+# （``theme.resolve_family()``，末端落在 ``sans-serif`` → Noto Sans CJK SC）
+# 上一个彩色 emoji 字体都排不到，``Noto Color Emoji`` 被压在后面永远轮不上，
+# 于是两个字形都是黑的。**加 VS16 也救不回来**（Qt5 不会为变体选择符重新挑
+# 字体）。更麻烦的是"长什么样"取决于机器上装了什么字体，换台机器就变样。
+#
+# 自绘之后颜色取 ``theme.*``、形状自己定，跨平台一致，也才有了"太阳是暖的"
+# 这件事。
+#
+# **这是界面 chrome 里唯一一处暖色**，与 ``theme.py`` 开头那条"界面 chrome
+# 一律冷调、棋盘是全局唯一的暖色"有出入。18px 的图标，代价可控 —— 换来的是
+# "太阳就该是暖的"这个直觉。
+
+_SUN_DOTS = 8                       # 太阳外圈圆点数
+_SUN_DISC = 0.62                    # 中心圆盘半径 / r
+_SUN_DOT = 0.15                     # 单个外圈圆点半径 / r
+_SUN_ORBIT = 0.82                   # 外圈圆点轨道半径 / r
+_ICON_PX = 18                       # 图标设计边长；按钮高 32，留白足够
+
+
+def _is_sun() -> bool:
+    """**当前**主题该显示哪个图标：浅色显示太阳、深色显示月亮。
+
+    图标画的是"你正在哪个主题里"，不是"点一下会去哪儿"。这两种恰好差一个
+    反向，2026-10-01 用户明确要的是前者 —— 白天配太阳、夜晚配月亮，一眼就
+    知道自己在哪一档，不必先反推。
+    """
+    return theme.current_theme() == "light"
+
+
+def _sun_color() -> QColor:
+    """太阳的暖金**按主题取**，两边都取同族里够亮的那个。
+
+    浅色档用 ``theme.WOOD_DARK``（对 ``SURFACE_2`` 底色 **2.36:1**），
+    深色档用 ``theme.WOOD``（6.27:1）。与 ``ACCENT`` 分深/浅两档是同一个做法
+    （见 ``theme._PALETTES``）。
+
+    **2.36:1 是明知故犯的。** 这条线本来该有 3:1（非文字图形），够线的只有同族
+    里最暗的 ``WOOD_EDGE``（4.49:1）—— 而 2026-10-01 用户的评价正是"颜色这么
+    暗淡"。一个 18px 的主题装饰图标，旁边就写着"当前主题(点击以切换)："，
+    颜色不是唯一的信息载体，取悦眼睛比守那 0.6 更值。要回退只需把这一行换成
+    ``theme.WOOD_EDGE``。
+    """
+    return QColor(theme.WOOD_DARK if theme.current_theme() == "light"
+                  else theme.WOOD)
+
+
+def _moon_color() -> QColor:
+    """银白。取 ``theme.TEXT`` —— 它是这套调色板里唯一的近白中性色
+    （深色档为冷调银白，见 ``theme._PALETTES``）。
+
+    **月亮只在深色主题出现**（见 ``_is_sun``），所以"银白对白底看不见"这件
+    事眼下不成立。但它是这条映射的**隐含前提**：谁要把 ``_is_sun`` 翻回去，
+    必须同时换掉这个颜色，否则月亮会在浅色主题里凭空消失。
+    """
+    return QColor(theme.TEXT)
+
+
+class ThemeIcon(QWidget):
+    """标题行的太阳 / 月亮。**自绘，不用 emoji**（理由见上面的分节注释）。
+
+    画哪个由 ``_is_sun()`` 决定：浅色主题→太阳，深色主题→月亮。
+
+    颜色在 ``paintEvent`` 里现取 ``theme.*``，所以主题切换后必须 ``update()``
+    重画一次 —— QSS 的 repolish 管不到 QPainter，与两张图表同理。
+    """
+
+    def __init__(self, sun: bool, size: int = _ICON_PX, parent=None):
+        super().__init__(parent)
+        self._sun = bool(sun)
+        self._size = float(size)
+        self.setFixedSize(size, size)
+        # 不吃鼠标事件：它盖在按钮正中，吃掉中心那一小块主题按钮就点不动了
+        # （与 ``ui_kit.card_button`` 左上角那个序号角标同一条教训）。
+        self.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+
+    def set_sun(self, sun: bool) -> None:
+        """切换太阳 / 月亮。值没变就不重画 —— 重画一次要多跑一轮绘制。"""
+        sun = bool(sun)
+        if sun != self._sun:
+            self._sun = sun
+            self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        c = QPointF(self.width() / 2.0, self.height() / 2.0)
+        # 外圈圆点的外缘就是 ``_SUN_ORBIT + _SUN_DOT``，量出来 0.97 —— 留的那
+        # 0.03 是给抗锯齿的，不然最外那圈点会被控件边缘啃掉一条。
+        r = self._size / 2.0
+        if self._sun:
+            self._paint_sun(p, c, r)
+        else:
+            self._paint_moon(p, c, r)
+        p.end()
+
+    def _paint_sun(self, p: QPainter, c: QPointF, r: float) -> None:
+        """一个实心圆盘 + 一圈小圆点 —— 就是 ☀ 的画法。
+
+        这里**刻意不用**放射状长射线。那种"细长尖刺 + 小圆心"是好几家 AI 产品
+        的标志形态，缩到 18px 就几乎重合（2026-10-01 用户一眼看出来）。圆点则
+        怎么摆都不会撞上任何一家的 logotype。
+
+        三个比例都是量出来的（``/tmp/sun_dots2.py`` 的 V 组）：盘再大一圈就成了
+        一个点，点再小一圈就糊进抗锯齿里。
+        """
+        color = _sun_color()
+        disc = r * _SUN_DISC
+        dot = r * _SUN_DOT
+        orbit = r * _SUN_ORBIT
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(color))
+        for i in range(_SUN_DOTS):
+            # 减去 π/2：让第一个点落在正上方而不是正右方，看起来才"正"
+            a = math.pi * 2.0 * i / _SUN_DOTS - math.pi / 2.0
+            p.drawEllipse(QPointF(c.x() + math.cos(a) * orbit,
+                                  c.y() + math.sin(a) * orbit), dot, dot)
+        p.drawEllipse(c, disc, disc)
+
+    def _paint_moon(self, p: QPainter, c: QPointF, r: float) -> None:
+        """月牙 = 大圆**减去**一个偏移的等大圆。
+
+        用 ``QPainterPath.subtracted`` 而不是"在圆上再画一个底色圆"：按钮有
+        hover / pressed / disabled 四种底色，拿一个固定颜色去盖，三种状态里
+        总有一种会露馅。真正的布尔减不关心底下是什么。
+        """
+        outer = QPainterPath()
+        outer.addEllipse(c, r, r)
+        # 偏移量决定月牙最厚处：等大圆错开 d，留下的月牙最厚就是 d。
+        # 0.62r 实测既不瘦成一条线，也不胖成一个缺口圆。
+        hole = QPainterPath()
+        hole.addEllipse(QPointF(c.x() + r * 0.62, c.y() - r * 0.30), r, r)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QBrush(_moon_color()))
+        p.drawPath(outer.subtracted(hole))
+
+
 # ==================== 游戏面板（右侧） ====================
 class GamePanel(QFrame):
     """右侧信息面板。
@@ -450,6 +644,10 @@ class GamePanel(QFrame):
     """
 
     theme_clicked = pyqtSignal()
+
+    #: 主题按钮前面那句说明。文案里写了"点击以切换"，所以**整条都是按钮** ——
+    #: 只让 18px 的图标可点，这句话就是在骗人。
+    _THEME_CAPTION = "当前主题(点击以切换)："
 
     def __init__(self):
         super().__init__()
@@ -481,17 +679,56 @@ class GamePanel(QFrame):
                                   theme.SPACE_XL, theme.SPACE_XL)
         layout.setSpacing(theme.SPACE_LG)
 
-        # 段 1：标题行（标题 + 主题切换）
+        # 段 1：标题
         head = QHBoxLayout()
         head.setSpacing(theme.SPACE_SM)
         head.addWidget(title_label("五子棋 AI", role="panel-title"),
                        1, Qt.AlignVCenter)
-        self.theme_btn = button(self._theme_btn_text(), "ghost", height=32)
-        self.theme_btn.setFixedWidth(40)
+        layout.addLayout(head)
+
+        # 段 1b：主题切换
+        #
+        # **为什么另起一行**：面板内区只有 216px（``PANEL_W`` − 2×``SPACE_XL``），
+        # 而 20px 的标题实测 88px、这行说明文字（14px）实测 150px，再加 18px
+        # 图标与间距已经是 260px 开外 —— 和标题同排必然溢出，只能挤掉标题。所以
+        # 拆成两行；多出来的 32px 高度由下面两张图表的 stretch 吸收。
+        #
+        # 说明文字与图标**都挂在按钮上**（不是并列的两个控件）：文案写着"点击
+        # 以切换"，整条就该是热区，只让 18px 的图标可点是自相矛盾的。
+        self.theme_btn = button("", "ghost", height=32)
         self.theme_btn.setToolTip("切换深色 / 浅色主题")
         self.theme_btn.clicked.connect(self.theme_clicked.emit)
-        head.addWidget(self.theme_btn, 0, Qt.AlignVCenter)
-        layout.addLayout(head)
+
+        # 字号取 ``subtitle`` 那一档（14px），不用 ``faint``（12px）：12px 在这
+        # 条按钮上又小又灰，用户 2026-10-01 直接指出来了。14px 是这套面板里
+        # 次要文字的上限，再往上一档 16px 就顶满 216px 内区了。
+        self.theme_caption = subtitle_label(self._THEME_CAPTION)
+        self.theme_caption.setAlignment(Qt.AlignCenter)
+        self.theme_caption.setParent(self.theme_btn)
+        # 先 polish 再量尺寸 —— 14px 是 QSS 里定的，不 polish 量到的是按钮
+        # 那一档 16px，算出来的按钮宽度就偏了（与 ``ui_kit.card_button``
+        # 量左上角序号同一条教训）。
+        self.theme_caption.ensurePolished()
+        self.theme_caption.adjustSize()
+        self.theme_caption.setAttribute(Qt.WA_TransparentForMouseEvents)
+
+        self.theme_icon = ThemeIcon(_is_sun(), parent=self.theme_btn)
+        pad = theme.SPACE_SM
+        self.theme_btn.setFixedWidth(pad + self.theme_caption.width()
+                                     + theme.SPACE_XS
+                                     + self.theme_icon.width() + pad)
+        # 按钮尺寸从此不再变，所以一次定位就够（与 ``ui_kit.card_button``
+        # 里那个角标同理），不必接 resizeEvent。
+        self.theme_caption.move(pad, (self.theme_btn.height()
+                                      - self.theme_caption.height()) // 2)
+        self.theme_icon.move(self.theme_caption.x()
+                             + self.theme_caption.width() + theme.SPACE_XS,
+                             (self.theme_btn.height()
+                              - self.theme_icon.height()) // 2)
+        # 按钮贴左会显得整条歪在一边（面板里其余控件都是满宽居中的），所以居中 ——
+        # 但**不拉满 216px**：按钮底色只包住内容，才像一个次要控件，而不是第四颗
+        # 大按钮。居中的是这颗胶囊，热区仍覆盖"说明 + 图标"整条。
+        layout.addWidget(self.theme_btn, 0, Qt.AlignHCenter)
 
         # 段 2：回合指示卡（面板里最醒目的一块）
         self.turn_indicator = TurnIndicator()
@@ -542,15 +779,11 @@ class GamePanel(QFrame):
         for btn in (self.undo_btn, self.restart_btn, self.quit_btn):
             layout.addWidget(btn)
 
-    @staticmethod
-    def _theme_btn_text() -> str:
-        """图标指向"点一下会变成的样子"：深色中显示太阳，浅色中显示月亮。"""
-        return "🌙" if theme.current_theme() == "light" else "☀"
-
     def update_theme_button(self) -> None:
-        self.theme_btn.setText(self._theme_btn_text())
-        # 图表是自绘的，颜色在 paint 时取 theme.*，所以主题切换后必须重画
-        # 一次 —— QSS 的 repolish 管不到 QPainter。
+        # 图标画的是**当前**主题：浅色配太阳、深色配月亮（见 ``_is_sun``）。
+        self.theme_icon.set_sun(_is_sun())
+        # 图标与两张图表都是自绘的，颜色在 paint 时取 theme.*，所以主题切换后
+        # 必须重画一次 —— QSS 的 repolish 管不到 QPainter。
         for chart in (self.score_chart, self.win_chart):
             chart.update()
 
@@ -877,6 +1110,13 @@ class GomokuGame(QMainWindow):
         self.ai_worker = None
         self._ai_generation = 0     # 每次发起搜索递增，用于丢弃陈旧结果
 
+        # 终局遮罩的延迟投递（见 ``GAME_OVER_DELAY_MS``）。用 QTimer 而不是
+        # ``time.sleep`` —— 后者会把 UI 线程连同那一秒里的重绘一起冻住，玩家
+        # 连五颗子都看不见，正好和这个停顿的目的相反。
+        self._game_over_timer = QTimer(self)
+        self._game_over_timer.setSingleShot(True)
+        self._game_over_timer.timeout.connect(self._show_game_over)
+
         # 游戏日志
         self.logger = None
 
@@ -927,6 +1167,10 @@ class GomokuGame(QMainWindow):
         调用方必须**先** ``_cancel_ai()``：AI 线程的结果回调会碰棋盘状态，
         在已删除的 widget 上写日志会抛 ValueError。
         """
+        # 先掐掉在途的终局遮罩。延迟这一秒里玩家完全可能已经点了"重新开始"，
+        # 定时器若还活着，回调会在 game_widget 已销毁、``self._stack`` 已被置
+        # None 之后醒来 —— 那是 AttributeError，在 Qt 槽里抛就是直接崩。
+        self._game_over_timer.stop()
         for attr in ("loading_screen", "selection_color",
                      "selection_difficulty", "game_widget"):
             page = getattr(self, attr, None)
@@ -1161,7 +1405,7 @@ class GomokuGame(QMainWindow):
             self.game_over = True
             self.board_widget.set_win_cells(
                 win_line(self.board, player_stone), player_stone)
-            self._show_game_over()
+            self._finish_win_or_lose()
             return
 
         # 检查平局
@@ -1240,7 +1484,7 @@ class GomokuGame(QMainWindow):
             self.game_over = True
             self.board_widget.set_win_cells(
                 win_line(self.board, ai_stone), ai_stone)
-            self._show_game_over()
+            self._finish_win_or_lose()
             return
 
         # 检查平局
@@ -1395,6 +1639,21 @@ class GomokuGame(QMainWindow):
             self.board_widget.set_hover_player(
                 human if (turn == human and not self.ai_thinking
                           and not self.game_over) else None)
+
+    def _finish_win_or_lose(self):
+        """赢或输的收尾：**立刻**停表并把面板刷成终局，**延后**弹遮罩。
+
+        两件事的时间点必须分开：
+
+        * 面板``_update_panel()``立即跑 —— 它才是停表的那一处（``update_info``
+          看到 status 不是"进行中"就 ``stop_timer``）。放到延迟之后，"用时"会
+          在玩家盯着连五的那一秒里继续跳，那是 2026-10-01 用户点名要修的第二件事。
+        * 遮罩延后 ``GAME_OVER_DELAY_MS`` —— 它是整屏的，弹早了就把连五盖掉了。
+
+        平局不走这里（没有连五可看，也就没有等的理由），仍直接 ``_show_game_over``。
+        """
+        self._update_panel()
+        self._game_over_timer.start(GAME_OVER_DELAY_MS)
 
     def _show_game_over(self):
         """显示游戏结束覆盖层"""
