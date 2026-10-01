@@ -9,7 +9,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-3.0.4-brightgreen)
+![Version](https://img.shields.io/badge/version-3.0.5-brightgreen)
 
 ---
 
@@ -79,8 +79,17 @@ chmod +x GomokuAI_Linux_AMD_x86_64_run
 硬盘上留任何文件（不写日志、不写配置、不建缓存目录）；需要日志时用环境变量
 指个目录：`GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_AMD_x86_64_run`。
 
-**没有 Windows 版。** 这个项目只在 Linux 上开发与验证过，Windows 侧的配方
-没有实测过，因此没有进 Release —— 把没验证过的产物放上去等于让用户当测试。
+**Windows 版是测试版。** 项目只在 Linux 上开发与验证过，Windows 侧**没有做过
+实机验证**，所以随 Release 发出的那两份，文件名里都带 `_testing` 作后缀：
+
+| 文件 | 说明 |
+|---|---|
+| `GomokuAI_Windows_AMD_x86_64_setup_testing.exe` | 安装包，装到 `%LOCALAPPDATA%\GomokuAI`，不需要管理员权限 |
+| `GomokuAI_Windows_AMD_x86_64_run_testing.exe` | 免安装单文件，双击即用（首启动会解包，比安装版慢） |
+
+只出了 AMD x86_64 一份。与 Linux 侧不同，**Windows 打包版会写日志**：写在
+exe 同目录（即安装目录），文件是 `game_log_*.txt` —— 那边目录可写，而没有
+日志就无从诊断。遇到问题请连同日志一起反馈。
 
 ### 运行方式二：从源码运行
 
@@ -492,6 +501,7 @@ python -m pytest -q -m "not perf"       # 跳过机器速度相关的门槛（CI
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| **v3.0.5** | 2026-10-02 | 首次产出 Windows 包（测试版，只出 AMD x86_64）：`cpp/src/bitops.h` 把那几个 `__builtin_*` 收敛成跨编译器封装，MSVC 上没有的走 `<intrin.h>` —— 此前 C++ 引擎在 MSVC 上根本编译不过；Windows 打包版改为写日志（写在 exe 同目录，Linux 侧"不留文件"的策略不变）；workflow 的手动 dispatch 新增 `linux` 输入，可以只跑 amd64 或干脆不跑。**本版的 Windows 产物未做实机验证**，文件名带 `_testing` |
 | **v3.0.4** | 2026-10-01 | 终局先亮连五、再结算：一条红线划过五连（两端按方向探出半格，斜线按 √2/2 折算），延迟 1 秒才弹遮罩，「用时」在落子那一刻当场停表 —— 此前遮罩整屏盖下来，玩家根本看不见自己输在哪。同时删掉终局那颗"最后一手"的环（它正压在线的端点上，把线切断了一截）。面板的主题切换独立成一行：文案 12px → 14px 并居中，太阳 / 月亮改为自绘（emoji 在多数机器上排不到彩色字体，只能出黑白字形，且随机器变样） |
 | **v3.0.3** | 2026-09-26 | 难度选择页两处修正：暗色主题下强度条按主题取子色（黑子对暗色卡面只有 1.11:1）；宗师那张的强度条改为压缩盒间距而不是缩小棋子（原 191px 塞不进 136px 的卡片内区）。v3.0.2 那个 tag 没过 `test`、没有产出 Release，其内容并入本版 |
 | v3.0.1 | 2026-09-25 | 端口池（固定 8888 → 15 格，每格都过 `hello` 校验）；面板新增「当前 TCP 端口」与「开局库」两个诊断取值；产物名拆成家族/位数/用途三格，`.pkg` → `.tar.gz`；发版闸门重写（原版在空目录里展开通配符，8 个资产全在却报"缺少产物"） |

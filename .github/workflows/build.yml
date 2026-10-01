@@ -212,11 +212,16 @@ jobs:
         # 不一致的两份产物。
         run: |
           raw="${GITHUB_REF_NAME}"
-          if [[ "$raw" =~ ^v[0-9] ]]; then ver="${raw#v}"
-          elif [[ "$raw" =~ ^[0-9] ]]; then ver="$raw"
+          # **只取开头那段 `x.y.z`**，tag 后面跟什么都行。这个号码会原样进
+          # deb 控制文件的 `Version:` 字段，而 deb 的版本号字符集很窄（只允许
+          # 字母数字与 `. + - ~ :`，且必须数字开头）——`v3.0.5_windows(testing)`
+          # 整个塞进去的话，`_` 和 `()` 都非法，dpkg-deb 会直接报版本号非法，
+          # 四个架构一起红。
+          if [[ "$raw" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+) ]]; then ver="${BASH_REMATCH[1]}"
+          elif [[ "$raw" =~ ^v?([0-9]+) ]]; then ver="${BASH_REMATCH[1]}"
           else ver="0.0.0"; fi
           echo "APP_VERSION=$ver" >> "$GITHUB_ENV"
-          echo "版本号: $ver"
+          echo "版本号: $ver（tag: $raw）"
 
       - name: Set up QEMU
         # 只在 armv7 那条上跑。注册 binfmt 处理器之后，宿主内核就能执行
@@ -261,18 +266,26 @@ jobs:
 
 
   # ============================================================
-  #  Windows — 不进 Release，默认也不跑
+  #  Windows — 进 Release，但只当作测试版发
   #
-  #  项目只在 Linux 上开发与验证，Windows 适配没有实测过。两道门都刻意挡着：
-  #  tag 不触发（产物漏不进 Release），手动 dispatch 也要显式勾
-  #  `build_windows` 才跑 —— 否则每次验证 Linux 四架构都会多挂一个已知会红的
-  #  job，噪声正好盖住真正要看的信号。
+  #  项目只在 Linux 上开发与验证，Windows 适配**还没有实机验证过**。所以两道
+  #  门里的第一道放开了、第二道留着：
   #
-  #  保留而不是删掉：Inno Setup 那份配方（installer/GomokuAI.iss）是能用的，
-  #  等 Windows 侧真正验证过之后，把这行 `if` 改成 tag 条件就能重新进 Release。
+  #  * tag 推送会跑（产物随 Release 发出去给人测），手动 dispatch 仍要显式勾
+  #    `build_windows` —— 否则每次验证 Linux 四架构都会多挂一个 Windows job，
+  #    噪声正好盖住真正要看的信号。
+  #  * 产物名末尾一律带 `_testing`，安装器与单文件版**都不写版本号**。名字本身
+  #    就是"不承诺可用"的声明，谁也不该把它当成正式发行版。
+  #
+  #  真要转正：去掉两处 `_testing` 后缀，并把这里和 README 的措辞一起改掉。
   # ============================================================
   windows:
-    if: github.event_name == 'workflow_dispatch' && inputs.build_windows
+    # **tag 推送也跑。** 原先只挂在 dispatch 上，因为 Windows 侧从没实机验证过、
+    # 不该进 Release；眼下这一版正是要把它随 v3.0.5_windows(testing) 一起发出去
+    # 给人测试，所以放它上 tag —— 产物名里的 `_testing` 承担"不承诺可用"的声明。
+    if: >-
+      startsWith(github.ref, 'refs/tags/')
+      || (github.event_name == 'workflow_dispatch' && inputs.build_windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -303,9 +316,12 @@ jobs:
         shell: pwsh
         run: |
           $raw = '${{ github.ref_name }}'
-          $ver = if ($raw -match '^v[0-9]') { $raw.Substring(1) } elseif ($raw -match '^[0-9]') { $raw } else { '0.0.0' }
+          # 与 build-linux 那条逐字同构：只取开头的 x.y.z，tag 后缀不进版本号。
+          $ver = if ($raw -match '^v?(\d+\.\d+\.\d+)') { $Matches[1] }
+                 elseif ($raw -match '^v?(\d+)') { $Matches[1] }
+                 else { '0.0.0' }
           "APP_VERSION=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
-          Write-Host "版本号: $ver"
+          Write-Host "版本号: $ver（tag: $raw）"
 
       - name: Build (onedir)
         run: |
@@ -370,6 +386,7 @@ jobs:
     needs:
       - test
       - build-linux
+      - windows
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
@@ -382,8 +399,8 @@ jobs:
       - name: List release files
         run: ls -lah release/
 
-      - name: Assert the release holds exactly these 8 assets
-        # **数一遍再发。** 四个 build job 里任何一个被跳过（`if` 写错、架构
+      - name: Assert the release holds exactly these 10 assets
+        # **数一遍再发。** 五个 build job 里任何一个被跳过（`if` 写错、架构
         # 不可用）都不会让这个 job 失败 —— `needs` 只保证"跑过的那些成功"，
         # 挡不住"某一条压根没跑"。少了产物的 Release 会静默地只发 6 个，
         # 用户下不到自己架构那份，而错误现场在几周后才会出现。
@@ -405,22 +422,36 @@ jobs:
             GomokuAI_Linux_ARM_arm64_run \
             GomokuAI_Linux_ARM_arm64_setup.tar.gz \
             GomokuAI_Linux_ARM_arm32_run \
-            GomokuAI_Linux_ARM_arm32_setup.tar.gz | sort)
+            GomokuAI_Linux_ARM_arm32_setup.tar.gz \
+            GomokuAI_Windows_AMD_x86_64_run_testing.exe \
+            GomokuAI_Windows_AMD_x86_64_setup_testing.exe | sort)
           got=$(ls -1 release/ | sort)
           echo "Release 资产：$(printf '%s\n' "$got" | wc -l) 个"
           printf '%s\n' "$got"
           if [ "$want" != "$got" ]; then
             echo "!! Release 资产与预期不符" >&2
             diff <(printf '%s\n' "$want") <(printf '%s\n' "$got") >&2 || true
-            echo "   （左 = 应有，右 = 实际；4 架构 × 安装包/裸可执行 = 8）" >&2
+            echo "   （左 = 应有，右 = 实际；Linux 4 架构 × 2 + Windows x86_64 × 2 = 10）" >&2
             exit 1
           fi
-          echo "8 个资产齐全，四架构各一份安装包 + 一份裸可执行文件"
+          echo "10 个资产齐全：Linux 四架构各一份安装包 + 一份裸可执行，Windows 一份安装包 + 一份免安装单文件"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           name: "${{ github.ref_name }}"
+          # `body` 与 `generate_release_notes` 同时给：GitHub 把自动生成的
+          # 变更清单**接在** body 后面，所以这段说明排在 Release 页最上方。
+          body: |
+            本 tag 包含 windows_testing 和 Linux_stable
+
+            | | 平台 | 说明 |
+            |---|---|---|
+            | Linux | AMD x86_64 / AMD x86_32 / ARM arm64 / ARM arm32 | **稳定版**，四个架构各一份安装包与一份裸可执行文件 |
+            | Windows | AMD x86_64 | **测试版**（文件名带 `_testing`），安装包与免安装单文件各一份，未做过实机验证 |
+
+            Windows 那份是发出来给人试的，装到 `%LOCALAPPDATA%\\GomokuAI`，
+            日志写在 exe 同目录；遇到问题请连同 `game_log` 一起反馈。
           files: release/*
           generate_release_notes: true
         env:
