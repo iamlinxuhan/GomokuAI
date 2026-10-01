@@ -39,28 +39,33 @@ permissions:
   contents: write
 
 # ============================================================================
-#  产物清单（Linux 四架构 × 安装包 + 裸可执行文件 = 8）
+#  产物清单（Linux 四架构 × 3 + Windows × 3 = 15）
 #
-#  名字是四格：GomokuAI_Linux_<家族>_<位数>_<run|setup>.<后缀>
+#  名字是：GomokuAI_<平台>_<stem>_<run|setup>[_debug|_play].<后缀>
 #
-#    GomokuAI_Linux_AMD_x86_64_run     GomokuAI_Linux_AMD_x86_64_setup.deb
-#    GomokuAI_Linux_AMD_x86_32_run     GomokuAI_Linux_AMD_x86_32_setup.deb
-#    GomokuAI_Linux_ARM_arm64_run      GomokuAI_Linux_ARM_arm64_setup.tar.gz
-#    GomokuAI_Linux_ARM_arm32_run      GomokuAI_Linux_ARM_arm32_setup.tar.gz
+#    GomokuAI_Linux_amd_x86_64_run_debug   GomokuAI_Linux_amd_x86_64_setup.deb
+#    GomokuAI_Linux_amd_x86_64_run_play
+#    GomokuAI_Linux_amd_x32_run_debug      GomokuAI_Linux_amd_x32_setup.deb
+#    GomokuAI_Linux_amd_x32_run_play
+#    GomokuAI_Linux_aarch64_run_debug      GomokuAI_Linux_aarch64_setup.tar.gz
+#    GomokuAI_Linux_aarch64_run_play
+#    GomokuAI_Linux_armv7_run_debug        GomokuAI_Linux_armv7_setup.tar.gz
+#    GomokuAI_Linux_armv7_run_play
+#    GomokuAI_Windows_amd_x86_64_setup.exe
+#    GomokuAI_Windows_amd_x86_64_run_debug.exe
+#    GomokuAI_Windows_amd_x86_64_run_play.exe
 #
-#  **家族与位数必须是两格。** 早先是 `GomokuAI_For_Linux_<SUFFIX>`，SUFFIX ∈
-#  AMD / X86 / ARM / ARM32 —— 一格既当族名又当位数，而位数恰恰是最容易装错的
-#  那个信息：`AMD` 与 `X86` 都是 x86 家族（一个 64 位一个 32 位），`ARM` 与
-#  `ARM32` 同理，光看名字分不出谁是谁，下错就是一句 `Exec format error`。
-#  而且 `X86` 撞上"x86 默认指 32 位"的惯例，`AMD` 又让 Intel 用户以为与己无关
-#  （那正是他们该下的那份）。现在 `AMD_x86_64` 与 `AMD_x86_32` 一眼可辨。
+#  **AMD 那一格是族名不是型号** —— Intel 机器与虚拟机下的都是同一份。
+#  **ARM 把家族与位数合并成一个 token**（`aarch64` / `armv7`）：`arm_x86_64`
+#  这种组合自相矛盾 —— ARM 哪来的 x86 位数。
 #
-#  家族名 AMD 覆盖整个 x86 家族（含 Intel 与虚拟机），ARM 覆盖整个 ARM 家族；
-#  位数那格两族各用本名，不复用对方的词。
+#  **只有 run 带 debug/play 后缀**，setup 不带（安装包装的是 play，见
+#  gamelog.py 顶部）。这是这套命名存在的理由：此前"留不留日志"由平台暗定
+#  （Windows 打包版写、Linux 打包版不写），用户看不出手上这份是哪一种。
 #
-#  **Windows 不在 Release 里。** 项目只在 Linux 上开发与验证，Windows 那份
-# 适配没有实测过，也没有人能验证 —— 把没验证过的产物放进 Release，等于让
-# 用户去当测试。那个 job 保留着，但只在手动 dispatch 时跑，见下面 `windows`。
+#  早先是 `GomokuAI_For_Linux_<SUFFIX>`，SUFFIX ∈ AMD / X86 / ARM / ARM32 ——
+#  一格既当族名又当位数，而位数恰恰是最容易装错的那个信息，光看名字分不出
+#  谁是谁，下错就是一句 `Exec format error`。
 #
 #  安装包形态按指令集分工：x86 系给 `.deb`（Debian/Ubuntu 的装机主力），
 #  ARM 系给 `.tar.gz`（tar + install.sh，不绑定发行版 —— ARM 上跑什么发行版
@@ -160,20 +165,24 @@ jobs:
     steps:
       - id: m
         run: |
-          # 每格一行 JSON。各键的含义：family / bits 就是产物名前两格（见
-          # 文件头的产物清单），ext / deb_arch 决定第 ⑤ 段走哪条配方。
+          # 每格一行 JSON。各键的含义：stem 就是产物名里那一格（见文件头的
+          # 产物清单），ext / deb_arch 决定第 ⑤ 段走哪条配方。
+          #
+          # **`deb_arch` 与 `stem` 是两回事**：前者进 deb 控制文件的
+          # `Architecture:` 字段、给 dpkg 看（`i386`），后者给人看
+          # （`amd_x32`）。两者的词表不是一套，别想着合并。
           #
           # `qemu` 必须是**布尔**而不是字符串 —— 字符串 "false" 在 step 的
           # `if: matrix.qemu` 里是真值，QEMU 注册那一步就会在四条架构上全跑。
           #
-          # arm64：原生 arm64 runner，比在 x86 上跑 QEMU 快一个数量级。
-          # i386： 不需要 QEMU，x86 主机内核自带 32 位 ELF 支持，宿主 CPU
-          #        直接执行，只是换了一套 32 位 userland。
-          # armv7：唯独这一条必须翻译执行。
-          amd64='{"name":"amd64","family":"AMD","bits":"x86_64","platform":"linux/amd64","runs_on":"ubuntu-latest","qemu":false,"ext":"deb","deb_arch":"amd64"}'
-          arm64='{"name":"arm64","family":"ARM","bits":"arm64","platform":"linux/arm64","runs_on":"ubuntu-24.04-arm","qemu":false,"ext":"tar.gz","deb_arch":"arm64"}'
-          i386='{"name":"i386","family":"AMD","bits":"x86_32","platform":"linux/386","runs_on":"ubuntu-latest","qemu":false,"ext":"deb","deb_arch":"i386"}'
-          armv7='{"name":"armv7","family":"ARM","bits":"arm32","platform":"linux/arm/v7","runs_on":"ubuntu-latest","qemu":true,"ext":"tar.gz","deb_arch":"armhf"}'
+          # aarch64：原生 arm64 runner，比在 x86 上跑 QEMU 快一个数量级。
+          # amd_x32：不需要 QEMU，x86 主机内核自带 32 位 ELF 支持，宿主 CPU
+          #          直接执行，只是换了一套 32 位 userland。
+          # armv7：  唯独这一条必须翻译执行。
+          amd64='{"name":"amd64","stem":"amd_x86_64","platform":"linux/amd64","runs_on":"ubuntu-latest","qemu":false,"ext":"deb","deb_arch":"amd64"}'
+          arm64='{"name":"arm64","stem":"aarch64","platform":"linux/arm64","runs_on":"ubuntu-24.04-arm","qemu":false,"ext":"tar.gz","deb_arch":"arm64"}'
+          i386='{"name":"i386","stem":"amd_x32","platform":"linux/386","runs_on":"ubuntu-latest","qemu":false,"ext":"deb","deb_arch":"i386"}'
+          armv7='{"name":"armv7","stem":"armv7","platform":"linux/arm/v7","runs_on":"ubuntu-latest","qemu":true,"ext":"tar.gz","deb_arch":"armhf"}'
           # tag 推送时 `inputs.linux` 是空串，落进 `*` 那一支 —— 正是发版要的。
           case "${{ inputs.linux }}" in
             amd64) list="$amd64" ;;
@@ -231,15 +240,14 @@ jobs:
 
       - name: Build inside ${{ matrix.name }} container
         env:
-          FAMILY: ${{ matrix.family }}
-          BITS: ${{ matrix.bits }}
+          STEM: ${{ matrix.stem }}
           EXT: ${{ matrix.ext }}
           DEB_ARCH: ${{ matrix.deb_arch }}
         run: |
           docker run --rm \
             --platform ${{ matrix.platform }} \
             -v "${GITHUB_WORKSPACE}:/src" -w /src \
-            -e FAMILY -e BITS -e EXT -e DEB_ARCH -e APP_VERSION \
+            -e STEM -e EXT -e DEB_ARCH -e APP_VERSION \
             debian:bookworm \
             bash packaging/build_in_container.sh
 
@@ -252,37 +260,42 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: linux_${{ matrix.family }}_${{ matrix.bits }}_installer
-          path: GomokuAI_Linux_${{ matrix.family }}_${{ matrix.bits }}_setup.${{ matrix.ext }}
+          name: linux_${{ matrix.stem }}_setup
+          path: GomokuAI_Linux_${{ matrix.stem }}_setup.${{ matrix.ext }}
 
-      - name: Upload standalone executable
+      - name: Upload standalone executable (debug)
         # 注意：artifact 这一趟**不带可执行位**（upload-artifact 只存字节），
         # 所以用户下到的文件必须自己 `chmod +x`。Release 资产本来也没有权限
         # 这回事，不用额外处理 —— 只在 README 里说清楚。
         uses: actions/upload-artifact@v4
         with:
-          name: linux_${{ matrix.family }}_${{ matrix.bits }}_run
-          path: dist/GomokuAI_Linux_${{ matrix.family }}_${{ matrix.bits }}_run
+          name: linux_${{ matrix.stem }}_run_debug
+          path: dist/GomokuAI_Linux_${{ matrix.stem }}_run_debug
+
+      - name: Upload standalone executable (play)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux_${{ matrix.stem }}_run_play
+          path: dist/GomokuAI_Linux_${{ matrix.stem }}_run_play
 
 
   # ============================================================
-  #  Windows — 进 Release，但只当作测试版发
+  #  Windows — 2026-10-02 转正，与 Linux 一样进 Release
   #
-  #  项目只在 Linux 上开发与验证，Windows 适配**还没有实机验证过**。所以两道
-  #  门里的第一道放开了、第二道留着：
+  #  此前 tag 不触发这条 job、产物名带 `_testing`，理由是"没有实机验证过，
+  #  不该让用户当测试"。现在真机跑通了（同学实测 + 黑窗口修复），那两条理由
+  #  都不成立，于是两道门拆掉一道、留一道：
   #
-  #  * tag 推送会跑（产物随 Release 发出去给人测），手动 dispatch 仍要显式勾
-  #    `build_windows` —— 否则每次验证 Linux 四架构都会多挂一个 Windows job，
-  #    噪声正好盖住真正要看的信号。
-  #  * 产物名末尾一律带 `_testing`，安装器与单文件版**都不写版本号**。名字本身
-  #    就是"不承诺可用"的声明，谁也不该把它当成正式发行版。
+  #  * tag 推送会跑，产物随 Release 发出去。
+  #  * 手动 dispatch 仍要显式勾 `build_windows` —— 否则每次只想验证 Linux
+  #    四架构都会多挂一个 Windows job，噪声正好盖住真正要看的信号。
   #
-  #  真要转正：去掉两处 `_testing` 后缀，并把这里和 README 的措辞一起改掉。
+  #  **只出 AMD x86_64。** Windows on ARM 跑的是 x64 版（系统自带模拟）——
+  #  PyQt5 全系没有 `win_arm64` 轮子（PyPI 上 5.15.11 只有 win32 / win_amd64，
+  #  PyQt5-Qt5 的 Windows 轮子停在 5.15.2），原生打包无从谈起。runner 那边
+  #  倒是现成的（`windows-11-arm`，公共仓库免费），卡的是依赖不是 CI。
   # ============================================================
   windows:
-    # **tag 推送也跑。** 原先只挂在 dispatch 上，因为 Windows 侧从没实机验证过、
-    # 不该进 Release；眼下这一版正是要把它随 v3.0.5_windows(testing) 一起发出去
-    # 给人测试，所以放它上 tag —— 产物名里的 `_testing` 承担"不承诺可用"的声明。
     if: >-
       startsWith(github.ref, 'refs/tags/')
       || (github.event_name == 'workflow_dispatch' && inputs.build_windows)
@@ -323,15 +336,58 @@ jobs:
           "APP_VERSION=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
           Write-Host "版本号: $ver（tag: $raw）"
 
-      - name: Build (onedir)
+      - name: Build onedir (installer payload, play)
+        # 安装包装的是 **play** —— 普通用户那边不该堆 game_log。
+        #
+        # `--paths` 指向一个只存在于 runner 临时目录里的文件夹，里面是我们
+        # 现写的一行模块。变体在**构建期**烘焙，不在运行时按文件名倒推，
+        # 理由见 gamelog.py 顶部那段。`-Encoding ascii`：内容纯 ASCII，
+        # 也躲开 Windows PowerShell 那句 `utf8` 会写 BOM 的老毛病。
+        shell: pwsh
         run: |
+          $flavorDir = Join-Path $env:RUNNER_TEMP "build-flavor"
+          New-Item -ItemType Directory -Force -Path $flavorDir | Out-Null
+          Set-Content -Path "$flavorDir\_build_flavor.py" `
+            -Value 'FLAVOR = "play"' -Encoding ascii
           pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
+            --paths $flavorDir `
             --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
 
-      - name: Build portable (onefile)
+      - name: "Build portable (onefile: debug + play)"
+        shell: pwsh
         run: |
-          pyinstaller --onefile --windowed --icon="五子棋.ico" --name "GomokuAI_Portable" `
-            --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
+          $flavorDir = Join-Path $env:RUNNER_TEMP "build-flavor"
+          New-Item -ItemType Directory -Force -Path $flavorDir | Out-Null
+          foreach ($f in @("debug", "play")) {
+            $exe = "GomokuAI_Windows_amd_x86_64_run_$f"
+            Set-Content -Path "$flavorDir\_build_flavor.py" `
+              -Value "FLAVOR = `"$f`"" -Encoding ascii
+            pyinstaller --onefile --windowed --icon="五子棋.ico" --name $exe `
+              --paths $flavorDir `
+              --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
+            if (-not (Test-Path "dist\$exe.exe")) { throw "PyInstaller 没有产出 $exe.exe" }
+          }
+
+      - name: Assert the flavor module got bundled
+        # 与 Linux 侧那条断言同一个理由，也是这套机制**唯一会静默失败**的地方：
+        # `--paths` 若没生效，gamelog.py 里那个 try 会把它当 ImportError 吞掉，
+        # debug 版就退化成 play —— 不报错、不崩，用户开一局之后才发现日志没出来。
+        #
+        # 查的是 PyInstaller 自己写下的分析产物（`build\<name>\*.toc` 里列着
+        # 收进去的模块名），不是最终二进制：onefile 的 PYZ 压过，直接 grep 一个
+        # 字符串既可能假阴也可能假阳。
+        shell: pwsh
+        run: |
+          foreach ($f in @("debug", "play")) {
+            $name = "GomokuAI_Windows_amd_x86_64_run_$f"
+            $hit = Get-ChildItem "build\$name" -Recurse -Filter *.toc |
+                   Select-String -Pattern '_build_flavor' -List
+            if (-not $hit) {
+              throw "$name 的分析产物里没有 _build_flavor —— --paths 没生效，" +
+                    "照这样发出去 debug 版会静默退化成 play"
+            }
+          }
+          Write-Host "两个变体都带上了 _build_flavor"
 
       - name: Install Inno Setup
         # choco 装的是当前最新版。**不假设它带简体中文语言文件** —— Inno
@@ -355,25 +411,27 @@ jobs:
           $isccArgs += "installer\GomokuAI.iss"
 
           & $iscc @isccArgs
-          $setup = Get-ChildItem "dist-installer\GomokuAI_Windows_AMD_x86_64_setup_testing.exe"
+          $setup = Get-ChildItem "dist-installer\GomokuAI_Windows_amd_x86_64_setup.exe"
           if (-not $setup) { throw "ISCC 退出码为 0 却没有产出安装包" }
           $setup | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}}
-
-      - name: Collect portable artifact
-        shell: pwsh
-        run: Copy-Item "dist\GomokuAI_Portable.exe" "GomokuAI_Windows_AMD_x86_64_run_testing.exe"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: windows_AMD_x86_64_setup_testing
-          path: dist-installer/GomokuAI_Windows_AMD_x86_64_setup_testing.exe
+          name: windows_amd_x86_64_setup
+          path: dist-installer/GomokuAI_Windows_amd_x86_64_setup.exe
 
-      - name: Upload portable
+      - name: Upload portable (debug)
         uses: actions/upload-artifact@v4
         with:
-          name: windows_AMD_x86_64_run_testing
-          path: GomokuAI_Windows_AMD_x86_64_run_testing.exe
+          name: windows_amd_x86_64_run_debug
+          path: dist/GomokuAI_Windows_amd_x86_64_run_debug.exe
+
+      - name: Upload portable (play)
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows_amd_x86_64_run_play
+          path: dist/GomokuAI_Windows_amd_x86_64_run_play.exe
 
 
   # ============================================================
@@ -399,13 +457,13 @@ jobs:
       - name: List release files
         run: ls -lah release/
 
-      - name: Assert the release holds exactly these 10 assets
+      - name: Assert the release holds exactly these 15 assets
         # **数一遍再发。** 五个 build job 里任何一个被跳过（`if` 写错、架构
         # 不可用）都不会让这个 job 失败 —— `needs` 只保证"跑过的那些成功"，
         # 挡不住"某一条压根没跑"。少了产物的 Release 会静默地只发 6 个，
         # 用户下不到自己架构那份，而错误现场在几周后才会出现。
         #
-        # **这里是 8 个名字逐个写死的，不是通配符。** 早先那版是
+        # **这里是 15 个名字逐个写死的，不是通配符。** 早先那版是
         # `for s in AMD ARM X86 ARM32; do [ -e "release/GomokuAI_For_Linux_$s" ] …`
         # 那一套，两处都踩过：① 匹配用的是 `"…$s".*`，而 `.*` 是在**当前目录**
         # （$GITHUB_WORKSPACE，本 job 没有 checkout，因而是空目录）里展开的，
@@ -415,26 +473,31 @@ jobs:
         # 绿。逐个写死两个毛病一起消掉：名字、后缀、数量全在一条 `diff` 里。
         run: |
           want=$(printf '%s\n' \
-            GomokuAI_Linux_AMD_x86_64_run \
-            GomokuAI_Linux_AMD_x86_64_setup.deb \
-            GomokuAI_Linux_AMD_x86_32_run \
-            GomokuAI_Linux_AMD_x86_32_setup.deb \
-            GomokuAI_Linux_ARM_arm64_run \
-            GomokuAI_Linux_ARM_arm64_setup.tar.gz \
-            GomokuAI_Linux_ARM_arm32_run \
-            GomokuAI_Linux_ARM_arm32_setup.tar.gz \
-            GomokuAI_Windows_AMD_x86_64_run_testing.exe \
-            GomokuAI_Windows_AMD_x86_64_setup_testing.exe | sort)
+            GomokuAI_Linux_amd_x86_64_run_debug \
+            GomokuAI_Linux_amd_x86_64_run_play \
+            GomokuAI_Linux_amd_x86_64_setup.deb \
+            GomokuAI_Linux_amd_x32_run_debug \
+            GomokuAI_Linux_amd_x32_run_play \
+            GomokuAI_Linux_amd_x32_setup.deb \
+            GomokuAI_Linux_aarch64_run_debug \
+            GomokuAI_Linux_aarch64_run_play \
+            GomokuAI_Linux_aarch64_setup.tar.gz \
+            GomokuAI_Linux_armv7_run_debug \
+            GomokuAI_Linux_armv7_run_play \
+            GomokuAI_Linux_armv7_setup.tar.gz \
+            GomokuAI_Windows_amd_x86_64_run_debug.exe \
+            GomokuAI_Windows_amd_x86_64_run_play.exe \
+            GomokuAI_Windows_amd_x86_64_setup.exe | sort)
           got=$(ls -1 release/ | sort)
           echo "Release 资产：$(printf '%s\n' "$got" | wc -l) 个"
           printf '%s\n' "$got"
           if [ "$want" != "$got" ]; then
             echo "!! Release 资产与预期不符" >&2
             diff <(printf '%s\n' "$want") <(printf '%s\n' "$got") >&2 || true
-            echo "   （左 = 应有，右 = 实际；Linux 4 架构 × 2 + Windows x86_64 × 2 = 10）" >&2
+            echo "   （左 = 应有，右 = 实际；两平台 × (1 安装包 + 2 裸可执行)，Linux 四架构 + Windows 一架构 = 15）" >&2
             exit 1
           fi
-          echo "10 个资产齐全：Linux 四架构各一份安装包 + 一份裸可执行，Windows 一份安装包 + 一份免安装单文件"
+          echo "15 个资产齐全：Linux 四架构与 Windows 各一份安装包 + debug/play 两份裸可执行文件"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -443,15 +506,28 @@ jobs:
           # `body` 与 `generate_release_notes` 同时给：GitHub 把自动生成的
           # 变更清单**接在** body 后面，所以这段说明排在 Release 页最上方。
           body: |
-            本 tag 包含 windows_testing 和 Linux_stable
+            Windows 与 Linux 都是稳定版；没有 macOS 版。
 
-            | | 平台 | 说明 |
+            ### 每个平台三份
+
+            | 文件 | 是什么 |
+            |---|---|
+            | `..._setup.*` | 安装包。装出来的程序**不写日志**，普通用户用这个 |
+            | `..._run_play.*` | 免安装单文件，**不写日志** |
+            | `..._run_debug.*` | 免安装单文件，**写日志**到 exe 同目录（`game_log_*.txt`） |
+
+            debug 是给人看现场的：出问题时下这一份，日志就在 exe 旁边。
+
+            | 平台 | 可选架构 | 安装包 |
             |---|---|---|
-            | Linux | AMD x86_64 / AMD x86_32 / ARM arm64 / ARM arm32 | **稳定版**，四个架构各一份安装包与一份裸可执行文件 |
-            | Windows | AMD x86_64 | **测试版**（文件名带 `_testing`），安装包与免安装单文件各一份，未做过实机验证 |
+            | Linux | `amd_x86_64` / `amd_x32` / `aarch64` / `armv7` | `.deb`（x86 系）或 `.tar.gz`（ARM 系，解包后 `sudo ./install.sh`） |
+            | Windows | `amd_x86_64` | `.exe`，装到 `%LOCALAPPDATA%\GomokuAI`，不需要管理员权限 |
 
-            Windows 那份是发出来给人试的，装到 `%LOCALAPPDATA%\GomokuAI`，
-            日志写在 exe 同目录；遇到问题请连同 `game_log` 一起反馈。
+            裸文件下载后要自己给可执行位（Release 资产不携带文件权限）：
+            `chmod +x GomokuAI_Linux_amd_x86_64_run_play`。
+
+            **Windows on ARM 请下 x64 版**（系统自带模拟）—— PyQt5 没有 ARM64
+            的轮子，做不出原生的 ARM 包。
           files: release/*
           generate_release_notes: true
         env:

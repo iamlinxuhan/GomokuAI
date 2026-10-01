@@ -29,16 +29,33 @@ BOARD_SIZE = 19
 # 给开发者诊断 AI 决策用的（`tools/positions.py` 的题库来源），发行版的用户
 # 既看不懂也用不上，需要的人自己会 clone 代码。
 #
-# 所以 **Linux 侧维持原策略：冻结运行时默认不写任何文件**，日志调用全部退化成
-# 空操作。需要远程排查某个用户的现场时，用 ``GOMOKU_AI_LOGDIR=<目录>`` 指回来。
+# 所以**冻结运行时默认不写任何文件**，日志调用全部退化成空操作。需要远程排查
+# 某个用户的现场时，用 ``GOMOKU_AI_LOGDIR=<目录>`` 指回来。
 #
-# **Windows 侧是另一回事（2026-10-01 起）。** 安装包装在
-# ``{localappdata}\GomokuAI``（``PrivilegesRequired=lowest``），天然可写，
-# 上面那条 PermissionError 的理由在它身上根本不成立；而它眼下唯一的存在理由是
-# 给人做实机测试 —— 没有日志就无从诊断，这份包也就没有意义。所以冻结运行时
-# **写到可执行文件同目录**：位置好解释（"把 exe 旁边那些 txt 发我"），
-# 同学不必知道有个环境变量。
+# **2026-10-02 起改由"变体"决定，与平台无关。** 发行产物分成两份：
+#
+#     ..._run_debug    开发版：写到可执行文件同目录
+#     ..._run_play     使用版：一个文件都不留（上面那条既有策略）
+#
+# 安装包装的是 play —— 普通用户那边不该堆日志。位置选"exe 同目录"是为了好
+# 解释（"把 exe 旁边那些 txt 发我"），不必让人知道有个环境变量。
+#
+# **变体在构建期烘焙，不在运行时按文件名倒推。** 看 ``sys.executable`` 是不是
+# 以 ``_debug`` 结尾确实更省事，但那样 deb 装出来的 ``/opt/gomoku-ai/gomoku-ai``
+# 与 Windows 的 ``GomokuAI.exe`` 就是靠"名字恰好不含 ``_debug``"才表现为
+# play —— 行为耦合到了别人选的名字上（以后谁把 Inno 的 ``AppExeName`` 改一下，
+# 安装版就会莫名开始堆日志），而且用户改个文件名就能翻转行为。
+# 构建脚本注入的是一个一行的模块 ``_build_flavor.py``（见
+# ``packaging/build_in_container.sh`` 与 workflow 的 windows job）。
 LOG_DIR_ENV = "GOMOKU_AI_LOGDIR"
+
+try:
+    from _build_flavor import FLAVOR
+except ImportError:       # 源码运行，或打包时漏了注入
+    # **默认 play 而不是 debug**：漏注入时若默认 debug，后果是静默往用户硬盘上
+    # 堆日志；默认 play 最多是"debug 版没写出日志"，而那条另有构建期断言兜住。
+    # 这个值只在下面 frozen 分支里被读，源码运行的路径不经过它。
+    FLAVOR = "play"
 
 
 def _writable_dir(path: str) -> bool:
@@ -66,12 +83,13 @@ def _resolve_log_dir() -> str | None:
     if override:
         return override
     if getattr(sys, "frozen", False):
-        # 只有 Windows 的打包版写盘（理由见上面那段）：Linux 的发行产物维持
-        # "不留文件"的既有策略，那是一条产品决定，不是"写不了"。
-        # 即便是 Windows，也要先探一下那个目录确实可写 —— 便携版可能被拖进
-        # ``C:\Program Files`` 之类的地方，探不过就仍退化成不写。
-        if sys.platform != "win32":
+        # 只有 debug 变体写盘（理由见上面那段）。play 与安装包装出来的那份
+        # 都走这条 `return None`，与 Linux 冻结运行时历来的行为一致。
+        if FLAVOR != "debug":
             return None
+        # 即便 debug，也要先探一下那个目录确实可写 —— 便携版可能被拖进
+        # ``C:\Program Files`` 或 ``/opt`` 之类的地方，探不过就仍退化成不写，
+        # 而不是在用户开第一局的时候甩一个 PermissionError。
         exe_dir = os.path.dirname(os.path.abspath(sys.executable))
         return exe_dir if _writable_dir(exe_dir) else None
     # 源码运行（开发）：写到自己所在目录 —— 与历史行为逐字一致。

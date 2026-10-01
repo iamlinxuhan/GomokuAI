@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 在**目标架构**的 Debian bookworm 容器里完成一次完整打包。
 #
-#     FAMILY=AMD BITS=x86_64 EXT=deb DEB_ARCH=amd64 APP_VERSION=3.0.5 \
+#     STEM=amd_x86_64 EXT=deb DEB_ARCH=amd64 APP_VERSION=3.0.5 \
 #       bash packaging/build_in_container.sh
 #
 # 为什么四个架构全都走容器：**PyInstaller 不能交叉编译**。64 位 runner 上
@@ -9,29 +9,33 @@
 # QEMU）。四个架构共用这一份脚本，架构之间的差异就只剩下面几个环境变量 ——
 # 上一版把 .deb 与 tar.gz 的配方各抄在 workflow 里，加一个架构要改三处。
 #
-# 环境变量（前两个就是产物名里的那两格，见下）：
-#   FAMILY       架构家族：AMD | ARM。**这一格是族名，不是型号** —— AMD 那两格
-#                卖的是 x86 家族，Intel 机器下的是同一份。
-#   BITS         位数，两族各用本名：x86_64 | x86_32 | arm64 | arm32
+# 环境变量：
+#   STEM         产物名里那一格，同时也是"给谁下"的唯一线索：
+#                  amd_x86_64 | amd_x32 | aarch64 | armv7
+#                **AMD 那一格是族名不是型号** —— Intel 机器下的也是同一份。
+#                ARM 两边**合并成一个 token**：`arm_x86_64` / `arm_x32` 这种
+#                组合自相矛盾（ARM 怎么会有 x86 的位数），所以直接叫 aarch64
+#                与 armv7（后者是 32 位 ARM 的实际架构名，与 `uname -m` 一致）。
 #   EXT          安装包容器格式，也是它的后缀：deb | tar.gz
-#   DEB_ARCH     EXT=deb 时的 Architecture 字段：amd64 / i386
+#   DEB_ARCH     EXT=deb 时的 Architecture 字段：amd64 / i386 / arm64 / armhf
+#                **与 STEM 是两回事**：文件名那格给人看（`amd_x32`），这一格
+#                给 dpkg 看（`i386`），两者的词表不是一套。
 #   APP_VERSION  版本号（CI 从 tag 传入；手动跑给个 0.0.0）
 #
 # 产物名（写在 /src 下）：
 #
-#   GomokuAI_Linux_<FAMILY>_<BITS>_run           裸可执行文件（onefile，无后缀）
-#   GomokuAI_Linux_<FAMILY>_<BITS>_setup.<EXT>   安装包（由 dist/gomoku-ai 的 onedir 收成）
+#   GomokuAI_Linux_<STEM>_run_debug   裸可执行文件，开发版：写到 exe 同目录
+#   GomokuAI_Linux_<STEM>_run_play    裸可执行文件，使用版：不留任何文件
+#   GomokuAI_Linux_<STEM>_setup.<EXT> 安装包（由 dist/gomoku-ai 的 onedir 收成）
 #
 # 早先这套名字是 `GomokuAI_For_Linux_<SUFFIX>`，SUFFIX ∈ AMD / X86 / ARM / ARM32
 # —— **一格既当族名又当位数，而位数恰恰是最容易装错的那个信息**：`_AMD` 与
 # `_X86` 其实都是 x86 家族（一个 64 位一个 32 位），`_ARM` 与 `_ARM32` 同理，
 # 光看名字分不出谁是谁，下错就是一句 `Exec format error`。而且 `_X86` 撞上
-# 业界"x86 默认指 32 位"的惯例，`_AMD` 又让 Intel 用户以为与自己无关。现在
-# 族名与位数拆成两格，64 位/32 位一眼可见。
+# 业界"x86 默认指 32 位"的惯例，`_AMD` 又让 Intel 用户以为与自己无关。
 set -euo pipefail
 
-: "${FAMILY:?需要一个架构家族名，如 AMD}"
-: "${BITS:?需要一个位数列，如 x86_64 / x86_32 / arm64 / arm32}"
+: "${STEM:?需要一个架构格，如 amd_x86_64 / amd_x32 / aarch64 / armv7}"
 : "${EXT:?需要 EXT=deb 或 EXT=tar.gz}"
 : "${APP_VERSION:=0.0.0}"
 DEB_ARCH="${DEB_ARCH:-amd64}"
@@ -45,13 +49,14 @@ if [ "$EXT" = "deb" ] && [ -z "${DEB_ARCH:-}" ]; then
     exit 2
 fi
 
-BASE="GomokuAI_Linux_${FAMILY}_${BITS}"     # 名字的前两格，两份产物共用
-RUN_NAME="${BASE}_run"                      # 免安装裸文件（无后缀）
+BASE="GomokuAI_Linux_${STEM}"               # 产物名的公共前缀
+RUN_DEBUG="${BASE}_run_debug"               # 开发版裸文件：写到 exe 同目录
+RUN_PLAY="${BASE}_run_play"                 # 使用版裸文件：不留任何文件
 PKG_NAME="${BASE}_setup"                    # 安装包基名，实际文件还要接 ".${EXT}"
 cd /src
 
 echo "=============================================================="
-echo " 架构容器内打包：FAMILY=$FAMILY BITS=$BITS EXT=$EXT DEB_ARCH=$DEB_ARCH"
+echo " 架构容器内打包：STEM=$STEM EXT=$EXT DEB_ARCH=$DEB_ARCH"
 echo " 目标架构：$(dpkg --print-architecture)   Python：$(python3 -V)"
 echo "=============================================================="
 
@@ -103,25 +108,70 @@ python3 -m venv --system-site-packages .venv-build
 .venv-build/bin/python -c "from PyQt5.QtWidgets import QApplication; import numpy; print('PyQt5 + numpy OK')"
 
 # ---------------------------------------------------------------------------
-# ④ 两份产物
+# ④ 三份产物
 #
 # `--add-binary "cpp/build/gomoku_engine:."` 把引擎放到包的根（_MEIPASS 下），
-# 正是 _candidates() 第一个去找的位置。两份都要带：onedir 是安装包的原料，
-# onefile 是免安装裸文件，少了引擎那一份就是"AI 明显变弱"而没有别的症状。
+# 正是 _candidates() 第一个去找的位置。三份都要带：onedir 是安装包的原料，
+# 两个 onefile 是免安装裸文件，少了引擎那一份就是"AI 明显变弱"而没有别的症状。
 #
-# 两份用不同的 --name，否则共用 build/ 与 dist/ 下的同名中间目录，第二次
-# 构建会捡第一次的缓存而漏东西。
+# 三份用不同的 --name，否则共用 build/ 与 dist/ 下的同名中间目录，后一次
+# 构建会捡前一次的缓存而漏东西。
+#
+# **debug / play 的差别在构建期烘焙**，不由文件名倒推（理由见 gamelog.py 顶部
+# 那段）：往临时目录写一个一行的 `_build_flavor.py`，再用 `--paths` 让
+# PyInstaller 把那个目录加进分析期的模块搜索路径。写临时目录是为了不在仓库
+# 工作区留下生成物 —— 这份脚本在 CI 里跑检出版、在本地跑真工作树，两边都不该
+# 多出一个需要 gitignore 的文件。
+#
+# 安装包装的是 **play**：普通用户那边不该堆 game_log。
 # ---------------------------------------------------------------------------
-echo "---- PyInstaller: onedir（安装包原料）----"
+FLAVOR_DIR="$(mktemp -d)"
+
+#: 写进 FLAVOR_DIR 再跑一次 PyInstaller。`$1` = 变体，`$2` = 产物名。
+pyi_onefile() {
+    printf 'FLAVOR = "%s"\n' "$1" > "${FLAVOR_DIR}/_build_flavor.py"
+    .venv-build/bin/pyinstaller --onefile --windowed --name "$2" \
+        --paths "${FLAVOR_DIR}" \
+        --add-binary "cpp/build/gomoku_engine:." main.py
+}
+
+echo "---- PyInstaller: onedir（安装包原料，play）----"
+printf 'FLAVOR = "play"\n' > "${FLAVOR_DIR}/_build_flavor.py"
 .venv-build/bin/pyinstaller --onedir --windowed --name "gomoku-ai" \
+    --paths "${FLAVOR_DIR}" \
     --add-binary "cpp/build/gomoku_engine:." main.py
 
-echo "---- PyInstaller: onefile（裸可执行文件）----"
-.venv-build/bin/pyinstaller --onefile --windowed --name "${RUN_NAME}" \
-    --add-binary "cpp/build/gomoku_engine:." main.py
+echo "---- PyInstaller: onefile debug（裸文件，写日志）----"
+pyi_onefile debug "${RUN_DEBUG}"
 
-ls -lh "dist/${RUN_NAME}"
-file "dist/${RUN_NAME}"
+echo "---- PyInstaller: onefile play（裸文件，不写日志）----"
+pyi_onefile play "${RUN_PLAY}"
+
+rm -rf "${FLAVOR_DIR}"
+
+ls -lh "dist/${RUN_DEBUG}" "dist/${RUN_PLAY}"
+file "dist/${RUN_DEBUG}" "dist/${RUN_PLAY}"
+
+# 断言 `_build_flavor` 真的被收进了包。
+#
+# **这是这套变体机制唯一会静默失败的地方**：`--paths` 若没生效，`gamelog.py`
+# 里那个 `try: from _build_flavor import FLAVOR` 会把它当 ImportError 吞掉，
+# 于是 debug 版退化成 play —— 不报错、不崩，只是**用户开一局之后才发现日志
+# 没出来**。
+#
+# 查的是 PyInstaller 自己写下的分析产物（`build/<name>/*.toc` 里列着收进去的
+# 模块名），而不是最终二进制：onefile 的 PYZ 是 zlib 压缩过的，直接对二进制
+# `grep` 一个字符串既可能假阴也可能假阳。**它证明的是"PyInstaller 把注入的
+# 模块收进来了"**，不证明最终产物里的取值 —— 取值由上面那两行 `printf` 直接
+# 写定，紧挨着构建，没有中间环节。
+for _name in "${RUN_DEBUG}" "${RUN_PLAY}"; do
+    if ! grep -rqs --include='*.toc' '_build_flavor' "build/${_name}"; then
+        echo "!! ${_name} 的分析产物里没有 _build_flavor —— --paths 没生效" >&2
+        echo "   照这样发出去，debug 版会静默退化成 play（不写日志、不报错）" >&2
+        exit 1
+    fi
+done
+echo "两个变体都带上了 _build_flavor"
 
 # 断言引擎确实进包了。**这是最容易静默漏掉的一环**：漏了不会报错，只会让
 # 所有档位的 AI 都退回 Python 参考实现。onedir 与 onefile 用的是同一个
@@ -210,13 +260,13 @@ else
 
     cat > "${BASE}/install.sh" <<EOF
 #!/bin/bash
-# 五子棋AI ${FAMILY} ${BITS} 版安装脚本。不需要联网，不需要编译。
+# 五子棋AI ${STEM} 版安装脚本。不需要联网，不需要编译。
 set -e
 
 APP_DIR="${OPT_DIR}"
 SRC_DIR="\$(cd "\$(dirname "\$0")" && pwd)"
 
-echo "Installing GomokuAI (${FAMILY} ${BITS}) to \${APP_DIR} ..."
+echo "Installing GomokuAI (${STEM}) to \${APP_DIR} ..."
 sudo mkdir -p "\${APP_DIR}"
 sudo cp -r "\${SRC_DIR}/${APP_DIR_NAME}/." "\${APP_DIR}/"
 sudo chmod -R 755 "\${APP_DIR}"
@@ -253,5 +303,5 @@ fi
 
 echo "=============================================================="
 echo " 完成："
-ls -lh "dist/${RUN_NAME}" "${PKG_NAME}".* 2>/dev/null || true
+ls -lh "dist/${RUN_DEBUG}" "dist/${RUN_PLAY}" "${PKG_NAME}".* 2>/dev/null || true
 echo "=============================================================="

@@ -48,48 +48,53 @@
 
 ### 运行方式一：直接下载 Release
 
-从 [Releases](https://github.com/iamlinxuhan/GomokuAI/releases) 下载对应平台的包（无需安装 Python）。Release 上只有 Linux，四个架构各一对。
+从 [Releases](https://github.com/iamlinxuhan/GomokuAI/releases) 下载对应平台的包（无需安装 Python）。
+Windows 与 Linux 各有稳定版；**没有 macOS 版**（这个项目从未在 macOS 上开发或验证过）。
 
-文件名是四格：`GomokuAI_Linux_<家族>_<位数>_<run|setup>.<后缀>`。
-`run` 是免安装的裸可执行文件（**没有后缀**），`setup` 是安装包。
+文件名是：`GomokuAI_<平台>_<架构>_<setup|run>[_debug|_play].<后缀>`。
 
-| 架构 | 安装包（推荐） | 免安装裸文件 | 装法 |
+**每个平台三份**，区别只在"要不要日志"：
+
+| 中间那一段 | 是什么 | 写日志吗 |
+|---|---|---|
+| `..._setup.*` | 安装包，推荐普通用户用 | 不写 |
+| `..._run_play.*` | 免安装单文件 | 不写 |
+| `..._run_debug.*` | 免安装单文件，给人看现场 | **写**，落在 exe 同目录的 `game_log_*.txt` |
+
+出问题时下 `debug` 那一份，日志就在 exe 旁边 —— 不用配环境变量，也不用知道
+自己装在哪。日志是给开发者诊断 AI 决策用的（`tools/positions.py` 的题库来源），
+普通使用不需要，所以安装包装的是 `play`。
+
+**架构那一格用 `uname -m` 对照**：`x86_64` → `amd_x86_64`，`i686` → `amd_x32`，
+`aarch64` → `aarch64`，`armv7l` / `armv6l` → `armv7`。`amd` 覆盖整个 x86
+家族（Intel、AMD、虚拟机都下这一份）。**ARM 两格合并成一个名字**，不写成
+`arm_x86_64` 那种自相矛盾的组合。
+
+| 平台 | 架构 | 安装包 | 装法 |
 |---|---|---|---|
-| x86_64 | `GomokuAI_Linux_AMD_x86_64_setup.deb` | `GomokuAI_Linux_AMD_x86_64_run` | `sudo dpkg -i` → 菜单里的「五子棋AI」 |
-| x86 32 位 | `GomokuAI_Linux_AMD_x86_32_setup.deb` | `GomokuAI_Linux_AMD_x86_32_run` | 同上 |
-| arm64 | `GomokuAI_Linux_ARM_arm64_setup.tar.gz` | `GomokuAI_Linux_ARM_arm64_run` | 解包后 `sudo ./install.sh` |
-| arm 32 位 | `GomokuAI_Linux_ARM_arm32_setup.tar.gz` | `GomokuAI_Linux_ARM_arm32_run` | 同上 |
-
-**家族名 `AMD` 覆盖整个 x86 家族**（Intel、AMD、虚拟机都下这一份），`ARM`
-覆盖整个 ARM 家族；**位数那两格才是关键** —— `AMD_x86_64` 与 `AMD_x86_32`
-差一位，下错就是一句 `Exec format error`。用 `uname -m` 对照：
-`x86_64` → `AMD_x86_64`，`i686` → `AMD_x86_32`，`aarch64` → `ARM_arm64`，
-`armv7l` / `armv6l` → `ARM_arm32`。
+| Linux | `amd_x86_64` | `GomokuAI_Linux_amd_x86_64_setup.deb` | `sudo dpkg -i` → 菜单里的「五子棋AI」 |
+| Linux | `amd_x32` | `GomokuAI_Linux_amd_x32_setup.deb` | 同上 |
+| Linux | `aarch64` | `GomokuAI_Linux_aarch64_setup.tar.gz` | 解包后 `sudo ./install.sh` |
+| Linux | `armv7` | `GomokuAI_Linux_armv7_setup.tar.gz` | 同上 |
+| Windows | `amd_x86_64` | `GomokuAI_Windows_amd_x86_64_setup.exe` | 双击；装到 `%LOCALAPPDATA%\GomokuAI`，不需要管理员权限 |
 
 不确定装哪个就用安装包：它会在 `Depends:` 里声明图形库与 CJK 字体候选链，
 装完菜单里就有入口。裸文件声明不了依赖 —— 缺什么就报什么。裸文件下载后要
 自己给可执行位（Release 资产不携带文件权限）：
 
 ```bash
-chmod +x GomokuAI_Linux_AMD_x86_64_run
-./GomokuAI_Linux_AMD_x86_64_run
+chmod +x GomokuAI_Linux_amd_x86_64_run_play
+./GomokuAI_Linux_amd_x86_64_run_play
 ```
 
-**都是纯 CPU 运行，不需要显卡驱动，也不需要安装 PyTorch/CUDA。** 打包版不在
-硬盘上留任何文件（不写日志、不写配置、不建缓存目录）；需要日志时用环境变量
-指个目录：`GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_AMD_x86_64_run`。
+**都是纯 CPU 运行，不需要显卡驱动，也不需要安装 PyTorch/CUDA。** `play` 与
+安装版不在硬盘上留任何文件（不写日志、不写配置、不建缓存目录）；`debug` 只写
+`game_log_*.txt`。想给任意一份指个日志目录（比如 `play` 版临时要日志），用
+环境变量：`GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_amd_x86_64_run_play`。
 
-**Windows 版是测试版。** 项目只在 Linux 上开发与验证过，Windows 侧**没有做过
-实机验证**，所以随 Release 发出的那两份，文件名里都带 `_testing` 作后缀：
-
-| 文件 | 说明 |
-|---|---|
-| `GomokuAI_Windows_AMD_x86_64_setup_testing.exe` | 安装包，装到 `%LOCALAPPDATA%\GomokuAI`，不需要管理员权限 |
-| `GomokuAI_Windows_AMD_x86_64_run_testing.exe` | 免安装单文件，双击即用（首启动会解包，比安装版慢） |
-
-只出了 AMD x86_64 一份。与 Linux 侧不同，**Windows 打包版会写日志**：写在
-exe 同目录（即安装目录），文件是 `game_log_*.txt` —— 那边目录可写，而没有
-日志就无从诊断。遇到问题请连同日志一起反馈。
+**Windows on ARM 请下 x64 版。** 系统自带 x64 模拟，能正常跑；**没有原生的
+Windows ARM 包** —— 界面用的 PyQt5 全系没有 `win_arm64` 轮子（PyPI 上 Windows
+侧只发到 `win_amd64` 与 `win32`），做不出来。
 
 ### 运行方式二：从源码运行
 
@@ -501,7 +506,7 @@ python -m pytest -q -m "not perf"       # 跳过机器速度相关的门槛（CI
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
-| **v3.0.5** | 2026-10-02 | 首次产出 Windows 包（测试版，只出 AMD x86_64）：`cpp/src/bitops.h` 把那几个 `__builtin_*` 收敛成跨编译器封装，MSVC 上没有的走 `<intrin.h>` —— 此前 C++ 引擎在 MSVC 上根本编译不过；Windows 打包版改为写日志（写在 exe 同目录，Linux 侧"不留文件"的策略不变）；workflow 的手动 dispatch 新增 `linux` 输入，可以只跑 amd64 或干脆不跑。**本版的 Windows 产物未做实机验证**，文件名带 `_testing` |
+| **v3.0.5** | 2026-10-02 | **Windows 转正**（实机跑通，去掉 `_testing`），并把"留不留日志"从平台暗定改成文件名显式声明：每个平台多出 `run_debug`（写日志到 exe 同目录）与 `run_play`（不写），安装包装 play。命名整版换过 —— `AMD` → `amd`、`x86_32` → `x32`，ARM 的家族与位数合并成 `aarch64` / `armv7`。变体在**构建期**烘焙（注入一行 `_build_flavor.py`），不按文件名倒推。修掉从 GUI 进程拉起引擎时弹出的黑色控制台窗口（`CREATE_NO_WINDOW`）。此前几版的内容：`cpp/src/bitops.h` 把 `__builtin_*` 收敛成跨编译器封装，MSVC 上没有的走 `<intrin.h>` —— 此前 C++ 引擎在 MSVC 上根本编译不过；workflow 的手动 dispatch 新增 `linux` 输入，可以只跑 amd64 或干脆不跑 |
 | **v3.0.4** | 2026-10-01 | 终局先亮连五、再结算：一条红线划过五连（两端按方向探出半格，斜线按 √2/2 折算），延迟 1 秒才弹遮罩，「用时」在落子那一刻当场停表 —— 此前遮罩整屏盖下来，玩家根本看不见自己输在哪。同时删掉终局那颗"最后一手"的环（它正压在线的端点上，把线切断了一截）。面板的主题切换独立成一行：文案 12px → 14px 并居中，太阳 / 月亮改为自绘（emoji 在多数机器上排不到彩色字体，只能出黑白字形，且随机器变样） |
 | **v3.0.3** | 2026-09-26 | 难度选择页两处修正：暗色主题下强度条按主题取子色（黑子对暗色卡面只有 1.11:1）；宗师那张的强度条改为压缩盒间距而不是缩小棋子（原 191px 塞不进 136px 的卡片内区）。v3.0.2 那个 tag 没过 `test`、没有产出 Release，其内容并入本版 |
 | v3.0.1 | 2026-09-25 | 端口池（固定 8888 → 15 格，每格都过 `hello` 校验）；面板新增「当前 TCP 端口」与「开局库」两个诊断取值；产物名拆成家族/位数/用途三格，`.pkg` → `.tar.gz`；发版闸门重写（原版在空目录里展开通配符，8 个资产全在却报"缺少产物"） |

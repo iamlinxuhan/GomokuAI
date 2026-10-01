@@ -1,7 +1,7 @@
 ﻿; 五子棋AI —— Windows 安装包（Inno Setup 6）
 ;
-; 由 .github/workflows/build.yml 的 windows job 调用（手动 dispatch 勾选
-; `build_windows`，或**任意 tag 推送**），形如：
+; 由 .github/workflows/build.yml 的 windows job 调用（任意 **tag 推送**，或
+; 手动 dispatch 时勾选 `build_windows`），形如：
 ;     ISCC.exe /DAppVersion=3.0.5 /DHasChinese=1 installer\GomokuAI.iss
 ;
 ; **为什么用 Inno 而不是继续发 7z。** 旧的 7z 包里是一个 install.bat，靠
@@ -41,17 +41,18 @@ DisableProgramGroupPage=yes
 ; 且与旧的 install.bat 行为一致 —— 那里写的也是 %LOCALAPPDATA%\GomokuAI。
 PrivilegesRequired=lowest
 OutputDir=..\dist-installer
-; 产物名与 Linux 那套逐字同构：GomokuAI_<平台>_<家族>_<位数>_<setup|run>。
-; Linux 是 GomokuAI_Linux_AMD_x86_64_setup.deb，这里是它的 .exe 版本。
+; 产物名与 Linux 那套逐字同构：GomokuAI_<平台>_<stem>_<setup|run>[_debug|_play]。
+; Linux 是 GomokuAI_Linux_amd_x86_64_setup.deb，这里是它的 .exe 版本。
 ;
-; **末尾的 `_testing` 不是临时的**：Windows 侧从来没有实机验证过，这份包只发给
-; 帮忙测试的人，不承诺可用。名字里带着，就不会有人把它当成正式发行版下载。
+; **`setup` 不带 debug/play 后缀**，因为它装出来的那个就是 play（不写日志）：
+; 打包用的是 `dist\GomokuAI\`，那里的 `_build_flavor.py` 写的是 `"play"`，
+; 见 workflow 的 windows job。想要日志的用户下 `..._run_debug.exe`。
 ;
 ; **版本号刻意不进名字**：Linux 的 setup.deb 也没有（`APP_VERSION` 只在
 ; tag 推送时才是真号码，手动 dispatch 拿到的 ref 是 main，会退化成 0.0.0，
 ; 写进文件名只会变成一个像是 bug 的 `v0.0.0`）。版本仍在安装程序的
 ; AppVersion 里，卸载项与"添加或删除程序"都看得到。
-OutputBaseFilename=GomokuAI_Windows_AMD_x86_64_setup_testing
+OutputBaseFilename=GomokuAI_Windows_amd_x86_64_setup
 SetupIconFile=..\五子棋.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2/max
