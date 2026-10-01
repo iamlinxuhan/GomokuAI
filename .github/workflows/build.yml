@@ -450,7 +450,7 @@ jobs:
             | Linux | AMD x86_64 / AMD x86_32 / ARM arm64 / ARM arm32 | **稳定版**，四个架构各一份安装包与一份裸可执行文件 |
             | Windows | AMD x86_64 | **测试版**（文件名带 `_testing`），安装包与免安装单文件各一份，未做过实机验证 |
 
-            Windows 那份是发出来给人试的，装到 `%LOCALAPPDATA%\\GomokuAI`，
+            Windows 那份是发出来给人试的，装到 `%LOCALAPPDATA%\GomokuAI`，
             日志写在 exe 同目录；遇到问题请连同 `game_log` 一起反馈。
           files: release/*
           generate_release_notes: true
