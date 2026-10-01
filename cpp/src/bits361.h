@@ -19,6 +19,7 @@
 
 #include <cstdint>
 
+#include "bitops.h"
 #include "constants.h"
 
 namespace gomoku {
@@ -56,7 +57,7 @@ struct Bits361 {
 
     int count() const {
         int n = 0;
-        for (int i = 0; i < WORDS; ++i) n += __builtin_popcountll(w[i]);
+        for (int i = 0; i < WORDS; ++i) n += popcount64(w[i]);
         return n;
     }
 
@@ -65,14 +66,14 @@ struct Bits361 {
     //: 最低位置 1 的位号；全零返回 -1。对应 Python 的 `m & -m` + `bit_length`。
     int lowestIndex() const {
         for (int i = 0; i < WORDS; ++i) {
-            if (w[i]) return (i << 6) + __builtin_ctzll(w[i]);
+            if (w[i]) return (i << 6) + ctz64(w[i]);
         }
         return -1;
     }
     //: 最高位置 1 的位号；全零返回 -1。
     int highestIndex() const {
         for (int i = WORDS - 1; i >= 0; --i) {
-            if (w[i]) return (i << 6) + 63 - __builtin_clzll(w[i]);
+            if (w[i]) return (i << 6) + 63 - clz64(w[i]);
         }
         return -1;
     }
@@ -157,7 +158,7 @@ inline void forEachBitAscending(const Bits361& b, F&& f) {
     for (int wi = 0; wi < Bits361::WORDS; ++wi) {
         uint64_t m = b.w[wi];
         while (m) {
-            const int bit = __builtin_ctzll(m);
+            const int bit = ctz64(m);
             m &= m - 1;                 // 清掉最低位
             f((wi << 6) + bit);
         }

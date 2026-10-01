@@ -6,8 +6,6 @@
 namespace gomoku {
 namespace {
 
-inline int popcount32(uint32_t x) { return __builtin_popcount(x); }
-
 //: `m & -m` 的 uint32 版本（Python 的 `_mask_cells` 用的就是它）。
 inline uint32_t lowestBit(uint32_t m) {
     return m & static_cast<uint32_t>(-static_cast<int32_t>(m));
@@ -60,7 +58,7 @@ int maxFAfter(uint32_t my, uint32_t opp, int w, uint32_t cand, int k) {
             // 可分第二子。
             const int sub = maxFAfter(
                 my2, opp, w,
-                cand & ~low & tables::touchMask[w][__builtin_ctz(low)], 1);
+                cand & ~low & tables::touchMask[w][ctz32(low)], 1);
             if (sub > best) best = sub;
             if (best >= 2) return best;
         }
@@ -102,8 +100,8 @@ inline uint64_t mix(uint64_t x) {
 
 Segment segment(uint32_t my, uint32_t opp, int length) {
     if (!my) return Segment{0, 0, 0};
-    const int lo = __builtin_ctz(my);
-    const int hi = 31 - __builtin_clz(my);
+    const int lo = ctz32(my);
+    const int hi = 31 - clz32(my);
     int a = lo - PAD;
     int b = hi + PAD;
     if (a < 0) a = 0;

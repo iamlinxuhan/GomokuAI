@@ -41,7 +41,17 @@ DisableProgramGroupPage=yes
 ; 且与旧的 install.bat 行为一致 —— 那里写的也是 %LOCALAPPDATA%\GomokuAI。
 PrivilegesRequired=lowest
 OutputDir=..\dist-installer
-OutputBaseFilename=GomokuAI_Setup_v{#AppVersion}
+; 产物名与 Linux 那套逐字同构：GomokuAI_<平台>_<家族>_<位数>_<setup|run>。
+; Linux 是 GomokuAI_Linux_AMD_x86_64_setup.deb，这里是它的 .exe 版本。
+;
+; **末尾的 `_testing` 不是临时的**：Windows 侧从来没有实机验证过，这份包只发给
+; 帮忙测试的人，不承诺可用。名字里带着，就不会有人把它当成正式发行版下载。
+;
+; **版本号刻意不进名字**：Linux 的 setup.deb 也没有（`APP_VERSION` 只在
+; tag 推送时才是真号码，手动 dispatch 拿到的 ref 是 main，会退化成 0.0.0，
+; 写进文件名只会变成一个像是 bug 的 `v0.0.0`）。版本仍在安装程序的
+; AppVersion 里，卸载项与"添加或删除程序"都看得到。
+OutputBaseFilename=GomokuAI_Windows_AMD_x86_64_setup_testing
 SetupIconFile=..\五子棋.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2/max

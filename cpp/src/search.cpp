@@ -377,7 +377,7 @@ int32_t Engine::quiesce(Board& bd, int32_t alpha, int32_t beta, int me, int ply,
     for (int wi = 0; wi < Bits361::WORDS; ++wi) {
         uint64_t m = cand.w[wi];
         while (m) {
-            const int bit = __builtin_ctzll(m);
+            const int bit = ctz64(m);
             m &= m - 1;
             const int mv = (wi << 6) + bit;
             int32_t val;
@@ -610,7 +610,7 @@ VcfResult Engine::vcfRec(Board& bd, int me, int ply, int left) {
     for (int wi = 0; wi < Bits361::WORDS; ++wi) {
         uint64_t m = cand.w[wi];
         while (m) {
-            const int bit = __builtin_ctzll(m);
+            const int bit = ctz64(m);
             m &= m - 1;
             const int mv = (wi << 6) + bit;
 
@@ -662,7 +662,7 @@ int Engine::vcfDefence(Board& bd, int me, int opp, double deadline) {
     for (int wi = 0; wi < Bits361::WORDS; ++wi) {
         uint64_t m = cand.w[wi];
         while (m) {
-            const int bit = __builtin_ctzll(m);
+            const int bit = ctz64(m);
             m &= m - 1;
             const int mv = (wi << 6) + bit;
             if (nowSec() >= deadline) return VCF_DEFENCE_UNKNOWN;

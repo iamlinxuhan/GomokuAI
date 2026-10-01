@@ -293,7 +293,11 @@ jobs:
         run: |
           cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
           cmake --build cpp/build --config Release -j
-          cpp\build\Release\gomoku_engine.exe --verify-tables --selftest
+          # **`.\` 不能省。** PowerShell 与 bash 不同：它不把当前目录放进
+          # 可执行文件的搜索路径，`cpp\build\...` 会被当成模块名去 Import，
+          # 报 "The module 'cpp' could not be loaded"（这一步曾经编译失败时
+          # 顺带暴露了它，两处都是第一次在这套流程上真跑）。
+          .\cpp\build\Release\gomoku_engine.exe --verify-tables --selftest
 
       - name: Resolve version
         shell: pwsh
@@ -335,25 +339,25 @@ jobs:
           $isccArgs += "installer\GomokuAI.iss"
 
           & $iscc @isccArgs
-          $setup = Get-ChildItem "dist-installer\GomokuAI_Setup_v*.exe"
+          $setup = Get-ChildItem "dist-installer\GomokuAI_Windows_AMD_x86_64_setup_testing.exe"
           if (-not $setup) { throw "ISCC 退出码为 0 却没有产出安装包" }
           $setup | Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,1)}}
 
       - name: Collect portable artifact
         shell: pwsh
-        run: Copy-Item "dist\GomokuAI_Portable.exe" "GomokuAI_Portable_v$env:APP_VERSION.exe"
+        run: Copy-Item "dist\GomokuAI_Portable.exe" "GomokuAI_Windows_AMD_x86_64_run_testing.exe"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: GomokuAI_For_Windows_Setup
-          path: dist-installer/GomokuAI_Setup_v*.exe
+          name: windows_AMD_x86_64_setup_testing
+          path: dist-installer/GomokuAI_Windows_AMD_x86_64_setup_testing.exe
 
       - name: Upload portable
         uses: actions/upload-artifact@v4
         with:
-          name: GomokuAI_For_Windows_Portable
-          path: GomokuAI_Portable_v*.exe
+          name: windows_AMD_x86_64_run_testing
+          path: GomokuAI_Windows_AMD_x86_64_run_testing.exe
 
 
   # ============================================================
