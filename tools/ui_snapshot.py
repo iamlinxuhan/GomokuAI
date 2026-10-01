@@ -191,8 +191,8 @@ def probe_charts_painted(win_pm, panel, origin):
     res = []
     ox, oy = origin
     for name, chart, token, least in (
-            ("AI 评分图", getattr(panel, "score_chart", None), "INFO", 30),
-            ("胜率图", getattr(panel, "win_chart", None), "ACCENT", 30)):
+            ("AI（子色）评分图", getattr(panel, "score_chart", None), "INFO", 30),
+            ("人类胜率图", getattr(panel, "win_chart", None), "ACCENT", 30)):
         if chart is None:
             res.append((f"{name}存在", False, "控件不存在"))
             continue

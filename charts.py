@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""对局面板里的两个图表：AI 评分折线 + 棋面胜率曲线。
+"""对局面板里的两个图表：AI 评分折线 + 人类胜率曲线。
 
 ## 为什么自绘，不引 matplotlib / pyqtgraph
 
@@ -218,6 +218,11 @@ class ChartCard(QFrame):
         if tooltip:
             self.setToolTip(tooltip)
 
+    def set_title(self, text: str) -> None:
+        """改标题。**只有 AI 评分卡用得上** —— 它那一格要等玩家选完执棋颜色
+        才知道该写什么（见 ``ScoreChart.set_ai_player``）。"""
+        self._title.setText(text)
+
     def set_series(self, series) -> None:
         """``series`` 是 ``(AI 视角分值, 来路)`` 的序列，两张图共用同一条。"""
         self._plot.set_points((self._to_frac(self._transform(v)), kind)
@@ -242,20 +247,39 @@ class ScoreChart(ChartCard):
 
     数量级只增不减（``set_decade`` 里取 max）—— 否则轴会随分值回落而收缩，
     同一条曲线在下一手看起来会突然"变陡"，那是轴在动而不是棋在动。
+
+    **标题里的子色是必须的，不是装饰。** 这一格原本只写"AI 评分"，而紧挨着
+    它下面的胜率图画的是**人**的胜率 —— 两条曲线都归给了"AI"，实测被读成了
+    "AI 评分 + AI 胜率"。写清 AI 执的是哪一色，两条线的归属才各自闭合。
     """
+
+    #: AI 执子 → 标题里那一格。与 ``GamePanel.update_info`` 的 `players`
+    #: 同源，只是不带那个圆点字符 —— 标题里已经够挤了。
+    _STONE = {1: "黑棋", 2: "白棋"}
 
     def __init__(self, parent=None):
         super().__init__(
             "AI 评分", transform=lambda v: v, to_frac=self._frac,
             ticks=self._ticks, color="INFO", legend="● 搜索　○ 静态",
-            readout=True,
-            tooltip="AI 视角的搜索分。实心点 = 搜索结果（有深度，可信）；"
-                    "空心点 = 静态估值（无深度、无轮次概念，只作参考）。"
-                    "纵轴为对数刻度。",
-            parent=parent)
+            readout=True, tooltip=self._tooltip(2), parent=parent)
         # 必须在 super().__init__ 之后赋值：PyQt 的 sip 对象在基类初始化完成前
         # 不接受属性写入。`_frac` / `_ticks` 是**取用时**才读它，所以来得及。
         self._decade = 2
+
+    @classmethod
+    def _tooltip(cls, player: int) -> str:
+        return (f"AI（{cls._STONE[player]}）视角的搜索分。实心点 = 搜索结果"
+                "（有深度，可信）；空心点 = 静态估值（无深度、无轮次概念，"
+                "只作参考）。纵轴为对数刻度。")
+
+    def set_ai_player(self, player: int) -> None:
+        """把 AI 执的子写进标题：``AI（白棋）评分``。
+
+        **不能在构造函数里做** —— 面板是在 `_build_game_ui` 里建的，那时玩家
+        还没选执棋颜色；颜色是在 `_on_color_selected` 才定下来的。
+        """
+        self.set_title(f"AI（{self._STONE[player]}）评分")
+        self.setToolTip(self._tooltip(player))
 
     def set_decade(self, decade: int) -> None:
         if decade > self._decade:
@@ -275,7 +299,7 @@ class ScoreChart(ChartCard):
 
 
 class WinRateChart(ChartCard):
-    """棋面胜率曲线（估计值）。
+    """人类胜率曲线（估计值）。
 
     **纵轴钉死 0–100%，不许自适应。** 曲线活在中间三分之一（活三→冲四只映射到
     65%→76%），自适应会把它拉成一条剧烈起伏的曲线，看起来比实际惊险得多 ——
@@ -283,15 +307,19 @@ class WinRateChart(ChartCard):
 
     标题写"（估计）"不是客套：见 ``analysis`` 模块 docstring，这是引擎分值的
     一次单调变换，不是统计标定的概率。
+
+    **标题写"人类"而不是"棋面"。** 数据没变（``transform`` 里那个取负一直
+    在把 AI 视角的分值翻成人这一侧），改的只是它被读成谁 —— "棋面胜率"配上
+    头顶那张"AI 评分"，两条线就都归给了 AI，而这条其实是人的。
     """
 
     def __init__(self, parent=None):
         super().__init__(
-            "棋面胜率（估计）", transform=lambda v: A.win_probability(-v),
+            "人类胜率（估计）", transform=lambda v: A.win_probability(-v),
             to_frac=lambda p: p / 100.0, ticks=self._ticks, color="ACCENT",
-            tooltip="由 AI 搜索分换算的估计胜率，不是统计标定的概率。"
-                    "50% = 引擎认为的均势；只有搜索证明的杀棋才会显示 100% / 0%。"
-                    "纵轴固定 0–100%。",
+            tooltip="由 AI 搜索分换算的估计胜率，站在人这一侧："
+                    "50% = 引擎认为的均势。**不是统计标定的概率**；"
+                    "只有搜索证明的杀棋才会显示 100% / 0%。纵轴固定 0–100%。",
             parent=parent)
 
     @staticmethod

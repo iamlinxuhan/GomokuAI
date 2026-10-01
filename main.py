@@ -577,6 +577,10 @@ class GamePanel(QFrame):
         """搜索参数读数（评分卡的第三行）。"""
         self.score_chart.set_readout(text)
 
+    def set_ai_player(self, player: int) -> None:
+        """把 AI 执的子写进评分卡标题（见 ``charts.ScoreChart.set_ai_player``）。"""
+        self.score_chart.set_ai_player(player)
+
     def _refresh_charts(self) -> None:
         self.score_chart.set_decade(self._decade)
         self.score_chart.set_series(self._series)
@@ -1005,6 +1009,9 @@ class GomokuGame(QMainWindow):
 
         # 构建游戏界面
         self._build_game_ui()
+        # 面板建好才知道有它，而 AI 执哪一色早在 `_on_color_selected` 就定了
+        # —— 评分卡的标题要把子色写进去，所以只能在这里补这一笔。
+        self.game_panel.set_ai_player(2 if self.gamemode == 0 else 1)
 
     def _build_game_ui(self):
         """构建游戏主界面。
