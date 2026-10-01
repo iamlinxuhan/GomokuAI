@@ -587,6 +587,16 @@ class _ServerClient:
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 # 独立进程组：退出时只杀我们自己拉起的这一个，不波及父进程。
                 close_fds=True,
+                # **Windows 上不能让引擎带控制台启动。** 引擎是控制台子系统程序，
+                # 而这里是 GUI 进程（PyInstaller `--windowed`）—— 控制台程序被
+                # 非控制台父进程拉起时，Windows 会**新开一个控制台窗口**给子进程，
+                # 屏幕上就多出一个全黑、标题是 exe 全路径的框，关掉它还会连带
+                # 杀掉引擎。`CREATE_NO_WINDOW` 让它不带控制台启动。
+                #
+                # 日志一条不少：stdout / stderr 本来就是管道，跟有没有控制台无关。
+                # POSIX 没有这个常量，`getattr` 兜底成 0（传 0 就是"不加任何
+                # flag"，与改动前逐字相同）。
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except OSError as exc:
             raise _RemoteError("拉起 %s 失败: %s" % (path, exc))
