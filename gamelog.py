@@ -19,7 +19,7 @@ import time
 
 BOARD_SIZE = 19
 
-# --------------------------------------------------------------- 打包版不写日志
+# --------------------------------------------------------------- 打包版的日志策略
 #
 # PyInstaller 冻结之后 ``__file__`` 指向包内目录（onedir 是
 # ``<安装目录>/_internal``）。`.deb` 装到 ``/opt`` 后那个目录是 root 所有、
@@ -29,9 +29,35 @@ BOARD_SIZE = 19
 # 给开发者诊断 AI 决策用的（`tools/positions.py` 的题库来源），发行版的用户
 # 既看不懂也用不上，需要的人自己会 clone 代码。
 #
-# 所以：**冻结运行时默认不写任何文件**，日志调用全部退化成空操作。
-# 需要远程排查某个用户的现场时，用 ``GOMOKU_AI_LOGDIR=<目录>`` 指回来。
+# 所以 **Linux 侧维持原策略：冻结运行时默认不写任何文件**，日志调用全部退化成
+# 空操作。需要远程排查某个用户的现场时，用 ``GOMOKU_AI_LOGDIR=<目录>`` 指回来。
+#
+# **Windows 侧是另一回事（2026-10-01 起）。** 安装包装在
+# ``{localappdata}\GomokuAI``（``PrivilegesRequired=lowest``），天然可写，
+# 上面那条 PermissionError 的理由在它身上根本不成立；而它眼下唯一的存在理由是
+# 给人做实机测试 —— 没有日志就无从诊断，这份包也就没有意义。所以冻结运行时
+# **写到可执行文件同目录**：位置好解释（"把 exe 旁边那些 txt 发我"），
+# 同学不必知道有个环境变量。
 LOG_DIR_ENV = "GOMOKU_AI_LOGDIR"
+
+
+def _writable_dir(path: str) -> bool:
+    """``path`` 这个目录能不能真的建出文件。
+
+    **真去写一个探针文件，不用 ``os.access(..., os.W_OK)``**：后者在 Windows
+    上只看只读属性、不看 ACL，``C:\\Program Files`` 那类目录会被判成可写，
+    然后 ``open(..., 'w')`` 抛 ``PermissionError`` —— 正是这条策略当初要躲开的
+    那类崩。探针写完即删，不留痕迹。
+    """
+    probe = os.path.join(path, ".gomoku_write_probe")
+    try:
+        os.makedirs(path, exist_ok=True)
+        with open(probe, "w", encoding="utf-8"):
+            pass
+        os.remove(probe)
+    except OSError:
+        return False
+    return True
 
 
 def _resolve_log_dir() -> str | None:
@@ -40,7 +66,14 @@ def _resolve_log_dir() -> str | None:
     if override:
         return override
     if getattr(sys, "frozen", False):
-        return None
+        # 只有 Windows 的打包版写盘（理由见上面那段）：Linux 的发行产物维持
+        # "不留文件"的既有策略，那是一条产品决定，不是"写不了"。
+        # 即便是 Windows，也要先探一下那个目录确实可写 —— 便携版可能被拖进
+        # ``C:\Program Files`` 之类的地方，探不过就仍退化成不写。
+        if sys.platform != "win32":
+            return None
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        return exe_dir if _writable_dir(exe_dir) else None
     # 源码运行（开发）：写到自己所在目录 —— 与历史行为逐字一致。
     return os.path.dirname(os.path.abspath(__file__))
 
@@ -102,9 +135,10 @@ class GameLogger:
       - AI搜索参数(target_depth, 实际搜到层数, best_val)
       - 最终胜负结果
 
-    **冻结运行（PyInstaller 打包版）默认不写盘**，全部方法退化成空操作，
-    ``filepath`` 为 ``None`` —— 理由见本模块顶部那段。想要日志就用环境变量
-    ``GOMOKU_AI_LOGDIR=<目录>`` 指回来，或显式传 ``log_dir``。
+    **冻结运行的默认行为分平台**（理由见本模块顶部那段）：Linux 的发行产物
+    一律不写盘，全部方法退化成空操作、``filepath`` 为 ``None``；Windows 的打包版
+    写到可执行文件同目录。两种情况都能用环境变量 ``GOMOKU_AI_LOGDIR=<目录>``
+    改回来，也可以显式传 ``log_dir``。
 
     用法：
       logger = GameLogger()           # 创建（自动生成带时间戳的文件名）

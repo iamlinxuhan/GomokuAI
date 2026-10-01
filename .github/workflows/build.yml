@@ -22,6 +22,18 @@ on:
         description: '同时构建 Windows 产物（未经验证，不进 Release）'
         type: boolean
         default: false
+      # 手动 dispatch 时常常只想要一份给自己机器用的产物，四个架构全跑是纯
+      # 浪费（armv7 那条还要走 QEMU）。**tag 推送不受这个输入影响** —— 发版
+      # 必须四个架构齐全，这个开关只服务于手动跑。矩阵怎么被它裁掉见
+      # `plan-linux` 那段注释。
+      linux:
+        description: 'Linux 矩阵跑几格（tag 推送永远跑全四格）'
+        type: choice
+        default: all
+        options:
+          - all
+          - amd64
+          - none
 
 permissions:
   contents: write
@@ -117,6 +129,60 @@ jobs:
 
 
   # ============================================================
+  #  Linux 矩阵的定义
+  #
+  #  **为什么单起一个 job 产出矩阵**，而不是让下面 `build-linux` 自己写
+  #  `matrix.include`：手动 dispatch 时常常只想要一格给自己用（见
+  #  `inputs.linux`），而"只跑其中几格"在这套 YAML 里没有干净的写法 ——
+  #
+  #    * job 级 `if` **读不到 `matrix`**（可用的上下文只有 github / needs /
+  #      vars / inputs），所以没法在 job 上判"这一格要不要跑"；
+  #    * `exclude` 对 include-only 的矩阵**无效**：GitHub 明确规定 `include`
+  #      在 `exclude` **之后**处理（正是这条让 `include` 能把排除掉的格子
+  #      加回来），于是刚被踢掉的格子会被 `include` 原样重建；
+  #    * step 级 `if` 读得到 `matrix`，但四格仍会各起一个 runner —— 三个
+  #      空转的 job、三条绿色的勾，比不裁还难看。
+  #
+  #  剩下唯一能在矩阵展开**之前**动手的位置，就是这个 JSON 串本身。
+  #  **tag 推送永远给全四格**（发版必须齐全），这个开关只服务于手动跑；
+  #  `inputs.linux == 'none'` 时本 job 跳过，`build-linux` 随之跳过。
+  # ============================================================
+  plan-linux:
+    # 与下面 `build-linux` 的守卫**逐字对齐**：本 job 被跳过时那边也会被跳过
+    # （`needs` 指向一个跳过的 job），两边条件一旦错开，就会出现"plan 跑了、
+    # build 没跑"或者反过来的半截状态。PR 上两条都不跑。
+    if: >-
+      startsWith(github.ref, 'refs/tags/')
+      || (github.event_name == 'workflow_dispatch' && inputs.linux != 'none')
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.m.outputs.include }}
+    steps:
+      - id: m
+        run: |
+          # 每格一行 JSON。各键的含义：family / bits 就是产物名前两格（见
+          # 文件头的产物清单），ext / deb_arch 决定第 ⑤ 段走哪条配方。
+          #
+          # `qemu` 必须是**布尔**而不是字符串 —— 字符串 "false" 在 step 的
+          # `if: matrix.qemu` 里是真值，QEMU 注册那一步就会在四条架构上全跑。
+          #
+          # arm64：原生 arm64 runner，比在 x86 上跑 QEMU 快一个数量级。
+          # i386： 不需要 QEMU，x86 主机内核自带 32 位 ELF 支持，宿主 CPU
+          #        直接执行，只是换了一套 32 位 userland。
+          # armv7：唯独这一条必须翻译执行。
+          amd64='{"name":"amd64","family":"AMD","bits":"x86_64","platform":"linux/amd64","runs_on":"ubuntu-latest","qemu":false,"ext":"deb","deb_arch":"amd64"}'
+          arm64='{"name":"arm64","family":"ARM","bits":"arm64","platform":"linux/arm64","runs_on":"ubuntu-24.04-arm","qemu":false,"ext":"tar.gz","deb_arch":"arm64"}'
+          i386='{"name":"i386","family":"AMD","bits":"x86_32","platform":"linux/386","runs_on":"ubuntu-latest","qemu":false,"ext":"deb","deb_arch":"i386"}'
+          armv7='{"name":"armv7","family":"ARM","bits":"arm32","platform":"linux/arm/v7","runs_on":"ubuntu-latest","qemu":true,"ext":"tar.gz","deb_arch":"armhf"}'
+          # tag 推送时 `inputs.linux` 是空串，落进 `*` 那一支 —— 正是发版要的。
+          case "${{ inputs.linux }}" in
+            amd64) list="$amd64" ;;
+            *)     list="$amd64,$arm64,$i386,$armv7" ;;
+          esac
+          echo "include=[$list]" >> "$GITHUB_OUTPUT"
+
+
+  # ============================================================
   #  Linux 四架构 — 一个矩阵，四份配方同一份脚本
   #
   #  为什么全都在容器里建（而不是像 v2.x 那样用 runner 自带的解释器）：
@@ -126,52 +192,17 @@ jobs:
   #
   #  `fail-fast: false` 是刻意的：32 位那两条是这套流程里最新的部分，一个
   #  架构挂了不应该把另外三个的诊断信息一起吃掉。
+  #
+  #  矩阵不写在这里 —— 见上面的 `plan-linux`（含"为什么"）。
   # ============================================================
   build-linux:
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    needs: plan-linux
     runs-on: ${{ matrix.runs_on }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # family / bits 就是产物名前两格（见文件头的产物清单），
-          # ext / deb_arch 决定第 ⑤ 段走哪条配方。
-          - name: amd64
-            family: AMD
-            bits: x86_64
-            platform: linux/amd64
-            runs_on: ubuntu-latest
-            qemu: false
-            ext: deb
-            deb_arch: amd64
-          - name: arm64
-            family: ARM
-            bits: arm64
-            platform: linux/arm64
-            # 原生 arm64 runner，比在 x86 上跑 QEMU 快一个数量级。
-            runs_on: ubuntu-24.04-arm
-            qemu: false
-            ext: tar.gz
-            deb_arch: arm64
-          - name: i386
-            family: AMD
-            bits: x86_32
-            platform: linux/386
-            runs_on: ubuntu-latest
-            # i386 不需要 QEMU：x86 主机内核自带 32 位 ELF 支持，宿主的
-            # CPU 直接执行，只是换了一套 32 位 userland。
-            qemu: false
-            ext: deb
-            deb_arch: i386
-          - name: armv7
-            family: ARM
-            bits: arm32
-            platform: linux/arm/v7
-            runs_on: ubuntu-latest
-            # 唯独这一条必须翻译执行。
-            qemu: true
-            ext: tar.gz
-            deb_arch: armhf
+        include: ${{ fromJSON(needs.plan-linux.outputs.include) }}
     steps:
       - uses: actions/checkout@v4
 
