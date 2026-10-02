@@ -165,7 +165,8 @@ for s in sizes:
     os.makedirs(d, exist_ok=True)
     img.resize((s, s), Image.LANCZOS).save(os.path.join(d, name))
 
-# 打进包里的那一份：取最大档，Qt 自己按需下采样。
+# 打进包里的那一份取最大档；main.py 的 _app_icon() 会把它压到 128 以内再
+# 交给 setWindowIcon() —— 256×256 塞不进 X 的单次请求，属性会写空。
 shutil.copyfile(
     os.path.join(out, "hicolor", "%dx%d" % (max(sizes), max(sizes)),
                  "apps", name),

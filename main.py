@@ -1742,6 +1742,17 @@ def _icon_candidates() -> list:
     return out
 
 
+#: 交给 `setWindowIcon()` 的图标边长上限。
+#:
+#: **这不是省内存，是撞上了一个硬上限。** X11 下 Qt 把图标一次性写进
+#: `_NET_WM_ICON` 属性，一次 `xcb_change_property` 写完。X 的单次请求上限是
+#: 65535 个 4 字节字，即 262140 字节，而 256×256 的 ARGB 是 262152 字节 ——
+#: **不多不少超了 12 个字节**。那次请求失败、属性留空，症状是"任务栏有图标
+#: （那走 .desktop），标题栏却是空白"。实测：256×256 时属性为空，128×128
+#: 时正常写入。128 给标题栏（约 22px）和 HiDPI 任务栏（约 48px）都绰绰有余。
+_ICON_MAX_PX = 128
+
+
 def _app_icon() -> QIcon:
     """找得到就用，找不到返回空 QIcon。
 
@@ -1749,10 +1760,27 @@ def _app_icon() -> QIcon:
     （打包漏了 --add-data、源码树被裁过）都不该把启动拦下来。
     """
     for path in _icon_candidates():
-        if os.path.isfile(path):
-            icon = QIcon(path)
-            if not icon.isNull():
-                return icon
+        if not os.path.isfile(path):
+            continue
+        loaded = QIcon(path)
+        # 用 availableSizes() 判断而不是 isNull()：文件存在但不是图片时
+        # QIcon **依然不是 null**，只是里面一个 pixmap 都没有 —— 拿 isNull()
+        # 当门禁会把"读不出来"放过去，窗口照样没有图标。
+        sizes = loaded.availableSizes()
+        if not sizes:
+            continue
+        icon = QIcon()
+        for size in sizes:
+            pixmap = loaded.pixmap(size)
+            if pixmap.isNull():
+                continue
+            if pixmap.width() > _ICON_MAX_PX or pixmap.height() > _ICON_MAX_PX:
+                pixmap = pixmap.scaled(_ICON_MAX_PX, _ICON_MAX_PX,
+                                       Qt.KeepAspectRatio,
+                                       Qt.SmoothTransformation)
+            icon.addPixmap(pixmap)
+        if icon.availableSizes():
+            return icon
     return QIcon()
 
 
@@ -1787,7 +1815,7 @@ def main():
         app.setDesktopFileName("gomoku-ai")
 
     icon = _app_icon()
-    if not icon.isNull():
+    if icon.availableSizes():
         app.setWindowIcon(icon)
 
     window = GomokuGame()
