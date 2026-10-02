@@ -71,9 +71,9 @@ echo "=============================================================="
 # 可能没有预编译 wheel，只能从源码编 bootloader，缺这些就是硬失败。
 #
 # python3-pil（不是 pip install pillow）同理：它只在构建期用来把 .ico 转成
-# 各档 PNG（见 ④.5），而 pip 在 i386 / armhf 上没有可靠 wheel，会退回源码
+# 各档 PNG（见 ③.5），而 pip 在 i386 / armhf 上没有可靠 wheel，会退回源码
 # 编译并连带要一堆 -dev 头文件；apt 那一份四个架构都有现成的。venv 是
-# --system-site-packages，所以 ④.5 里直接 import PIL 就得到。
+# --system-site-packages，所以 ③.5 里直接 import PIL 就得到。
 # ---------------------------------------------------------------------------
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -113,11 +113,88 @@ python3 -m venv --system-site-packages .venv-build
 .venv-build/bin/python -c "from PyQt5.QtWidgets import QApplication; import numpy; print('PyQt5 + numpy OK')"
 
 # ---------------------------------------------------------------------------
+# ③.5 图标（PNG，按 freedesktop 的 hicolor 目录布局）
+#
+# **"装完图标不对"的两个根因都在这份图源上**：在此之前安装包从头到尾没装过
+# 任何图标文件，.desktop 里也没有 `Icon=` —— 菜单那条入口找不到图标就退回
+# 通用/空白图标。而就算 `.desktop` 修好了，**已经开着的窗口仍然是 X.Org 的
+# 兜底 logo**：窗口图标走的是窗口属性（X11 的 `_NET_WM_ICON`、Wayland 的
+# app_id），只有程序自己 `setWindowIcon` 才写得出来，`.desktop` 的 `Icon=`
+# 管不到。所以这里要产两份：一份给菜单（hicolor 七档），一份打进包里给窗口。
+#
+# 图源就是仓库根下那个 .ico（单帧 256×256 RGBA），Windows 侧已经在用它
+# （build.yml 的 `--icon=`、installer/GomokuAI.iss 的 SetupIconFile）。
+# **不新增第二份图源**：构建期由它生成各档 PNG，仓库里不留生成物 ——
+# 与 FLAVOR_DIR 同一个理由，本地跑真工作树时也不该多出需要 gitignore 的文件。
+#
+# .ico 的文件名是中文，**用 find 取它而不是把名字写死**：容器里未必有
+# UTF-8 locale，写死一个非 ASCII 字面量是把编码问题请进来。
+#
+# 七档都是 256 源图的下采样：16~64 给面板与菜单，128/256 给文件管理器与
+# HiDPI 缩放。**不生成比源图更大的档**，那是无中生有地插值。
+#
+# 这一段必须排在 ④ 之前：④ 要用 `--add-data` 把这份 PNG 打进包里，文件得先
+# 存在。它又必须在 ③ 之后，因为要借 venv 里的 Pillow。
+# ---------------------------------------------------------------------------
+#: 打进 PyInstaller 包里的窗口图标名。必须与 main.py 的 APP_ICON 一致。
+APP_ICON_NAME="gomoku-ai.png"
+ICON_SRC="$(find . -maxdepth 1 -name '*.ico' -print -quit)"
+if [ -z "$ICON_SRC" ]; then
+    echo "!! 仓库根下找不到 .ico 图源 —— 安装包会没有图标" >&2
+    exit 1
+fi
+ICON_SIZES=(16 24 32 48 64 128 256)
+ICON_OUT="$(mktemp -d)"
+.venv-build/bin/python - "$ICON_SRC" "$ICON_OUT" "${ICON_SIZES[@]}" <<'PY'
+import os
+import shutil
+import sys
+
+from PIL import Image
+
+src, out = sys.argv[1], sys.argv[2]
+sizes = [int(s) for s in sys.argv[3:]]
+name = "gomoku-ai.png"
+
+img = Image.open(src).convert("RGBA")
+if img.width != img.height or img.width < max(sizes):
+    sys.exit("图源不是边长 >= %d 的正方形：%s" % (max(sizes), img.size))
+
+for s in sizes:
+    d = os.path.join(out, "hicolor", "%dx%d" % (s, s), "apps")
+    os.makedirs(d, exist_ok=True)
+    img.resize((s, s), Image.LANCZOS).save(os.path.join(d, name))
+
+# 打进包里的那一份：取最大档，Qt 自己按需下采样。
+shutil.copyfile(
+    os.path.join(out, "hicolor", "%dx%d" % (max(sizes), max(sizes)),
+                 "apps", name),
+    os.path.join(out, name))
+
+print("图标已生成：%s（源 %s，%s）" % (
+    ", ".join("%dx%d" % (s, s) for s in sizes), src, "%dx%d" % img.size))
+PY
+
+# 断言每档 PNG 都真的落盘且非空。Pillow 静默失败就等于没有图标 ——
+# 与"引擎没进包"同一类：构建不报错，只是用户看到空白图标。
+for _s in "${ICON_SIZES[@]}"; do
+    _p="${ICON_OUT}/hicolor/${_s}x${_s}/apps/gomoku-ai.png"
+    [ -s "$_p" ] || { echo "!! 图标缺失或为空：$_p" >&2; exit 1; }
+done
+[ -s "${ICON_OUT}/${APP_ICON_NAME}" ] \
+    || { echo "!! 打进包的窗口图标缺失：${ICON_OUT}/${APP_ICON_NAME}" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
 # ④ 三份产物
 #
 # `--add-binary "cpp/build/gomoku_engine:."` 把引擎放到包的根（_MEIPASS 下），
 # 正是 _candidates() 第一个去找的位置。三份都要带：onedir 是安装包的原料，
 # 两个 onefile 是免安装裸文件，少了引擎那一份就是"AI 明显变弱"而没有别的症状。
+#
+# `--add-data "${ICON_OUT}/gomoku-ai.png:."` 同理，落点也是包的根，由
+# main.py 的 `_icon_candidates()` 第一个去找。**三份同样都要带**：漏了它
+# 窗口就没有图标（X11 上退回 X.Org 的兜底 logo），而构建与运行都不报错 ——
+# 与漏引擎同一类静默退化，所以下面也有断言。
 #
 # 三份用不同的 --name，否则共用 build/ 与 dist/ 下的同名中间目录，后一次
 # 构建会捡前一次的缓存而漏东西。
@@ -137,14 +214,16 @@ pyi_onefile() {
     printf 'FLAVOR = "%s"\n' "$1" > "${FLAVOR_DIR}/_build_flavor.py"
     .venv-build/bin/pyinstaller --onefile --windowed --name "$2" \
         --paths "${FLAVOR_DIR}" \
-        --add-binary "cpp/build/gomoku_engine:." main.py
+        --add-binary "cpp/build/gomoku_engine:." \
+        --add-data "${ICON_OUT}/${APP_ICON_NAME}:." main.py
 }
 
 echo "---- PyInstaller: onedir（安装包原料，play）----"
 printf 'FLAVOR = "play"\n' > "${FLAVOR_DIR}/_build_flavor.py"
 .venv-build/bin/pyinstaller --onedir --windowed --name "gomoku-ai" \
     --paths "${FLAVOR_DIR}" \
-    --add-binary "cpp/build/gomoku_engine:." main.py
+    --add-binary "cpp/build/gomoku_engine:." \
+    --add-data "${ICON_OUT}/${APP_ICON_NAME}:." main.py
 
 echo "---- PyInstaller: onefile debug（裸文件，写日志）----"
 pyi_onefile debug "${RUN_DEBUG}"
@@ -193,59 +272,15 @@ if ! find dist/gomoku-ai -type f -name gomoku_engine -print -quit | grep -q .; t
 fi
 echo "引擎已进包：$(find dist/gomoku-ai -type f -name gomoku_engine)"
 
-# ---------------------------------------------------------------------------
-# ④.5 图标（PNG，按 freedesktop 的 hicolor 目录布局）
-#
-# **这是"装完菜单里是空白图标"的根因**：在此之前安装包从头到尾没装过任何
-# 图标文件，.desktop 里也没有 `Icon=` —— 桌面环境找不到就退回通用/空白图标，
-# 不报错、不影响启动，症状只有"看着不对"。
-#
-# 图源就是仓库根下那个 .ico（单帧 256×256 RGBA），Windows 侧已经在用它
-# （build.yml 的 `--icon=`、installer/GomokuAI.iss 的 SetupIconFile）。
-# **不新增第二份图源**：构建期由它生成各档 PNG，仓库里不留生成物 ——
-# 与 FLAVOR_DIR 同一个理由，本地跑真工作树时也不该多出需要 gitignore 的文件。
-#
-# .ico 的文件名是中文，**用 find 取它而不是把名字写死**：容器里未必有
-# UTF-8 locale，写死一个非 ASCII 字面量是把编码问题请进来。
-#
-# 七档都是 256 源图的下采样：16~64 给面板与菜单，128/256 给文件管理器与
-# HiDPI 缩放。**不生成比源图更大的档**，那是无中生有地插值。
-# ---------------------------------------------------------------------------
-ICON_SRC="$(find . -maxdepth 1 -name '*.ico' -print -quit)"
-if [ -z "$ICON_SRC" ]; then
-    echo "!! 仓库根下找不到 .ico 图源 —— 安装包会没有图标" >&2
+# 断言窗口图标同样进了包 —— 用的还是上面那条 `--add-data`，三份产物共用，
+# 所以验 onedir 这一份就够。**这是"标题栏与任务栏仍然没有图标"唯一会静默
+# 发生的地方**：漏了它桌面环境只会拿 X.Org 的兜底 logo 顶上，不报错、
+# 不影响启动，用户只看到"图标不对"。
+if ! find dist/gomoku-ai -type f -name "${APP_ICON_NAME}" -print -quit | grep -q .; then
+    echo "!! 窗口图标没有进包 —— 检查 --add-data" >&2
     exit 1
 fi
-ICON_SIZES=(16 24 32 48 64 128 256)
-ICON_OUT="$(mktemp -d)"
-.venv-build/bin/python - "$ICON_SRC" "$ICON_OUT" "${ICON_SIZES[@]}" <<'PY'
-import os
-import sys
-
-from PIL import Image
-
-src, out = sys.argv[1], sys.argv[2]
-sizes = [int(s) for s in sys.argv[3:]]
-
-img = Image.open(src).convert("RGBA")
-if img.width != img.height or img.width < max(sizes):
-    sys.exit("图源不是边长 >= %d 的正方形：%s" % (max(sizes), img.size))
-
-for s in sizes:
-    d = os.path.join(out, "hicolor", "%dx%d" % (s, s), "apps")
-    os.makedirs(d, exist_ok=True)
-    img.resize((s, s), Image.LANCZOS).save(os.path.join(d, "gomoku-ai.png"))
-
-print("图标已生成：%s（源 %s，%s）" % (
-    ", ".join("%dx%d" % (s, s) for s in sizes), src, "%dx%d" % img.size))
-PY
-
-# 断言每档 PNG 都真的落盘且非空。Pillow 静默失败就等于没有图标 ——
-# 与"引擎没进包"同一类：构建不报错，只是用户看到空白图标。
-for _s in "${ICON_SIZES[@]}"; do
-    _p="${ICON_OUT}/hicolor/${_s}x${_s}/apps/gomoku-ai.png"
-    [ -s "$_p" ] || { echo "!! 图标缺失或为空：$_p" >&2; exit 1; }
-done
+echo "窗口图标已进包：$(find dist/gomoku-ai -type f -name "${APP_ICON_NAME}")"
 
 # ---------------------------------------------------------------------------
 # ⑤ 收成安装包
@@ -255,13 +290,17 @@ OPT_DIR="/opt/gomoku-ai"
 BIN_LINK="/usr/local/bin/gomoku-ai"
 
 # `Icon=` 用**主题名**而不是路径、不带扩展名：绝对路径的图标不能按 DPI 缩放，
-# 也无法被主题替换。这个名字必须与 hicolor 下那个 PNG 的基名（④.5 生成的
+# 也无法被主题替换。这个名字必须与 hicolor 下那个 PNG 的基名（③.5 生成的
 # `gomoku-ai.png`）一致 —— 与 .desktop 文件名、可执行名三者同为一个
 # `gomoku-ai`，不引入新标识符。
 #
 # `StartupWMClass=` 让桌面环境把**运行中的窗口**关联到这个 .desktop（Menu 里
-# 那条入口靠文件名匹配，窗口靠这个）。程序本身没有任何 setWindowIcon，所以
-# Linux 上窗口/任务栏的图标完全指望这一条。
+# 那条入口靠文件名匹配，窗口靠这个）。
+#
+# **窗口的图标不靠这一条**。实测过：`.desktop` 装齐之后窗口属性里仍然没有
+# `_NET_WM_ICON`，任务栏显示的是 X.Org 的兜底 logo —— 桌面环境读的是窗口
+# 自身的图标属性，只有 main.py 里那个 `app.setWindowIcon()` 写得出来。这一条
+# 管的是"把窗口归到哪个应用"，与图标是两件事，两个都要有。
 DESKTOP_ENTRY='[Desktop Entry]
 Version=1.0
 Name=五子棋AI

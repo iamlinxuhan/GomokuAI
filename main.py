@@ -20,7 +20,7 @@ from PyQt5.QtCore import (
     QElapsedTimer, QEasingCurve, QVariantAnimation
 )
 from PyQt5.QtGui import (
-    QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent
+    QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent, QIcon
 )
 
 import analysis
@@ -1710,6 +1710,52 @@ def _fix_qt_plugin_path():
         pass
 
 
+#: 窗口图标文件名。构建期由 packaging/build_in_container.sh 从仓库根那个
+#: .ico 生成，随 `--add-data` 打进 PyInstaller 包的根（也就是 sys._MEIPASS）。
+#: 名字刻意用 ASCII：它要原样写进 --add-data 的命令行，而容器里未必有
+#: UTF-8 locale。
+APP_ICON = "gomoku-ai.png"
+
+
+def _icon_candidates() -> list:
+    """按可信度从高到低列出窗口图标的候选路径。
+
+    顺序与 config._candidates() 同源。``sys._MEIPASS`` 排最前：onefile 与
+    onedir 都会设这个变量，而 `--add-data "...:."` 正是落在那里 —— 一条就
+    覆盖了三种打包形态（安装包 onedir、两个免安装裸文件）。后面两条是给
+    源码直接跑的：仓库根有生成物就用，没有就退回原始 .ico 图源。
+    """
+    out = []
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        out.append(os.path.join(meipass, APP_ICON))
+
+    if getattr(sys, "frozen", False):
+        out.append(os.path.join(os.path.dirname(os.path.abspath(sys.executable)),
+                                APP_ICON))
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    out.append(os.path.join(here, APP_ICON))
+    out.append(os.path.join(here, "五子棋.ico"))
+
+    return out
+
+
+def _app_icon() -> QIcon:
+    """找得到就用，找不到返回空 QIcon。
+
+    **图标缺失不该让程序起不来** —— 它纯属观感，而候选路径里任何一条失效
+    （打包漏了 --add-data、源码树被裁过）都不该把启动拦下来。
+    """
+    for path in _icon_candidates():
+        if os.path.isfile(path):
+            icon = QIcon(path)
+            if not icon.isNull():
+                return icon
+    return QIcon()
+
+
 def main():
     _fix_qt_plugin_path()
 
@@ -1725,6 +1771,24 @@ def main():
     app.setStyle("Fusion")
     # 字体不在这里设：theme.install() 同时设 QSS 的 font-family 与 app.setFont，
     # 两者同源。在这里再写一个 QFont 只会被 QSS 覆盖，看着像生效了其实没有。
+
+    # 图标必须在这里显式设，**不能只靠安装包里的 .desktop**。
+    #
+    # Linux 下标题栏与任务栏读的是窗口自身的图标属性：X11 是 `_NET_WM_ICON`
+    # （桌面环境对认不出身份的 X11 窗口会退回 X.Org 的 logo），Wayland 是
+    # app_id。这两个都只有 QApplication 设过之后才存在 —— .desktop 的 `Icon=`
+    # 只管菜单与启动器那一条入口，管不到已经开着的窗口。实测过：装好带图标的
+    # .desktop 之后窗口属性里仍然一个图标都没有。
+    # `setDesktopFileName` 在 Qt 里是 Unix 专属 API（Windows 构建上根本没有这
+    # 个方法），所以这里不能直接调 —— 少了这个判断，Windows 版会在启动第一行
+    # 抛 AttributeError。取值必须与 packaging/build_in_container.sh 里那个
+    # .desktop 的文件名一致。
+    if hasattr(app, "setDesktopFileName"):
+        app.setDesktopFileName("gomoku-ai")
+
+    icon = _app_icon()
+    if not icon.isNull():
+        app.setWindowIcon(icon)
 
     window = GomokuGame()
     window.show()
