@@ -69,11 +69,16 @@ echo "=============================================================="
 #
 # zlib1g-dev + gcc + python3-dev 是给 PyInstaller 的：它在 i386 / armv7 上
 # 可能没有预编译 wheel，只能从源码编 bootloader，缺这些就是硬失败。
+#
+# python3-pil（不是 pip install pillow）同理：它只在构建期用来把 .ico 转成
+# 各档 PNG（见 ④.5），而 pip 在 i386 / armhf 上没有可靠 wheel，会退回源码
+# 编译并连带要一堆 -dev 头文件；apt 那一份四个架构都有现成的。venv 是
+# --system-site-packages，所以 ④.5 里直接 import PIL 就得到。
 # ---------------------------------------------------------------------------
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
-    python3 python3-venv python3-dev python3-pyqt5 python3-numpy \
+    python3 python3-venv python3-dev python3-pyqt5 python3-numpy python3-pil \
     cmake g++ gcc make binutils zlib1g-dev file \
     libgl1 libglib2.0-0 libxkbcommon-x11-0 libxkbcommon0 \
     libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
@@ -189,18 +194,82 @@ fi
 echo "引擎已进包：$(find dist/gomoku-ai -type f -name gomoku_engine)"
 
 # ---------------------------------------------------------------------------
+# ④.5 图标（PNG，按 freedesktop 的 hicolor 目录布局）
+#
+# **这是"装完菜单里是空白图标"的根因**：在此之前安装包从头到尾没装过任何
+# 图标文件，.desktop 里也没有 `Icon=` —— 桌面环境找不到就退回通用/空白图标，
+# 不报错、不影响启动，症状只有"看着不对"。
+#
+# 图源就是仓库根下那个 .ico（单帧 256×256 RGBA），Windows 侧已经在用它
+# （build.yml 的 `--icon=`、installer/GomokuAI.iss 的 SetupIconFile）。
+# **不新增第二份图源**：构建期由它生成各档 PNG，仓库里不留生成物 ——
+# 与 FLAVOR_DIR 同一个理由，本地跑真工作树时也不该多出需要 gitignore 的文件。
+#
+# .ico 的文件名是中文，**用 find 取它而不是把名字写死**：容器里未必有
+# UTF-8 locale，写死一个非 ASCII 字面量是把编码问题请进来。
+#
+# 七档都是 256 源图的下采样：16~64 给面板与菜单，128/256 给文件管理器与
+# HiDPI 缩放。**不生成比源图更大的档**，那是无中生有地插值。
+# ---------------------------------------------------------------------------
+ICON_SRC="$(find . -maxdepth 1 -name '*.ico' -print -quit)"
+if [ -z "$ICON_SRC" ]; then
+    echo "!! 仓库根下找不到 .ico 图源 —— 安装包会没有图标" >&2
+    exit 1
+fi
+ICON_SIZES=(16 24 32 48 64 128 256)
+ICON_OUT="$(mktemp -d)"
+.venv-build/bin/python - "$ICON_SRC" "$ICON_OUT" "${ICON_SIZES[@]}" <<'PY'
+import os
+import sys
+
+from PIL import Image
+
+src, out = sys.argv[1], sys.argv[2]
+sizes = [int(s) for s in sys.argv[3:]]
+
+img = Image.open(src).convert("RGBA")
+if img.width != img.height or img.width < max(sizes):
+    sys.exit("图源不是边长 >= %d 的正方形：%s" % (max(sizes), img.size))
+
+for s in sizes:
+    d = os.path.join(out, "hicolor", "%dx%d" % (s, s), "apps")
+    os.makedirs(d, exist_ok=True)
+    img.resize((s, s), Image.LANCZOS).save(os.path.join(d, "gomoku-ai.png"))
+
+print("图标已生成：%s（源 %s，%s）" % (
+    ", ".join("%dx%d" % (s, s) for s in sizes), src, "%dx%d" % img.size))
+PY
+
+# 断言每档 PNG 都真的落盘且非空。Pillow 静默失败就等于没有图标 ——
+# 与"引擎没进包"同一类：构建不报错，只是用户看到空白图标。
+for _s in "${ICON_SIZES[@]}"; do
+    _p="${ICON_OUT}/hicolor/${_s}x${_s}/apps/gomoku-ai.png"
+    [ -s "$_p" ] || { echo "!! 图标缺失或为空：$_p" >&2; exit 1; }
+done
+
+# ---------------------------------------------------------------------------
 # ⑤ 收成安装包
 # ---------------------------------------------------------------------------
 APP_DIR_NAME="gomoku-ai"          # onedir 目录名，也是装好之后的入口名
 OPT_DIR="/opt/gomoku-ai"
 BIN_LINK="/usr/local/bin/gomoku-ai"
 
+# `Icon=` 用**主题名**而不是路径、不带扩展名：绝对路径的图标不能按 DPI 缩放，
+# 也无法被主题替换。这个名字必须与 hicolor 下那个 PNG 的基名（④.5 生成的
+# `gomoku-ai.png`）一致 —— 与 .desktop 文件名、可执行名三者同为一个
+# `gomoku-ai`，不引入新标识符。
+#
+# `StartupWMClass=` 让桌面环境把**运行中的窗口**关联到这个 .desktop（Menu 里
+# 那条入口靠文件名匹配，窗口靠这个）。程序本身没有任何 setWindowIcon，所以
+# Linux 上窗口/任务栏的图标完全指望这一条。
 DESKTOP_ENTRY='[Desktop Entry]
 Version=1.0
 Name=五子棋AI
 Name[zh_CN]=五子棋AI
 Comment=Gomoku AI - Negamax/PVS + Transposition Table + Quiescence & VCF (CPU)
 Exec=/usr/local/bin/gomoku-ai
+Icon=gomoku-ai
+StartupWMClass=gomoku-ai
 Terminal=false
 Type=Application
 Categories=Game;BoardGame;'
@@ -208,7 +277,14 @@ Categories=Game;BoardGame;'
 # `Depends:` 里的字体链是必需的：界面全靠中文，而这些基础库一个字体都不带，
 # 最小系统上装完全是方框。用 `|` 串出候选链，任意一个 CJK 字体已存在即满足，
 # 不必为了一个棋盘拖 60MB 的 Noto CJK 下来。
-DEB_DEPENDS="libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0, fonts-noto-cjk | fonts-wqy-microhei | fonts-wqy-zenhei | fonts-arphic-uming"
+#
+# `hicolor-icon-theme` 不能省：它提供 `/usr/share/icons/hicolor/index.theme`，
+# 而没有这个文件，GTK 的图标主题引擎根本不把 hicolor 当一个主题来看，`Icon=`
+# 也就查不到 —— **图标明明装进去了却显示不出来**，正是最难查的那一类症状。
+# 它同时声明了对 `/usr/share/icons/hicolor` 的 dpkg 触发器，负责在我们把 PNG
+# 放进去之后刷新图标缓存。最小系统上我们的包可能就是唯一往 hicolor 里放东西
+# 的那个，指望别人把它带进来是不成立的。
+DEB_DEPENDS="libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0, hicolor-icon-theme, fonts-noto-cjk | fonts-wqy-microhei | fonts-wqy-zenhei | fonts-arphic-uming"
 
 DEB_DESC="五子棋AI - 位棋盘增量评估 + Negamax/PVS + 置换表 + 静止搜索/VCF 连续冲四 (纯 CPU)"
 
@@ -217,7 +293,8 @@ if [ "$EXT" = "deb" ]; then
     PKG_DIR="deb_build"
     rm -rf "$PKG_DIR"
     mkdir -p "${PKG_DIR}${OPT_DIR}" "${PKG_DIR}/usr/local/bin" \
-             "${PKG_DIR}/usr/share/applications" "${PKG_DIR}/DEBIAN"
+             "${PKG_DIR}/usr/share/applications" "${PKG_DIR}/usr/share/icons" \
+             "${PKG_DIR}/DEBIAN"
 
     cp -r "dist/${APP_DIR_NAME}/." "${PKG_DIR}${OPT_DIR}/"
     chmod -R 755 "${PKG_DIR}${OPT_DIR}"
@@ -227,6 +304,11 @@ if [ "$EXT" = "deb" ]; then
     chmod 755 "${PKG_DIR}/usr/local/bin/${APP_DIR_NAME}"
 
     printf '%s\n' "$DESKTOP_ENTRY" > "${PKG_DIR}/usr/share/applications/gomoku-ai.desktop"
+
+    # 图标。权限显式写死而不用 `cp -r` 的默认值：源 PNG 是 644，但 umask 会
+    # 决定拿到什么，`u=rwX,go=rX` 让目录 755、文件 644 与 umask 无关。
+    cp -r "${ICON_OUT}/hicolor" "${PKG_DIR}/usr/share/icons/"
+    chmod -R u=rwX,go=rX "${PKG_DIR}/usr/share/icons"
 
     printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n%s\n' \
         "Package: gomoku-ai" \
@@ -238,6 +320,17 @@ if [ "$EXT" = "deb" ]; then
         "Depends: ${DEB_DEPENDS}" \
         "Description: ${DEB_DESC}" \
         > "${PKG_DIR}/DEBIAN/control"
+
+    # 断言 .desktop 里确实写了 Icon=，且各档 PNG 都进了包目录。
+    # **这是本次修复唯一会静默退化的地方**：Icon= 漏写、或图标没拷进来，
+    # 构建与安装都不报错，只有用户看到空白图标。断言打在暂存树上（那正是
+    # dpkg-deb 的输入），不去读几千条目的归档流。
+    grep -q '^Icon=gomoku-ai$' "${PKG_DIR}/usr/share/applications/gomoku-ai.desktop" \
+        || { echo "!! .desktop 里没有 Icon=gomoku-ai —— 菜单会退回空白图标" >&2; exit 1; }
+    for _s in "${ICON_SIZES[@]}"; do
+        [ -s "${PKG_DIR}/usr/share/icons/hicolor/${_s}x${_s}/apps/gomoku-ai.png" ] \
+            || { echo "!! 安装包里缺 ${_s}x${_s} 图标" >&2; exit 1; }
+    done
 
     # gzip 而不是 zstd：兼容性更好（旧 dpkg 也能解），代价只是包大一点。
     dpkg-deb -Zgzip --build "${PKG_DIR}" "${PKG_NAME}.${EXT}"
@@ -258,6 +351,13 @@ else
     # 安装脚本自己就 `Permission denied`。这里显式写死 755 再打。
     printf '%s\n' "$DESKTOP_ENTRY" > "${BASE}/gomoku-ai.desktop"
 
+    # 图标随包装走，由 install.sh 在安装时铺到 /usr/share/icons/hicolor/。
+    # 放在 BASE 下的 icons/ 而不是与 .desktop 平铺：7 个尺寸 × 目录层级，
+    # 平铺会把解包目录弄得很难看。
+    mkdir -p "${BASE}/icons"
+    cp -r "${ICON_OUT}/hicolor" "${BASE}/icons/"
+    chmod -R u=rwX,go=rX "${BASE}/icons"
+
     cat > "${BASE}/install.sh" <<EOF
 #!/bin/bash
 # 五子棋AI ${STEM} 版安装脚本。不需要联网，不需要编译。
@@ -277,12 +377,39 @@ if [ -d /usr/share/applications ]; then
     sudo cp "\${SRC_DIR}/gomoku-ai.desktop" /usr/share/applications/ || true
 fi
 
+# 装图标（可选，失败不影响使用）。hicolor 是 freedesktop 约定的主题目录，
+# 桌面环境按 .desktop 里那句 Icon=gomoku-ai 去 hicolor/<尺寸>/apps/ 下找。
+# **tar 包声明不了依赖**：最小系统上可能连 hicolor-icon-theme 都没有，那时
+# GTK 不把 hicolor 当主题，图标依旧显示不出来 —— 只能尽力而为。
+if [ -d "\${SRC_DIR}/icons/hicolor" ] && [ -d /usr/share/icons ]; then
+    sudo cp -r "\${SRC_DIR}/icons/hicolor/." /usr/share/icons/hicolor/ || true
+    # 有 gtk-update-icon-cache 就刷缓存；没有就跳过 —— 直接读目录也能用。
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        sudo gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+    fi
+fi
+# update-desktop-database 维护的是 MIME 关联缓存，菜单入口的显示不依赖它，
+# 装了就顺手刷一下。
+if command -v update-desktop-database >/dev/null 2>&1; then
+    sudo update-desktop-database -q 2>/dev/null || true
+fi
+
 # 清掉旧版 ARM 的目录名，避免同一个程序留下两份
 sudo rm -rf /opt/gomoku-ai-arm
 
 echo "Done! Run: gomoku-ai"
 EOF
     chmod 755 "${BASE}/install.sh"
+
+    # 与 .deb 分支同一套断言：Icon= 漏写或图标没拷进来，构建与安装都不报错，
+    # 只有用户看到空白图标 —— 必须在这里拦住。
+    grep -q '^Icon=gomoku-ai$' "${BASE}/gomoku-ai.desktop" \
+        || { echo "!! tar 包的 .desktop 里没有 Icon=gomoku-ai" >&2; exit 1; }
+    for _s in "${ICON_SIZES[@]}"; do
+        [ -s "${BASE}/icons/hicolor/${_s}x${_s}/apps/gomoku-ai.png" ] \
+            || { echo "!! tar 包里缺 ${_s}x${_s} 图标" >&2; exit 1; }
+    done
+
     tar -czf "${PKG_NAME}.${EXT}" "$BASE"
     ls -lh "${PKG_NAME}.${EXT}"
     # 列几行证明包不是空的。**这里绝不能写 `| head -5`** —— 本脚本开头是
@@ -300,6 +427,11 @@ EOF
     # `sed -n '1,5p'` 读满 5 行也**继续读到 EOF**，生产者因此永远写不爆管道。
     tar -tzf "${PKG_NAME}.${EXT}" | sed -n '1,5p'
 fi
+
+# 图标暂存目录回收。与 FLAVOR_DIR 一样从 mktemp 来，不留在工作区 ——
+# 这份脚本在 CI 里跑检出版、在本地跑真工作树（两个分支都已经把需要的东西
+# 复制进各自的暂存树了，这里删掉不再有副作用）。
+rm -rf "${ICON_OUT}"
 
 echo "=============================================================="
 echo " 完成："
