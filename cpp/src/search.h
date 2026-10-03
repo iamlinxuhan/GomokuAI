@@ -124,8 +124,15 @@ public:
     //:
     //: 返回线性格索引；无合法着法时返回 -1。`info` 被填充。
     //: `cancel` 可为 nullptr；非空时每 1024 个节点读一次，置位即中止。
+    //:
+    //: `outRoot` 非空时额外吐出**最后一轮跑完的**根节点候选表
+    //: `[(着法索引, 分值), ...]`（战后复盘要逐候选的分值，见 `analyze`）。
+    //: 传它等于把 `collect` 打开：渴望窗口会被关掉（窄窗会剪掉一部分根着法，
+    //: 那些着法就没有分值可比），所以**默认的 nullptr 才是与偏置路径逐位相同
+    //: 的那一条** —— 这个默认值不是顺手写的，是 parity 护栏的一部分。
     int think(const uint8_t* board, int me, const SearchConfig& cfg,
-              const std::atomic<bool>* cancel, Info* info);
+              const std::atomic<bool>* cancel, Info* info,
+              std::vector<std::pair<int, int32_t>>* outRoot = nullptr);
 
     //: 公开的 VCF 探针（`tools/positions.py` 的 `opp_vcf` 用得上）。
     VcfResult vcf(Board& bd, int me, double budget, bool hasDeadline,

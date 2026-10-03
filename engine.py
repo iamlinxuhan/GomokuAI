@@ -732,15 +732,15 @@ class _ServerClient:
             return rep
         raise last if last is not None else _RemoteError("请求失败")
 
-    def compute(self, board, me, cfg, cancel):
-        """一次搜索。返回 ``(idx, info)``：``idx`` 是线性格索引，``info`` 是诊断字典。
+    def _search_request(self, kind, board, me, cfg):
+        """拼一次搜索请求。``kind`` 是 ``"compute"`` 或 ``"analyze"``。
 
-        ``idx`` 单独返回而不塞进 ``info``：``info`` 是**跨进程契约**，它的键集合
-        与 ``engine_local`` 的逐字对应，多一个 ``idx`` 就会让"两边 info 相等"
-        这类比较（测试与 ``gamelog`` 都在做）无声地失败。
+        **两种 type 的字段逐字相同**，只有 ``type`` 一个字之差。复盘强度必须与
+        对局时同一套配置（同样的 bias_* / enhanced 条件下发），否则"用某一档复盘"
+        这句话就没有确定的含义 —— 两处各写一份请求体，迟早会漂移。
         """
         req = {
-            "type": "compute",
+            "type": kind,
             "board": _board_to_json(board),
             "player": int(me),
             # 原样下发 —— 余量与 VCF 预算的解释权都在引擎侧（见 `_RESERVE`）。
@@ -766,18 +766,47 @@ class _ServerClient:
             req["enhanced"] = 1
             req["lmr"] = 1
             req["extend"] = 1
+        return req
 
-        # 读超时 = 服务端的硬上限 + 余量。服务端的"硬"是真的硬（它在搜索循环
-        # 里查截止时刻），所以这里超时基本等于"对面不是我们的程序"或"机器被
-        # 压垮了"，两种情况都该降级而不是无限等。
+    def _run(self, req, cancel):
+        """发一次请求。读超时 = 服务端的硬上限 + 余量。
+
+        服务端的"硬"是真的硬（它在搜索循环里查截止时刻），所以这里超时基本等于
+        "对面不是我们的程序"或"机器被压垮了"，两种情况都该降级而不是无限等。
+        """
         timeout = req["time_limit"] + config.COMPUTE_SLACK + config.CONNECT_TIMEOUT
         stop = _start_cancel_watcher(self, cancel)
         try:
-            rep = self._request(req, timeout)
+            return self._request(req, timeout)
         finally:
             if stop is not None:
                 stop.set()
+
+    def compute(self, board, me, cfg, cancel):
+        """一次搜索。返回 ``(idx, info)``：``idx`` 是线性格索引，``info`` 是诊断字典。
+
+        ``idx`` 单独返回而不塞进 ``info``：``info`` 是**跨进程契约**，它的键集合
+        与 ``engine_local`` 的逐字对应，多一个 ``idx`` 就会让"两边 info 相等"
+        这类比较（测试与 ``gamelog`` 都在做）无声地失败。
+        """
+        rep = self._run(self._search_request("compute", board, me, cfg), cancel)
         return int(rep.get("idx", -1)), _info_from_reply(rep)
+
+    def analyze(self, board, me, cfg, cancel):
+        """一次**逐候选**分析（战后复盘用）。返回 ``(idx, info, cands)``。
+
+        ``cands`` 是 ``[(idx, val), ...]``，与 ``engine_local.analyze`` 同一个
+        形状。它**不进 ``info``**：``info`` 的键集合是对外契约（见上面的
+        ``compute``），塞一个只有这条路才有的键进去就会破坏它。
+
+        老版 C++ 引擎不认 ``type:"analyze"``，会回一个 ``未知的 type`` 错误 →
+        抛 ``_RemoteError`` → 调用方降级到本地分析。协议兼容方向是安全的，
+        不用动握手字段。
+        """
+        rep = self._run(self._search_request("analyze", board, me, cfg), cancel)
+        raw = rep.get("cands")
+        cands = [] if not raw else [(int(d["i"]), int(d["v"])) for d in raw]
+        return int(rep.get("idx", -1)), _info_from_reply(rep), cands
 
 
 def _kill(proc) -> None:
@@ -983,6 +1012,47 @@ def ai_move(board, ai_player, depth, cancel=None):
         return _local.ai_move(board, ai_player, depth, cancel=cancel)
     _note("cpp")
     return out
+
+
+_analyze_warned = False
+
+
+def analyze(board, me, level, cancel=None):
+    """逐候选分析一个局面（战后复盘用）。返回 ``(best_idx, best_val, cands, info)``。
+
+    ``cands`` 是 ``[(idx, val), ...]``，``best_idx`` 是引擎在本局面会走的着法
+    （线性格索引）。空盘返回 ``(-1, 0, [], {})`` —— 没有候选就无所谓最优。
+
+    **不走开局库、不走空盘快捷路。** 复盘要的是"这一手在这个局面里值多少分"，
+    而开局库只给得出一个着法与它的分值，给不出一张可比对的表；拿库里那句结论
+    去和搜索表混在一起，"最优点"的来源就不可解释了。
+
+    **降级到本地时不动面板上的引擎指示器。** `ai_move` 的降级走 `_note("local")`
+    把面板那一行改成「Python (本地)」，那是**对局中**的实时状态；复盘发生在对局
+    **结束之后**，那时把面板改掉是在报告一件已经过去的事。所以这条路只往 stderr
+    打一行限流警告（限流标记与 `ai_move` 的分开，互不顶掉），`_note` 一次都不调。
+    """
+    global _analyze_warned
+    if not _has_stones(board):
+        return -1, 0, [], {}
+    cfg = _cfg_for(level)
+    try:
+        idx, info, cands = _CLIENT.analyze(board, me, cfg, cancel)
+    except Exception as exc:
+        # 与 `ai_move` 同一条兜底哲学：这一层是性能优化，没有资格让复盘中断。
+        # BaseException 照常穿透。
+        if not _analyze_warned:
+            _analyze_warned = True
+            print(f"[复盘] 降级到本地 Python 引擎：{type(exc).__name__}: {exc}",
+                  file=sys.stderr)
+        return _local.analyze(board, me, level, cancel=cancel,
+                              time_limit=float(cfg["time"]))
+    if not cands:
+        # 与 `engine_local.analyze` 同一条归一：没有可比的最优解（空盘 /
+        # 满盘 / 一轮都没跑完）。判据是"表空"而不是"idx < 0" —— 空盘时
+        # `_search` 会退回天元当返回值，只看 idx 会把一手无根据的棋报成最优解。
+        return -1, 0, [], info
+    return idx, int(info.get("best_val", 0)), cands, info
 
 
 def new_game():

@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "board.h"
@@ -233,7 +234,11 @@ SearchConfig readConfig(const json::Value& req) {
 
 // ------------------------------------------------------------ 响应
 
-void writeMove(Shared& sh, const json::Value& req, int idx, const Info& info) {
+//: `cands` 非空时额外输出根节点候选表（战后复盘的分析请求要它）。
+//: **默认的 nullptr 让 compute 的报文一字不变** —— 这个默认值是兼容护栏的
+//: 一部分，不是顺手写的。
+void writeMove(Shared& sh, const json::Value& req, int idx, const Info& info,
+               const std::vector<std::pair<int, int32_t>>* cands = nullptr) {
     const int r = idx / BOARD_SIZE;
     const int c = idx % BOARD_SIZE;
     std::string buf;
@@ -264,6 +269,7 @@ void writeMove(Shared& sh, const json::Value& req, int idx, const Info& info) {
     }
     w.i32("vcf_dist", info.vcfDist);
     w.i64("vcf_nodes", info.vcfNodes);
+    if (cands != nullptr) w.cands("cands", *cands);
     w.close();
     sendLine(sh, buf);
 }
@@ -309,7 +315,12 @@ void handleJob(Shared& sh, const json::Value& req) {
         sendLine(sh, buf);
         return;
     }
-    if (type != "compute") {
+    // `analyze` 与 `compute` 走同一条搜索，差别只在**要不要那张候选表**。
+    // 做成同一个分支而不是第二个 handler：棋盘解析、配置下发、锁与取消全都
+    // 必须一模一样 —— 复制一份出来，两边的 readConfig 迟早会不同步，而复盘
+    // 强度与对局强度对不上正是"复盘结论不可信"的来源。
+    const bool analyze = (type == "analyze");
+    if (type != "compute" && !analyze) {
         writeError(sh, req, "未知的 type: " + type);
         return;
     }
@@ -331,6 +342,7 @@ void handleJob(Shared& sh, const json::Value& req) {
     const SearchConfig cfg = readConfig(req);
     Info info;
     int idx = -1;
+    std::vector<std::pair<int, int32_t>> cands;
     {
         // Engine 的跨着法状态由这把锁保护。等锁期间也可能被取消/顶掉，所以
         // 拿到锁之后再判一次 —— 否则一个已经被顶掉的连接会在这里把整盘搜完。
@@ -338,14 +350,14 @@ void handleJob(Shared& sh, const json::Value& req) {
         if (sh.stop.load(std::memory_order_relaxed)) return;
         sh.cancel.store(false);       // 清掉上一轮可能留下的取消位
         idx = srv.engine.think(cells.data(), static_cast<int>(player), cfg,
-                               &sh.cancel, &info);
+                               &sh.cancel, &info, analyze ? &cands : nullptr);
     }
     if (sh.stop.load(std::memory_order_relaxed)) return;   // 收件人已经走了
     if (idx < 0) {
         writeError(sh, req, "没有合法着法");
         return;
     }
-    writeMove(sh, req, idx, info);
+    writeMove(sh, req, idx, info, analyze ? &cands : nullptr);
 }
 
 // ------------------------------------------------------------ 线程

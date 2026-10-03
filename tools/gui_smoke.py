@@ -46,7 +46,8 @@ sys.path.insert(0, _ROOT)
 
 from PyQt5.QtCore import QPoint, Qt  # noqa: E402
 from PyQt5.QtTest import QTest  # noqa: E402
-from PyQt5.QtWidgets import QApplication, QPushButton  # noqa: E402
+from PyQt5.QtWidgets import (QApplication, QLabel, QPushButton,  # noqa: E402
+                             QScrollArea)
 
 import theme  # noqa: E402
 import main as M  # noqa: E402
@@ -434,7 +435,8 @@ def do_restart_during_think(app, w):
           f"{dt*1000:.0f}ms 内退出" if not still else
           f"等了 {dt*1000:.0f}ms 仍在运行 —— 协作取消没生效")
 
-    # 重开后应回到颜色选择界面，再次进入对局不残留上一局状态
+    # 重开后回到**模式选择页**（`_on_restart` 的落点）。这里直接调下一环，
+    # 是因为要验的是"取消之后能不能干净地再开一局"，与模式页的按钮无关。
     w._on_color_selected(1)
     pump(40, app)
     w._on_difficulty_selected(1)
@@ -462,6 +464,378 @@ def do_quit_during_think(app, w):
     check(not still, "退出后无残留 AI 线程",
           "线程已回收" if not still else
           f"线程仍在运行（{dt*1000:.0f}ms 未退出），进程退出时可能触发 Qt 断言")
+
+
+def do_local_battle(app):
+    """本地双人对战：两人轮流下到五连，遮罩报的是"哪一方"赢。
+
+    没有 AI 参与是**结构**上的：`_start_local_game` 之后 `playmode == 1`，
+    `_on_board_click` 里的落子色由手数奇偶决定，AI 回合那一支整个不执行
+    （见 `_on_board_click` 末尾）。这里就用"一个 AI worker 都没起过"来验它。
+    """
+    w = M.GomokuGame()
+    w.show()
+    pump(120, app)
+
+    w._on_loading_finished()             # 加载页 -> 模式页
+    pump(60, app)
+    if not check(w.selection_mode is not None, "加载后进入模式选择页"):
+        return
+    check(w.selection_color is None, "模式页上没有同时建出颜色页")
+
+    w._on_mode_selected(1)               # 1 = 本地对战
+    pump(120, app)
+    check(w.playmode == 1, "本地对战的 playmode=1")
+    check(w.gamemode == 0, "本地对战固定黑先（gamemode=0）")
+    check(w.gamemode == 0 and int(np.count_nonzero(w.board)) == 0,
+          "本地对战开局不留 AI 先手子")
+    check(w.ai_worker is None, "本地对战不起 AI 线程")
+
+    # 黑下 9 行 14..18，白下 0 行 0..3 —— 白永远挡不到黑那条线。
+    seq = [((9, 14), 1), ((0, 0), 2), ((9, 15), 1), ((0, 1), 2),
+           ((9, 16), 1), ((0, 2), 2), ((9, 17), 1), ((0, 3), 2),
+           ((9, 18), 1)]
+    ok = True
+    for i, ((r, c), stone) in enumerate(seq[:8]):
+        click_cell(w, r, c)
+        pump(20, app)
+        if not check(int(w.board[r][c]) == stone,
+                     f"本地第 {i+1} 手落在 ({r},{c}) 且为{'黑' if stone == 1 else '白'}子"):
+            ok = False
+            break
+    if not ok:
+        return
+
+    # 悔棋：本地局一次退**一步**（人机局是退两步：玩家 + AI 回应）。必须
+    # 在连五之前验 —— 终局后 `_on_undo` 直接返回（对局已结束）。
+    w._on_undo()
+    pump(30, app)
+    check(w.move_count == 7 and int(np.count_nonzero(w.board)) == 7,
+          "本地对战悔棋退一步",
+          f"move_count={w.move_count}")
+    check(w.game_over is False, "悔棋之后对局回到进行中")
+    # 退掉的是白子那一手 → 下一手仍是白。
+    check(w.game_panel.turn_indicator.label.text().startswith("白棋"),
+          "悔棋后轮到白方",
+          w.game_panel.turn_indicator.label.text())
+    click_cell(w, *seq[7][0])
+    pump(20, app)
+    check(int(w.board[seq[7][0][0]][seq[7][0][1]]) == 2,
+          "悔棋后重下仍落在同一个点上且为白子")
+
+    r, c = seq[8][0]
+    click_cell(w, r, c)
+    pump(20, app)
+    if not check(int(w.board[r][c]) == 1, "本地第 9 手为黑子"):
+        return
+
+    check(w.gamerule == 2 and w.winner == 1 and w.game_over,
+          "本地对战五连后判黑方获胜",
+          f"gamerule={w.gamerule} winner={w.winner}")
+    check(w.ai_worker is None, "整局下来没有起过 AI 线程")
+
+    pump(M.GAME_OVER_DELAY_MS + 200, app)     # 等终局遮罩的延迟投递
+    ov = w.game_over_overlay
+    if not check(ov is not None, "本地对战的终局遮罩已弹出"):
+        return
+    check(ov.result_text == "黑方获胜", "遮罩文案是「黑方获胜」",
+          ov.result_text)
+    check(not ov.can_review, "本地对战没有「算法复盘」按钮")
+    labels = [b.text() for b in ov.findChildren(QPushButton)]
+    check(all("算法复盘" not in t for t in labels),
+          "遮罩上确实没有复盘按钮", str(labels))
+    check(w.game_panel.turn_indicator.label.text() == "黑方获胜",
+          "面板终局文案是「黑方获胜」",
+          w.game_panel.turn_indicator.label.text())
+    check(w.game_panel.engine_row._value.text() == "—",
+          "本地对战的面板不显示引擎",
+          w.game_panel.engine_row._value.text())
+
+    w._cancel_ai()
+    w._cancel_review(discard=True)
+
+
+def _has_text(widget, needle):
+    """这棵控件树里有没有哪个 QLabel 写着 ``needle``。
+
+    ``Screen`` 把标题/副标题交给 ``title_label`` / ``subtitle_label`` 建完
+    就不留句柄了，所以只能按文字去找 —— 也正因此，断言的是"用户看得到的
+    那句提示"，而不是某个内部属性的值。
+    """
+    return any(needle in lab.text()
+               for lab in widget.findChildren(QLabel))
+
+
+def _button_texts(widget):
+    """这棵控件树里所有 ``QPushButton`` 的文字，按出现顺序。"""
+    return [b.text() for b in widget.findChildren(QPushButton)]
+
+
+def _first_scroll_area(widget):
+    areas = widget.findChildren(QScrollArea)
+    return areas[0] if areas else None
+
+
+def _card_texts(screen):
+    """读出 ``SelectionScreen`` 每张卡片的主文案。"""
+    out = []
+    for btn in screen._cards:
+        for lab in btn.findChildren(QLabel):
+            if lab.property("role") == "card-text":
+                out.append(lab.text())
+    return out
+
+
+def do_review(app):
+    """战后算法复盘：入口只在对 AI 输棋时出现，强度受下限约束，能回到棋盘看。
+
+    输棋那一步不靠"真下输"（1 档要下很久且不保证）：直接把 `gamerule` 置成
+    输棋并弹遮罩 —— 这条路径与真实输棋**完全同一条**（`_show_game_over`），
+    区别只是谁先发现输了。
+    """
+    # ---- 强度下限：只列不低于本局难度的档位 ----
+    for min_level, want in ((1, 5), (3, 3), (5, 1)):
+        s = M.SelectionScreen(mode="review", min_level=min_level)
+        got = _card_texts(s)
+        check(len(got) == want and len(s._cards) == want,
+              f"复盘强度页 min_level={min_level} 只列 {want} 档",
+              str(got))
+        s.deleteLater()
+
+    w = M.GomokuGame()
+    w.show()
+    pump(120, app)
+    w._on_loading_finished()
+    pump(40, app)
+    w._on_mode_selected(0)               # 挑战 AI
+    pump(40, app)
+    check(w.selection_color is not None, "挑战AI 仍走原来的颜色页")
+    w._on_color_selected(0)
+    pump(40, app)
+    w._on_difficulty_selected(1)         # 1 档，跑得快
+    pump(120, app)
+
+    # 下 4 手，攒出复盘素材
+    for i in range(4):
+        got_idle, _ = wait_until(lambda: not w.ai_thinking, 30, app)
+        if not got_idle or w.game_over:
+            break
+        cell = pick_empty_near_center(w.board)
+        if cell is None:
+            break
+        click_cell(w, *cell)
+        pump(20, app)
+    check(len(w.human_moves) >= 3, "对局中记下了玩家的每一步快照",
+          f"{len(w.human_moves)} 手")
+    for m in w.human_moves:
+        n = int(np.count_nonzero(m['before']))
+        if not check(n == m['seq'] - 1,
+                     f"第 {m['seq']} 手的快照是落子**之前**的局面",
+                     f"盘上 {n} 子"):
+            break
+
+    # 造一个"输给 AI"的终局
+    w.gamerule = 1
+    w.winner = 2
+    w.game_over = True
+    w._show_game_over()
+    pump(30, app)
+    ov = w.game_over_overlay
+    labels = [b.text() for b in ov.findChildren(QPushButton)]
+    check(ov.can_review and any("算法复盘" in t for t in labels),
+          "输给 AI 后遮罩上有「算法复盘」按钮", str(labels))
+
+    w._on_review_clicked()
+    pump(80, app)
+    check(w.game_widget is None, "进入复盘时对局 UI 已整棵拆掉")
+    if not check(w.review_strength is not None, "进入复盘强度页"):
+        return
+    check("初级" in _card_texts(w.review_strength),
+          "1 档输棋后可以选初级复盘", str(_card_texts(w.review_strength)))
+
+    w._on_review_level_selected(1)
+    pump(60, app)
+    check(w.review_progress is not None, "进入复盘进度页")
+    check(w.review_worker is not None and w.review_worker.isRunning(),
+          "复盘线程已启动")
+
+    got, _ = wait_until(lambda: w.review_worker is None, 180, app)
+    if not check(got, "复盘在时限内算完"):
+        return
+    check(w.review_list is not None, "复盘结果页已构建")
+    check(isinstance(w.review_records, list), "复盘记录是列表",
+          f"{len(w.review_records)} 条")
+    check(w.game_panel is None, "复盘期间没有残留对局面板")
+
+    for rec in w.review_records:
+        b, p = rec['best'], rec['played']
+        # 最优点必须是**该局面上的空点**，否则圈出来的位置毫无意义。
+        if not check(rec['before'][b[0]][b[1]] == 0,
+                     f"第 {rec['seq']} 手的最优点 ({b[0]},{b[1]}) 在原局面里是空点"):
+            break
+        if not check(rec['before'][p[0]][p[1]] == 0,
+                     f"第 {rec['seq']} 手玩家落点 ({p[0]},{p[1]}) 在原局面里是空点"):
+            break
+        if not check(rec['delta'] is None or rec['delta'] > 0,
+                     f"第 {rec['seq']} 手的 Δ 为正（或无可比）",
+                     str(rec['delta'])):
+            break
+
+    if not w.review_records:
+        record("WARN", "复盘棋盘", "本局没有非最优下法，跳过棋盘检查")
+    else:
+        w._on_review_record_selected(0)
+        pump(60, app)
+        if check(w.review_board is not None, "点「棋局显示」后进入复盘棋盘"):
+            rb = w.review_board
+            bw = rb.board_widget
+            rec = w.review_records[0]
+            check(bw is not None and bw.review_marker is not None,
+                  "复盘棋盘上设置了标记",
+                  str(getattr(bw, "review_marker", None)))
+            check(tuple(bw.review_marker[0]) == tuple(rec['best'])
+                  and tuple(bw.review_marker[1]) == tuple(rec['played']),
+                  "标记指向该手的最优点与玩家落点")
+            check(int(np.count_nonzero(bw.board)) == rec['seq'] - 1,
+                  "复盘棋盘摆的是该手**之前**的局面",
+                  f"{np.count_nonzero(bw.board)} 子")
+            check(bw.board[rec['played'][0]][rec['played'][1]] == 0,
+                  "玩家那一手是幽灵子，没有真的落到盘上")
+            # 只读：基类的 mousePressEvent 什么都不做，点击不该改棋盘
+            before = bw.board.copy()
+            QTest.mouseClick(bw, Qt.LeftButton,
+                             pos=bw.cell_center(*rec['best']))
+            pump(20, app)
+            check((bw.board == before).all(), "复盘棋盘是只读的（点击不落子）")
+
+            w._back_to_review_list()
+            pump(40, app)
+            check(w.central.currentWidget() is w.review_list,
+                  "「返回复盘」回到结果页")
+            check(w.central.count() == 4,
+                  "返回没有把结果页重复入栈（强度/进度/结果/棋盘，共 4 页）",
+                  f"栈内 {w.central.count()} 页")
+
+    # ---- 结果页的出口 ----
+    # 复盘是一条有终点的路径：看完最后一条必须能落下去。结果页只有"棋局
+    # 显示"，没有出口的话用户就被困在这一页了。
+    btns = _button_texts(w.review_list)
+    check("🏠 结束复盘" in btns and "✕ 退出游戏" in btns,
+          "复盘结果页有「结束复盘」与「退出游戏」", str(btns))
+
+    area = _first_scroll_area(w.review_list)
+    if check(area is not None, "复盘结果页有记录列表"):
+        h = area.height()
+        check(h < M.REVIEW_LIST_H, "记录少时列表按内容收缩，不留大片空框",
+              f"{h}px（封顶 {M.REVIEW_LIST_H}px）")
+
+    w._cancel_review(discard=True)
+    check(w.review_worker is None, "收尾后复盘线程引用已清空")
+
+
+def do_review_finish(app):
+    """「结束复盘」= 回到模式选择页（与终局遮罩的「再来一局」同一个去处）。"""
+    w = M.GomokuGame()
+    w.show()
+    pump(120, app)
+    w._on_loading_finished()
+    pump(40, app)
+    w._on_mode_selected(0)
+    pump(40, app)
+    w._on_color_selected(0)
+    pump(40, app)
+    w._on_difficulty_selected(1)
+    pump(120, app)
+
+    got, _ = wait_until(lambda: not w.ai_thinking, 30, app)
+    if not got or w.game_over:
+        check(False, "结束复盘用例：先把局面走到能复盘")
+        return
+    click_cell(w, *pick_empty_near_center(w.board))
+    pump(20, app)
+
+    w.gamerule = 1
+    w.winner = 2
+    w.game_over = True
+    w._show_game_over()
+    pump(30, app)
+    w._on_review_clicked()
+    pump(60, app)
+    w._on_review_level_selected(1)
+    got, _ = wait_until(lambda: w.review_list is not None, 40, app)
+    if not check(got, "结束复盘用例：复盘结果页已出现"):
+        return
+
+    # 直接发信号，等价于点那颗按钮 —— 不必去猜按钮在屏幕上的坐标。
+    w.review_list.finish_clicked.emit()
+    pump(60, app)
+    check(w.selection_mode is not None,
+          "「结束复盘」回到了模式选择页")
+    check(w.review_list is None, "回到模式页后复盘结果页已拆掉")
+    check(w.central.currentWidget() is w.selection_mode,
+          "当前页就是模式选择页")
+
+    w._cancel_review(discard=True)
+
+
+def do_review_cancel(app):
+    """复盘中途取消：进度页那颗按钮必须**立刻**收工，并展示已经算完的部分。
+
+    取 3 档（每手 15 秒）就是为了让取消有东西可取消 —— 1 档常常几毫秒就返回，
+    "取消"根本来不及按下，那种情况下这里测的其实是空路径。
+    """
+    w = M.GomokuGame()
+    w.show()
+    pump(120, app)
+    w._on_loading_finished()
+    pump(40, app)
+    w._on_mode_selected(0)
+    pump(40, app)
+    w._on_color_selected(0)
+    pump(40, app)
+    w._on_difficulty_selected(1)
+    pump(120, app)
+
+    for _ in range(2):
+        got_idle, _ = wait_until(lambda: not w.ai_thinking, 30, app)
+        if not got_idle or w.game_over:
+            break
+        cell = pick_empty_near_center(w.board)
+        if cell is None:
+            break
+        click_cell(w, *cell)
+        pump(20, app)
+    if not check(len(w.human_moves) >= 2, "取消用例：攒到了复盘素材",
+                 f"{len(w.human_moves)} 手"):
+        return
+
+    w.gamerule = 1
+    w.winner = 2
+    w.game_over = True
+    w._show_game_over()
+    pump(30, app)
+    w._on_review_clicked()
+    pump(60, app)
+    w._on_review_level_selected(3)       # 3 档 = 每手 7 秒，够把取消按下去
+    pump(60, app)
+
+    pump(1_500, app)                     # 让第一手真的进到搜索里
+    check(w.review_progress is not None
+          and w.review_progress.progress_bar.value() >= 0,
+          "进度条可读", f"value={w.review_progress.progress_bar.value()}")
+
+    t0 = time.monotonic()
+    w._cancel_review()
+    dt = time.monotonic() - t0
+    check(dt <= CANCEL_SAFETY_S, "取消复盘未挂死", f"{dt:.2f}s")
+
+    got, _ = wait_until(lambda: w.review_list is not None, 20, app)
+    if not check(got, "取消后照常走到结果页（展示已算完的部分）"):
+        return
+    check(_has_text(w.review_list, "已取消"), "结果页标明了这次是取消")
+    check(w.review_worker is None, "取消后复盘线程引用已清空")
+
+    w._cancel_review(discard=True)
 
 
 def do_chinese_path(app):
@@ -512,6 +886,10 @@ def main():
         do_undo(app, w)
         do_restart_during_think(app, w)
         do_quit_during_think(app, w)
+        do_local_battle(app)
+        do_review(app)
+        do_review_finish(app)
+        do_review_cancel(app)
         do_chinese_path(app)
     except Exception:
         record("FAIL", "冒烟测试异常中止", traceback.format_exc().splitlines()[-1])

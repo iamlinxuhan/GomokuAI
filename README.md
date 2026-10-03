@@ -23,7 +23,7 @@ reference for A/B comparisons.
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-3.0.5-brightgreen)
+![Version](https://img.shields.io/badge/version-3.0.6-brightgreen)
 
 ---
 
@@ -75,6 +75,19 @@ reference for A/B comparisons.
     this move (`C++` / `Python (local)` / `Book`), the second says which port
     the connection landed on
 - **Asynchronous AI**: threaded on a QThread, so the UI never stalls
+- **Two ways to play**: right after the splash you choose "Challenge the AI" or
+  "Local match". A local match involves no AI at all — two people take turns on
+  one machine — so the turn hint and the final result both speak in stone
+  colours (`Black wins` / `White wins` / `Draw`), and its endgame overlay offers
+  no review: with no AI there is no algorithm to review against
+- **Post-game algorithmic review**: after losing to the AI you can pick a
+  strength no lower than the one you played and have the engine re-compute each
+  move in turn, listing the ones **that were not optimal** (original point →
+  best point + score difference), with a progress bar and a cancel that keeps
+  what was already computed. "Show position" displays the board **as it stood
+  before that move**, with the best point ringed and your actual move drawn as
+  a ghost stone, so the two sit on one board. The review runs on its own
+  background thread (`ReviewWorker`) at the time limit of the chosen level
 
 ---
 
@@ -202,11 +215,19 @@ has to be surfaced at build time.
 └─────────────────────────────────┘
 ```
 
-**Only `ai_move` goes over TCP.** `check_win` / `win_line` / `evaluate` /
-`opening_move` stay local, because they **all run synchronously on the UI main
-thread** (every stone placed runs each of them). Moving them onto TCP would mean
-the interface blocking on a network round trip every move, which directly
-conflicts with "the UI never stalls".
+**Only the search goes over TCP, and there are exactly two kinds of it.**
+`ai_move` (playing) and `analyze` (post-game review) go over TCP; `check_win` /
+`win_line` / `evaluate` / `opening_move` stay local, because they **all run
+synchronously on the UI main thread** (every stone placed runs each of them).
+Moving them onto TCP would mean the interface blocking on a network round trip
+every move, which directly conflicts with "the UI never stalls".
+
+`analyze`'s request fields are **byte-identical to `compute`'s** (including the
+conditional `bias_*` and `enhanced/lmr/extend`) — a review has to use the same
+configuration the game did, or it is reviewing a different game. The only
+difference is the extra `cands` array in the reply. It too runs on a background
+thread (`ReviewWorker`), one move per time limit, so going over TCP does not
+block the main thread.
 
 **Difficulty parameters are authoritatively sent down by Python.** Every request
 carries `time/max_depth/vcf_budget/qply` plus the entry level's bias
@@ -487,10 +508,14 @@ position** — the book is partitioned by `(position, side to move)`, and after
 black plays its best move it is white to move, which is a **new key**, and the
 highest-probability one at that.
 
-**There is only one Python table; the C++ side has no mirror.** The only thing
-that goes over TCP is `ai_move`'s `compute`, and the book is hit inside
-`engine.py`'s `ai_move`, **before the request is even sent** — C++'s
-`openingMove()` is not on the move-generation path at all. So the only effect of
+**There is only one Python table; the C++ side has no mirror.** The book is hit
+inside `engine.py`'s `ai_move`, **before the request is even sent** — C++'s
+`openingMove()` is not on the move-generation path at all. (`analyze`, the other
+thing that goes over TCP, does **not** consult the book either: a review wants
+"the candidate scores for every move", and the book supplies a single move —
+not the same thing. Worse, letting the book in would let a review report "the
+book plays here" as "the engine thinks this is best", which is a different
+claim.) So the only effect of
 "mirroring it" would be one more table that can drift: each side has its own
 Zobrist hashing, and once they diverge C++ would **silently** find no entries at
 all (presenting as "the book seems not to work"). **Write no second table, and
@@ -599,7 +624,7 @@ GomokuAI/
 ├── ui_kit.py          # reusable widget primitives (titles, info rows, buttons, page skeleton, tech texture)
 ├── board_geometry.py  # pixel <-> cell conversion (pure math, no Qt)
 ├── board_render.py    # offscreen board rendering (wood grain / stone sprites / layer cache)
-├── tests/             # pytest: geometry, incremental engine, position suite, win-rate conversion, colour-literal guard
+├── tests/             # pytest: geometry, incremental engine, position suite, win-rate conversion, review candidates, colour-literal guard
 ├── tools/             # bench / selfplay / positions / gui_smoke / ui_e2e / build_book / ab_enhance …
 │   ├── BASELINE.md    # measured baselines and thresholds per stage
 │   └── legacy_engine.py  # verbatim snapshot of the old engine (must not be modified; the A/B control)
@@ -635,8 +660,11 @@ resigning when sentenced** (`test_escape`), VCF's three states and "all three
 levels really do have VCF on" (`test_vcf`), difficulty thresholds and **low
 levels reaching their own depth cap** (`test_difficulty`), cancellation latency
 (`test_cancel`), win-rate anchors having to be `engine` constants
-(`test_analysis`), the opening book's **wiring** (`test_opening_book`), and the
-colour-literal guard (`test_no_literal_colors`).
+(`test_analysis`), the opening book's **wiring** (`test_opening_book`), the
+review's candidate table (`test_analyze`: the table is **complete**, its maximum
+equals the reported best value, collecting does not change the chosen move, and
+a fresh engine is used each time), and the colour-literal guard
+(`test_no_literal_colors`).
 
 There is also `tools/gui_smoke.py` (headless UI smoke test, testing **wiring**)
 and `tools/ui_e2e.py` (**actually plays one full game at each of the five
@@ -665,6 +693,7 @@ deliberately preserved behaviour.
 
 | Version | Date | Contents |
 |---|---|---|
+| **v3.0.6** | 2026-10-03 | **Local two-player mode**: a mode screen now sits between the splash and the colour screen ("Challenge the AI" / "Local match"). The latter involves no AI at all — two people take turns on one machine — so the turn hint and the final result both speak in stone colours ("Black wins" / "White wins" / "Draw"), and its endgame overlay offers no review, since with no AI there is no algorithm to review against. **Post-game algorithmic review**: after losing to the AI the overlay gains a "Review" button. Pick a strength no lower than the difficulty you played, and the engine re-computes each of *your* moves in turn, listing the ones that were not optimal (original point → best point + score difference), with a progress bar and a cancel that keeps whatever was already computed. "Show position" displays the board **as it stood before that move**, with the best point ringed and your actual move drawn as a ghost stone so the two can be compared on one board. The result screen ends with "Finish" / "Quit". **The engine side extended the TCP protocol**: a new `analyze` request carries fields byte-identical to `compute` (including the conditional `bias_*` and `enhanced/lmr/extend` — review must use the same configuration the game did) and replies with a `cands` array. Root candidates come from a new `outRoot` out-parameter on `Engine::think`; when `outRoot == nullptr`, `collectOn == biasOn`, so the entire old path is bit-for-bit unchanged and the `enhanced == 0` C++↔Python identity is untouched. An older C++ build answers `analyze` with "unknown type", which the Python side silently degrades to local analysis — both directions of the protocol are safe. Worth recording: **to get a complete candidate table you must disable the aspiration window while collecting** — a narrow window prunes some root moves, leaving them with no score to compare; missing that one spot raises no error, it just yields a half-filled table |
 | **v3.0.5** | 2026-10-02 | **Windows promoted to stable** (verified on real hardware, `_testing` dropped), and "log or not" moved from a platform-implied default to an explicit filename declaration: every platform now has `run_debug` (writes logs next to the executable) and `run_play` (writes none), with installers shipping play. The naming scheme was overhauled — `AMD` → `amd`, `x86_32` → `x32`, and ARM's family and bit-width merged into `aarch64` / `armv7`. Variants are baked in **at build time** (by injecting a `_build_flavor.py` line), not inferred back from the filename. Fixed the black console window that popped up when launching the engine from the GUI process (`CREATE_NO_WINDOW`). From earlier: `cpp/src/bitops.h` gathers the `__builtin_*` calls into a cross-compiler wrapper, falling back to `<intrin.h>` where MSVC lacks them — before this the C++ engine simply did not compile under MSVC; the workflow's manual dispatch gained a `linux` input so you can build amd64 only, or skip Linux entirely. **The Linux installers now ship an application icon**: previously they installed no icon file at all and the `.desktop` entry had no `Icon=` key, so the menu fell back to a blank one. All four architectures now generate per-size PNGs from the existing `.ico` at build time (`python3-pil` via apt, no new runtime dependency) and install them under `/usr/share/icons/hicolor/<size>/apps/gomoku-ai.png`; the `.deb` gained `hicolor-icon-theme` in `Depends:` so `index.theme` and the icon-cache trigger are present, and the `.tar.gz` `install.sh` copies the tree and refreshes the cache when the tool exists. **The window icon is now set by the program itself**: the `.desktop` alone could not fix it, because the titlebar and taskbar read the window's own icon property (`_NET_WM_ICON` on X11, `app_id` on Wayland) and only `setWindowIcon()` writes that — with the icon installed, a running window still showed X.Org's fallback logo. `main.py` now loads a PNG generated from the same `.ico` at build time, bundles it into all three PyInstaller variants via `--add-data`, and calls `setDesktopFileName("gomoku-ai")` so KWin ties the window to the menu entry. The icon is downscaled to 128×128 before being handed to `setWindowIcon()`: a 256×256 ARGB image is 262152 bytes and does not fit in a single X request (262140), so the `_NET_WM_ICON` write silently failed and left the titlebar blank while the taskbar — which goes through the `.desktop` — looked fine. Release asset names and count are unchanged |
 | **v3.0.4** | 2026-10-01 | The endgame now lights up the five first and settles afterwards: a red line sweeps across the five (extending half a cell past each end, scaled by √2/2 on diagonals), the overlay is delayed by one second, and "elapsed" stops the moment the stone lands — previously the overlay covered the whole screen and the player could not see where they had lost. Also removed the endgame "last move" ring (it sat right on the line's endpoint and cut a notch out of it). The panel's theme toggle became its own row: text 12px → 14px and centred, with the sun / moon now self-drawn (emoji never resolves to a colour font on most machines, yielding only monochrome glyphs that vary by machine) |
 | **v3.0.3** | 2026-09-26 | Two fixes on the difficulty screen: under the dark theme the strength bar takes its stone colour from the theme (black stones are only 1.11:1 against the dark card); the Grandmaster card's strength bar now compresses the box spacing instead of shrinking the stones (the original 191px did not fit the card's 136px inner area). The v3.0.2 tag failed `test` and produced no Release; its contents are folded into this version |

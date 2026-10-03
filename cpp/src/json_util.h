@@ -91,6 +91,31 @@ public:
         keySep(key);
         *out_ += "null";
     }
+    //: 候选着法数组：`[{"i":idx,"v":val}, ...]`。战后复盘的分析应答专用。
+    //:
+    //: 为什么不做通用数组支持：本类现有的每个调用点都是"平铺键"形状，给它加
+    //: 一套数组状态机（嵌套层级、元素分隔符）等于把全部现有报文的写入路径都
+    //: 暴露在这一个改动之下。一个专用出口只多出一种形状，波及面为零。
+    //: 整数照旧走 `std::to_string` —— 见文件头，"绝不能是浮点"。
+    void cands(const char* key, const std::vector<std::pair<int, int32_t>>& v) {
+        keySep(key);
+        out_->push_back('[');
+        bool firstElem = true;
+        for (const auto& kv : v) {
+            if (!firstElem) out_->push_back(',');
+            firstElem = false;
+            out_->push_back('{');
+            writeString(out_, "i");
+            out_->push_back(':');
+            *out_ += std::to_string(kv.first);
+            out_->push_back(',');
+            writeString(out_, "v");
+            out_->push_back(':');
+            *out_ += std::to_string(kv.second);
+            out_->push_back('}');
+        }
+        out_->push_back(']');
+    }
     void close() { out_->push_back('}'); }
 
 private:

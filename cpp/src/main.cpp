@@ -679,6 +679,105 @@ void testEnhancedSearch() {
           "增强开启后取消仍迅速返回（" + std::to_string(cms) + " ms）");
 }
 
+void testAnalyze() {
+    section("根节点候选表（战后复盘用）");
+    using namespace gomoku;
+
+    // 与 testEnhancedSearch 同一个中局：可下点多，候选表才有意义。
+    uint8_t cells[CELLS] = {0};
+    const int stones[][3] = {{6, 10, 1}, {7, 6, 2}, {7, 8, 1},  {7, 11, 1},
+                             {8, 11, 1}, {9, 9, 1},  {9, 13, 1}, {10, 6, 2},
+                             {10, 9, 2}, {10, 10, 2}, {11, 8, 2}, {12, 11, 2},
+                             {12, 13, 1}, {13, 10, 2}};
+    for (const auto& s : stones) cells[s[0] * BOARD_SIZE + s[1]] = s[2];
+
+    SearchConfig cfg;
+    cfg.timeLimit = 2.0;
+    cfg.maxDepth = 6;
+    cfg.qply = 8;
+    cfg.vcfBudget = 0.0;
+    // 增强三键保持默认全 0：这条路径必须落在 parity 护栏覆盖的那一支上。
+
+    Info base;
+    Engine e0;
+    const int mv = e0.think(cells, 1, cfg, nullptr, &base);
+    check(mv >= 0, "基准搜索给出一个着法");
+
+    // 预先塞一条垃圾：候选表必须被**整体替换**，不是往后追加 —— 调用方
+    // （服务端对每条连接复用同一个 vector）要是拿到上一局残留的条目，复盘
+    // 就会把不存在于这一局的点当成"你走过的着法"。
+    //
+    // 占位项取 (0,0)：本局的子都在 6~13 行，角落离任何一颗子都远，必然不是
+    // 候选点。取一个"看起来随便"的坐标会撞上真候选，测出来的失败是假的。
+    std::vector<std::pair<int, int32_t>> cands;
+    cands.push_back({0, -1});
+    Info info;
+    Engine e1;
+    const int mv2 = e1.think(cells, 1, cfg, nullptr, &info, &cands);
+
+    bool junkGone = true;
+    for (const auto& kv : cands) {
+        if (kv.first == 0) junkGone = false;
+    }
+    check(junkGone, "候选表被整体替换（没有留下上一次调用的条目）");
+
+    if (cands.empty()) {
+        check(false, "候选表非空");
+        return;
+    }
+
+    int32_t maxVal = cands[0].second;
+    int maxIdx = cands[0].first;
+    for (const auto& kv : cands) {
+        if (kv.second > maxVal) {
+            maxVal = kv.second;
+            maxIdx = kv.first;
+        }
+    }
+    check(maxVal == info.bestVal,
+          "候选表最大值等于上报分值（" + std::to_string(maxVal) + " vs " +
+              std::to_string(info.bestVal) + "）");
+    check(mv2 == maxIdx, "选中的正是候选表里分值最高的那一手");
+    check(info.bestVal == base.bestVal,
+          "开收集不改变结论分值（" + std::to_string(info.bestVal) + " vs " +
+              std::to_string(base.bestVal) + "）");
+
+    // **这条才是"表是完整的"的证据。** 开收集时渴望窗口被关掉，根节点走
+    // 全窗口 (-INF, INF)，`alpha >= beta` 永不成立，所以每个候选都会被估值。
+    // 若是漏关了渴望窗口，窄窗会在某个根着法上截断 break，表就会短一截 ——
+    // 而"最大值仍等于 bestVal"这一点**照样成立**（最好的那一手总是先被估），
+    // 光看最大值根本发现不了。
+    Board bd = Board::fromArray(cells);
+    int all[CELLS + 1];
+    int ncand = 0;
+    bd.candidates(all, &ncand);
+    check(static_cast<int>(cands.size()) == ncand,
+          "候选表覆盖了全部根着法（表 " + std::to_string(cands.size()) +
+              " 项 / 候选 " + std::to_string(ncand) + " 项）");
+
+    // 逐字可复现：同一局面、同一配置，两张表必须一模一样。
+    std::vector<std::pair<int, int32_t>> again;
+    Info info2;
+    Engine e2;
+    e2.think(cells, 1, cfg, nullptr, &info2, &again);
+    check(again == cands && info2.bestVal == info.bestVal,
+          "同一局面的候选表逐字可复现");
+
+    std::printf("    候选 %zu 项，最优 idx=%d val=%d，depth=%d\n", cands.size(),
+                maxIdx, info.bestVal, info.depth);
+
+    // 满盘：没有候选可比，必须返回 -1 并**清空**表。
+    uint8_t full[CELLS];
+    for (int i = 0; i < CELLS; ++i) full[i] = (i % 2) ? 1 : 2;
+    std::vector<std::pair<int, int32_t>> stale;
+    stale.push_back({7, 7});
+    Info fInfo;
+    Engine e3;
+    const int fmv = e3.think(full, 1, cfg, nullptr, &fInfo, &stale);
+    check(fmv == -1, "满盘时返回 -1（实得 " + std::to_string(fmv) + "）");
+    check(stale.empty(), "无候选时候选表被清空");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -735,6 +834,7 @@ int main(int argc, char** argv) {
             testMateTruth();
             testSearchSmoke();
             testEnhancedSearch();
+            testAnalyze();
         }
         std::printf("\n%s（%d 项失败）\n", g_failed == 0 ? "自检通过" : "自检失败",
                     g_failed);

@@ -13,7 +13,7 @@ import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QStackedWidget, QStackedLayout,
-    QProgressBar, QFrame, QSizePolicy
+    QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QThread, pyqtSignal, QRect, QPoint, QPointF,
@@ -133,6 +133,262 @@ class AIWorker(QThread):
         self.finished.emit(r, c, info)
 
 
+# ==================== 复盘 Worker 线程 ====================
+class ReviewWorker(QThread):
+    """战后复盘：逐手重算玩家每一着，找出"不是最优点"的那些。
+
+    **每手都用所选档位的时限**（``engine.analyze`` 的默认口径 = 难度表里的
+    ``time``），所以这一轮可能跑上十几秒 × 十几手。取消同样是协作式的：
+    ``cancel()`` 置位 Event，引擎在搜索循环里轮询到就退出，**已经算完的部分
+    保留**（``completed`` 照常发出，只是短一些）。
+
+    只复盘**玩家**的着法：``moves`` 是 ``main`` 记下的那些落子前局面快照，
+    ``human`` 是玩家执的子色。AI 的着法不在其中 —— 用户点名的口径。
+    """
+
+    progressed = pyqtSignal(int, int)   # (已完成, 总数)
+    completed = pyqtSignal(object)      # [record, ...]
+
+    def __init__(self, moves, human, level):
+        super().__init__()
+        self.moves = list(moves)
+        self.human = human
+        self.level = level
+        self._cancel = threading.Event()
+
+    def cancel(self):
+        self._cancel.set()
+
+    @property
+    def cancelled(self) -> bool:
+        """是否被要求取消。结果页据此在副标题上标一句"仅列出已算完的部分"。"""
+        return self._cancel.is_set()
+
+    def run(self):
+        records = []
+        total = len(self.moves)
+        for i, item in enumerate(self.moves):
+            if self._cancel.is_set():
+                break
+            try:
+                rec = self._one(item)
+            except Exception as exc:
+                # 单步失败不该让整轮复盘作废 —— 与 ``AIWorker`` 同一条哲学：
+                # 异常若冒泡出 ``run``，线程就静默死了，UI 会永远停在进度页。
+                print(f"[复盘] 第 {item.get('seq')} 手分析失败: "
+                      f"{type(exc).__name__}: {exc}")
+                rec = None
+            if rec is not None:
+                records.append(rec)
+            self.progressed.emit(i + 1, total)
+        self.completed.emit(records)
+
+    def _one(self, item):
+        """分析一手。返回记录，或 ``None``（没有可比的最优解）。"""
+        before = item['before']
+        played = (item['r'], item['c'])
+        best_idx, best_val, cands, _info = engine.analyze(
+            before, self.human, self.level, cancel=self._cancel)
+        if self._cancel.is_set() or not cands:
+            # 空盘（玩家执黑第一手）没有候选可比；取消时也不再产出记录。
+            return None
+        table = dict(cands)
+        played_idx = played[0] * BOARD_SIZE + played[1]
+        rec = {
+            'seq': item['seq'],
+            'played': played,
+            'best': divmod(best_idx, BOARD_SIZE),
+            'best_val': best_val,
+            'before': before,
+            # 杀棋分（|v| > 静态上限）之间的差值是 2×10⁷ 这种没有量纲意义的数，
+            # 结果页要另给一句文字结论（见 ``_record_line``）。
+            'mate': is_mate(best_val),
+        }
+        if played_idx not in table:
+            # 不在表里有两种**完全不同**的原因，不能混成一句话：
+            #
+            #  * 它压根不是候选点（候选按邻接生成，下到离战场很远的地方就不会
+            #    出现）→「偏离战场」。这不是"漏报"，如实标出来。
+            #  * 它是合法候选点却没被打分 → 根节点**提前返回**了：只要有一手
+            #    立刻成五，`_root` 就当场返回，后面的候选一个都不再走
+            #    （`engine_local.Board` 与 C++ 的 `root()` 同款）。那时的正确
+            #    说法是"错失必胜"，判为"偏离战场"就是把最严重的一手讲成无害。
+            legal = set(Board.from_array(before).candidates())
+            rec.update({'played_val': None, 'delta': None,
+                        'offboard': played_idx not in legal})
+        else:
+            played_val = table[played_idx]
+            rec.update({'played_val': played_val,
+                        'delta': best_val - played_val,
+                        'offboard': False})
+        return rec
+
+
+# ==================== 复盘页面 ====================
+REVIEW_ROW_W = 620          # 结果行宽度：够放下"第 NN 手 … Δ=…"那串文字
+# 列表视口高度。**必须定死**：几十条记录自然高度会把整页撑得比窗口还高，
+# 底下的按钮被推出屏幕且无法滚动到。
+REVIEW_LIST_H = 420
+
+
+def _fmt_point(rc):
+    """把 ``(r, c)`` 写成棋盘坐标（列 A–S、行 1–19，与日志同一套）。"""
+    r, c = rc
+    return "%s%d" % (chr(ord('A') + c), r + 1)
+
+
+def _record_line(rec):
+    """一条复盘记录的正文。
+
+    分值差在杀棋局面里没有量纲意义（两个杀棋分之差是 2×10⁷ 这个量级），
+    所以那里改报一句文字结论 —— 光甩一个七位数只会让人以为程序算错了。
+    """
+    head = "第 %d 手   %s → 最优点 %s" % (
+        rec['seq'], _fmt_point(rec['played']), _fmt_point(rec['best']))
+    if rec['offboard']:
+        return head + "   偏离战场（不在候选点内）"
+    if rec['mate']:
+        return (head + "   %s" %
+                ("错失必胜" if rec['best_val'] > 0 else "漏防必败"))
+    if rec['delta'] is None:
+        # 合法候选点却没有分值：搜索被时限截断在半张表上（``_root`` 的提前
+        # 返回之外，取消也会走到这里）。**不能**当 0 处理 —— "没算过"与
+        # "算过了、没问题"是两件事。
+        return head + "   未能比较（搜索被截断）"
+    return head + "   分值差 %d" % rec['delta']
+
+
+class ReviewProgressScreen(Screen):
+    """复盘计算中的进度页：进度条 + 「第 N/M 手」+ 取消。"""
+
+    cancel_clicked = pyqtSignal()
+
+    def __init__(self, total, level):
+        super().__init__(title="算法复盘",
+                         subtitle="正在按「%s」逐手重算" % engine.difficulty_name(level),
+                         backdrop=True)
+        self.total = max(1, int(total))
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, self.total)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)
+        # 与加载页同一套尺寸：进度条是同一件东西，只是量纲从"毫秒"变成"手"。
+        self.progress_bar.setFixedHeight(5)
+        self.progress_bar.setFixedWidth(300)
+        self.add_content(self.progress_bar)
+
+        self.step_label = faint_label("第 0/%d 手" % self.total)
+        self.add_content(self.step_label)
+
+        cancel_btn = button("✕ 取消复盘", "danger", width=150)
+        cancel_btn.clicked.connect(self.cancel_clicked.emit)
+        self.add_content(cancel_btn)
+
+    def set_progress(self, done, total):
+        self.progress_bar.setRange(0, max(1, int(total)))
+        self.progress_bar.setValue(int(done))
+        self.step_label.setText("第 %d/%d 手" % (done, total))
+
+
+class ReviewScreen(Screen):
+    """复盘结果列表。每行一条"非最优下法"，带一个「棋局显示」按钮。"""
+
+    record_selected = pyqtSignal(int)   # 选中记录在 self.records 里的下标
+    finish_clicked = pyqtSignal()       # 结束复盘：回模式选择页
+    exit_clicked = pyqtSignal()         # 退出游戏
+
+    def __init__(self, records, level, cancelled=False):
+        super().__init__(title="复盘结果",
+                         subtitle="强度「%s」%s" % (
+                             engine.difficulty_name(level),
+                             "（已取消，仅列出已算完的部分）" if cancelled else ""),
+                         backdrop=True)
+        self.records = list(records)
+        self.setup_ui()
+
+    def setup_ui(self):
+        self.add_content(self._build_list())
+
+        # 出口放在**列表底下**而不是用 ``add_footer`` 贴到窗口最底边：
+        # 复盘是一条有终点的路径（结果 → 棋局显示 → 返回），看完最后一条
+        # 就该有地方落下去，让视线从列表自然接到按钮上。
+        finish = button("🏠 结束复盘", "primary", width=150)
+        finish.clicked.connect(self.finish_clicked.emit)
+        quit_btn = button("✕ 退出游戏", "danger", width=150)
+        quit_btn.clicked.connect(self.exit_clicked.emit)
+        self.add_content(hbox(finish, quit_btn, spacing=theme.SPACE_LG))
+
+    def _build_list(self):
+        if not self.records:
+            return faint_label("本局没有发现非最优下法")
+        inner = QWidget()
+        col = QVBoxLayout(inner)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(theme.SPACE_SM)
+        for i, rec in enumerate(self.records):
+            text = QLabel(_record_line(rec))
+            text.setProperty("role", "value")
+            show = button("棋局显示", "ghost", width=110)
+            show.clicked.connect(lambda _=False, idx=i:
+                                 self.record_selected.emit(idx))
+            col.addWidget(hbox(text, show, spacing=theme.SPACE_MD))
+        col.addStretch(1)
+
+        area = QScrollArea()
+        area.setWidgetResizable(True)
+        area.setFixedWidth(REVIEW_ROW_W + 24)
+        area.setWidget(inner)
+        # **高度按内容收缩，封顶 ``REVIEW_LIST_H``。** 定高的用意是兜住
+        # "几十条记录"那种极端（否则整页撑得比窗口还高）；但只有两条记录
+        # 时也摆一个 420px 的空框，看上去像列表没加载出来。
+        area.setFixedHeight(min(REVIEW_LIST_H,
+                                inner.sizeHint().height() + 2 * theme.SPACE_SM))
+        return area
+
+
+class ReviewBoardScreen(Screen):
+    """某一手的复盘棋盘：**落子之前**的局面 + 最优点圈 + 你那一手的幽灵子。"""
+
+    back_clicked = pyqtSignal()
+
+    def __init__(self, rec):
+        super().__init__(title="棋局显示",
+                         subtitle=_record_line(rec), backdrop=True)
+        self.rec = rec
+        self.setup_ui()
+
+    def setup_ui(self):
+        board = BoardWidget()
+        # 只读：不接 ``mousePressEvent``（基类什么都不做），也不给悬停预览。
+        board.setFixedSize(BOARD_PX, BOARD_PX)
+        board.set_board(self.rec['before'])
+        board.set_last_move(None, None, None)
+        board.set_hover_player(None)
+        board.set_review_marker(self.rec['best'], self.rec['played'],
+                                self._played_player())
+        # 留个句柄给"复核这张盘摆了哪一手的什么局面"的调用方（无头冒烟测试
+        # 就用它读回 review_marker 与盘面）。**与主窗口的 `board_widget` 不是
+        # 同一个属性** —— 那是主窗口的，这里是本页自己的。
+        self.board_widget = board
+        self.add_content(board)
+
+        back = button("← 返回复盘", "primary", width=150)
+        back.clicked.connect(self.back_clicked.emit)
+        self.add_content(back)
+
+    def _played_player(self):
+        """玩家那一手用的是谁的子色 —— 幽灵子的颜色。
+
+        棋盘上黑先白后，第 N 手（``seq`` 从 1 起）的奇偶就是子色。不用
+        ``self.human``：那是"玩家执哪一色"，只有在玩家始终执同一色的对局里
+        才等价，而这里要的是"这一手是谁下的"。
+        """
+        return 1 if self.rec['seq'] % 2 == 1 else 2
+
+
 # ==================== 加载界面 ====================
 SPLASH_MS = 900     # 开场交接时长；真实启动成本约 115ms，见下
 # 进度条步进间隔。15ms ≈ 66fps，肉眼连续；步数 60 也够让"在推进"看得清。
@@ -237,6 +493,9 @@ class BoardWidget(QWidget):
         self._anim_cell = None        # (r, c, player)
         self.win_cells = []           # 终局五连 [(r, c), ...]
         self.win_player = 0
+        # 复盘标记 ``(best_rc, played_rc, played_player)``。默认 None ——
+        # 正常对局这条分支整个不存在，绘制路径零影响（见 ``paintEvent``）。
+        self.review_marker = None
         # 下限与窗口下限同源：MIN_BOARD 正是「格距恰好 MIN_CELL」。写死一个
         # 360 会让两处下限脱钩 —— 窗口允许缩到棋盘只剩 360 宽时，格距掉到
         # 16.9，坐标标注直接糊没。
@@ -267,6 +526,16 @@ class BoardWidget(QWidget):
             self.last_move = (r, c, player)
             self._start_stone_anim(r, c, player)
         self.update()          # 只画一个环，不必重建棋子层
+
+    def set_review_marker(self, best_rc, played_rc, played_player):
+        """复盘标记：把"这一步的最优点"圈出来，把"你实际下的那手"画成幽灵子。
+
+        ``best_rc`` / ``played_rc`` 是 ``(r, c)``（任一可为 ``None``）。
+        ``played_player`` 决定幽灵子的颜色。**只存状态、不落子** —— 幽灵子不进
+        ``self.board``，复盘棋盘展示的仍是"那一手落子之前"的真实局面。
+        """
+        self.review_marker = (best_rc, played_rc, played_player)
+        self.update()
 
     def set_win_cells(self, cells, player):
         """终局五连高亮（``cells`` 来自 ``engine.win_line``）。
@@ -466,6 +735,36 @@ class BoardWidget(QWidget):
             painter.setBrush(Qt.NoBrush)
             painter.setPen(QPen(QColor(color), max(1.5, r * 0.22)))
             painter.drawEllipse(QPointF(x, y), r * 0.72, r * 0.72)
+
+        # 复盘标记（只有复盘棋盘会设，见 ``set_review_marker``）。
+        #
+        # 两层都画：**幽灵子**是"你实际下的那一手"，它不在 ``self.board`` 里，
+        # 因为这张盘展示的是落子**之前**的局面；**圈**是"算法认为该下的那手"。
+        # 只圈不画幽灵子的话，"该下哪"看得见、"你下在哪"看不见，两者没法对照；
+        # 反过来只画幽灵子也一样。
+        if self.review_marker is not None:
+            m_best, m_played, m_player = self.review_marker
+            if m_played is not None:
+                gr, gc = m_played
+                gx, gy = self.geom.px(gr, gc)
+                base = theme.STONE_B if m_player == 1 else theme.STONE_W
+                ghost2 = QColor(base)
+                ghost2.setAlpha(120)
+                painter.setPen(QPen(QColor(theme.GRID), max(1.0, r * 0.12)))
+                painter.setBrush(QBrush(ghost2))
+                painter.drawEllipse(QPointF(gx, gy), r, r)
+            if m_best is not None:
+                br, bc = m_best
+                bx, by = self.geom.px(br, bc)
+                # 与终局红线同一套"深色衬 + 亮色芯"：单画一圈 ``DANGER`` 在
+                # 橙金木盘上会化掉（见上面五连那段实测）。
+                painter.setBrush(Qt.NoBrush)
+                back = QPen(QColor(theme.LAST_DARK), max(2.0, r * 0.36))
+                painter.setPen(back)
+                painter.drawEllipse(QPointF(bx, by), r * 0.9, r * 0.9)
+                core = QPen(QColor(theme.DANGER), max(1.5, r * 0.20))
+                painter.setPen(core)
+                painter.drawEllipse(QPointF(bx, by), r * 0.9, r * 0.9)
 
         # 悬停：幽灵子（半透明的"你将落下的那颗子"）。旧的灰盘压在木色上
         # 几乎看不见。描边用棋盘墨色 GRID（浅色主题的 ACCENT 对木色不够）。
@@ -822,15 +1121,22 @@ class GamePanel(QFrame):
     # ---- 状态更新 ----
 
     def update_info(self, turn, difficulty, status, undo_count, move_count,
-                    human=1):
+                    human=1, local=False):
         players = {1: "黑棋 ●", 2: "白棋 ○"}
-        # 显示档位**名称**而不是"N 级"。档位号重构后从 3 档变成 5 档，旧编号
-        # 已经没有稳定含义；名称直接来自 engine.DIFFICULTY 那一张表，改表即改
-        # 界面，不会出现"界面上写 3 级、代码里是中级"这种两处对不上的情形。
-        self.difficulty_row.set_value(engine.difficulty_name(difficulty))
-        self.engine_row.set_value(engine.engine_label())
-        port = engine.current_port()
-        self.port_row.set_value(str(port) if port else "—")
+        # 本地对战没有 AI：难度/引擎/端口三行如实写"—"，而不是把上一局的档位
+        # 留在那里（面板上那三个数是"这一局用什么引擎在算"，本地局没有答案）。
+        if local:
+            self.difficulty_row.set_value("—")
+            self.engine_row.set_value("—")
+            self.port_row.set_value("—")
+        else:
+            # 显示档位**名称**而不是"N 级"。档位号重构后从 3 档变成 5 档，旧编号
+            # 已经没有稳定含义；名称直接来自 engine.DIFFICULTY 那一张表，改表即改
+            # 界面，不会出现"界面上写 3 级、代码里是中级"这种两处对不上的情形。
+            self.difficulty_row.set_value(engine.difficulty_name(difficulty))
+            self.engine_row.set_value(engine.engine_label())
+            port = engine.current_port()
+            self.port_row.set_value(str(port) if port else "—")
         self.undo_row.set_value(str(undo_count))
         self.moves_row.set_value(str(move_count))
         if status == "进行中":
@@ -840,6 +1146,12 @@ class GamePanel(QFrame):
                 else:
                     self.turn_indicator.set_turn(turn,
                                                  f"{players[turn]} 行动中")
+        elif status in ("黑方获胜", "白方获胜"):
+            # 本地对战：谁赢就以谁的子色落定，"轮到你落子"那种措辞在这里没有
+            # 主语，所以整句由 `status` 给。
+            stone = 1 if status == "黑方获胜" else 2
+            self.turn_indicator.set_result(stone, status, "win")
+            self.stop_timer()
         else:
             tone = {"你赢了！": "win", "你输了！": "lose"}.get(status, "")
             stone = human if tone == "win" else (3 - human)
@@ -909,30 +1221,49 @@ def _strength_bar(players, diameter=28):
 
 
 class SelectionScreen(Screen):
-    """执棋颜色 / AI难度选择。
+    """对战模式 / 执棋颜色 / AI难度 / 复盘强度 选择。
 
-    两个模式共用 ``Screen`` 的骨架与节奏，差异只剩标题文案与卡片行 —— 历史上
+    四个模式共用 ``Screen`` 的骨架与节奏，差异只剩标题文案与卡片行 —— 历史上
     两条分支各自抄了一份 stretch/spacing（一个 30 一个 25，没有理由）。
     """
 
     color_selected = pyqtSignal(int)  # 0=黑先, 1=白后
     difficulty_selected = pyqtSignal(int)  # 档位 1-5，对应 engine.DIFFICULTY
+    mode_selected = pyqtSignal(int)  # 0=挑战AI, 1=本地对战
+    review_level_selected = pyqtSignal(int)  # 复盘强度，档位 1-5
 
-    def __init__(self, mode="color"):
+    #: 四个模式的标题/副标题，与 ``setup_ui`` 里的卡片分支一一对应。
+    _TITLES = {
+        "mode": ("选择对战模式", "挑战 AI，或与身边的人对坐下棋"),
+        "color": ("选择执棋颜色", "黑棋为先手，白棋为后手"),
+        "difficulty": ("选择 AI 难度", "难度越高，AI 思考越深入"),
+        "review": ("选择复盘强度",
+                   "复盘强度不能低于本局难度（%s）"),
+    }
+
+    def __init__(self, mode="color", min_level=1):
         self.mode = mode
+        self.min_level = int(min_level)
+        title, subtitle = self._TITLES[mode]
+        if mode == "review":
+            subtitle = subtitle % engine.difficulty_name(self.min_level)
+        super().__init__(title=title, subtitle=subtitle, backdrop=True)
         self._cards = []
-        if mode == "color":
-            super().__init__(title="选择执棋颜色",
-                             subtitle="黑棋为先手，白棋为后手",
-                             backdrop=True)
-        else:
-            super().__init__(title="选择 AI 难度",
-                             subtitle="难度越高，AI 思考越深入",
-                             backdrop=True)
         self.setup_ui()
 
     def setup_ui(self):
-        if self.mode == "color":
+        if self.mode == "mode":
+            # 两张大卡：挑战 AI / 本地对战。face 用棋子本身 —— "对面是程序还是
+            # 人"这件事，一颗子和两颗子比两个字更容易一眼分出来。
+            cards = [("挑战 AI", "primary", 0, _strength_bar([1]), "与算法对弈"),
+                     ("本地对战", "success", 1, _strength_bar([1, 2]), "两人同机轮流下")]
+            for i, (text, tone, value, face, sub) in enumerate(cards):
+                btn = card_button(text, tone, face=face, sub=sub,
+                                  index=f"{i + 1:02d}")
+                btn.clicked.connect(lambda _=False, v=value:
+                                    self.mode_selected.emit(v))
+                self._cards.append(btn)
+        elif self.mode == "color":
             # 卡面直接放那颗子本身（黑 = player 1），不再用 ⚫/⚪ 字符 ——
             # 那两个字符由 CJK 字体回退渲染成一个小圆点，既不是棋子也不是
             # 那个颜色，是这张卡片最关键的区分信息却最看不清的地方。
@@ -944,7 +1275,7 @@ class SelectionScreen(Screen):
                 btn.clicked.connect(lambda _=False, v=value:
                                     self.color_selected.emit(v))
                 self._cards.append(btn)
-        else:
+        elif self.mode in ("difficulty", "review"):
             # 副标题**曾经写的是"搜索深度 1/2/3"**，那是假的：三个档位的搜索
             # 深度上限是 4/10/24，实测到的是 4/4/5（见 tools/BASELINE.md）。
             # 改报思考时限 —— 它是 engine.DIFFICULTY 里真实存在、且用户能直接
@@ -961,6 +1292,15 @@ class SelectionScreen(Screen):
             tones = ("ghost", "success", "primary", "danger", "danger")
             levels = sorted(engine.DIFFICULTY)
             assert len(tones) == len(levels), "难度卡配色与档位数不同步"
+
+            # 复盘页**只列不低于本局难度**的档位（用户点名的口径：初级输了就只能
+            # 用初级及以上来复盘）。在这里过滤而不是在 `__init__` 里改 `levels`：
+            # `index` 标签写的是真实档位号（"02" 就是第 2 档），过滤后仍要指对。
+            if self.mode == "review":
+                levels = [lv for lv in levels if lv >= self.min_level]
+                # 配色跟着**真实档位号**走（第 2 档是 success，与难度页一致），
+                # 而不是把过滤后的列表从头上重新配一遍色。
+                tones = tuple(tones[lv - 1] for lv in levels)
 
             # 强度条的棋子**按主题取色**。棋盘上那套材质是**对着木色**调的：
             # `theme.STONE_B_GRAD` 那三档渐变（也就是黑子本体）压在深色卡面
@@ -984,15 +1324,18 @@ class SelectionScreen(Screen):
                                   face=_strength_bar([bar_player] * level),
                                   sub="思考上限 %g 秒" % engine.DIFFICULTY[level]["time"],
                                   index=f"{level:02d}")
-                btn.clicked.connect(lambda _=False, l=level:
-                                    self.difficulty_selected.emit(l))
+                # 同一批卡片服务于两个页面，只有"点了发哪个信号"不同。
+                sig = (self.review_level_selected if self.mode == "review"
+                       else self.difficulty_selected)
+                btn.clicked.connect(lambda _=False, l=level, s=sig: s.emit(l))
                 self._cards.append(btn)
 
         # 5 张卡在 SPACE_XL(24) 下是 5×160+4×24 = 896px，仍塞得进 WINDOW_W=1022
         # —— 但只剩 126px 余量，而卡片是 setFixedSize 的（不随窗口缩放），
         # 颜色页那种"留白富余"的观感会被挤掉。降到 SPACE_LG(16) 得 864px。
-        # 只调难度页：颜色页只有 2 张卡，宽间距是那张页面的节奏，没理由跟着改。
-        gap = theme.SPACE_LG if self.mode != "color" else theme.SPACE_XL
+        # 只调难度页：颜色页/mode 页都只有 2 张卡，宽间距是那两张页面的节奏。
+        gap = (theme.SPACE_LG if self.mode in ("difficulty", "review")
+               else theme.SPACE_XL)
         self.add_content(hbox(*self._cards, spacing=gap))
 
 
@@ -1010,11 +1353,18 @@ class GameOverOverlay(Screen):
 
     restart_clicked = pyqtSignal()
     quit_clicked = pyqtSignal()
+    review_clicked = pyqtSignal()
 
-    def __init__(self, result_text, is_win):
+    def __init__(self, result_text, is_win, can_review=False):
+        """``can_review`` 为真时多一个「算法复盘」按钮。
+
+        **只在"输给 AI"这一种结局上为真**（见 ``_show_game_over``）：赢了没有
+        可复盘的东西，本地两人对战则根本没有 AI 参与 —— 没有算法可复盘。
+        """
         super().__init__(root_name="overlayRoot")
         self.result_text = result_text
         self.is_win = is_win
+        self.can_review = can_review
         self.setup_ui()
 
     def setup_ui(self):
@@ -1026,7 +1376,12 @@ class GameOverOverlay(Screen):
         restart_btn.clicked.connect(self.restart_clicked.emit)
         quit_btn = button("✕ 退出游戏", "danger", width=150)
         quit_btn.clicked.connect(self.quit_clicked.emit)
-        self.add_content(hbox(restart_btn, quit_btn, spacing=theme.SPACE_LG))
+        btns = [restart_btn, quit_btn]
+        if self.can_review:
+            review_btn = button("📊 算法复盘", "primary", width=150)
+            review_btn.clicked.connect(self.review_clicked.emit)
+            btns.append(review_btn)
+        self.add_content(hbox(*btns, spacing=theme.SPACE_LG))
 
 
 # ==================== 主窗口 ====================
@@ -1098,6 +1453,15 @@ class GomokuGame(QMainWindow):
         self.gamemode = 0  # 0=先手(黑), 1=后手(白)
         self.gameplayer = 1
         self.gamekunnan = 1
+        self.playmode = 0  # 0=挑战AI, 1=本地双人对战
+        self.winner = 0    # 本地对战的胜方：1=黑, 2=白, 0=平/未结束
+        #: 玩家（执黑或执白的那一方）每一步落子**之前**的局面快照，
+        #: ``[{'seq', 'r', 'c', 'before'}, ...]``。战后复盘只分析这些局面。
+        #:
+        #: ``before`` 是**落子前**的拷贝，正是复盘要分析的那个局面；这样复盘页
+        #: 完全不依赖 ``game_widget``（进复盘时整棵对局 UI 会被销毁），也不依赖
+        #: ``move_history`` 的既有语义（那是"每步落子**后**的快照"，差一步）。
+        self.human_moves = []
         self.gamerule = 3  # 1=输, 2=赢, 3=进行中
         self.output = 3  # 悔棋次数
         self.move_count = 0
@@ -1109,6 +1473,17 @@ class GomokuGame(QMainWindow):
         # AI Worker
         self.ai_worker = None
         self._ai_generation = 0     # 每次发起搜索递增，用于丢弃陈旧结果
+
+        # 复盘 Worker（与 AI Worker 同一套收尾方式，见 ``_cancel_review``）
+        self.review_worker = None
+        # 复盘代数：只在"拆页面"时递增，用来丢弃迟到的 ``completed``。与
+        # ``_ai_generation`` 同一个用途 —— 等待有超时上限，超时后线程仍会把
+        # 结果投递回来，而那一刻页面可能已经不存在了。
+        self._review_generation = 0
+
+        # 复盘得到的结果列表（``ReviewWorker.completed`` 的入参），供结果页读取
+        self.review_records = []
+        self.review_level = 1
 
         # 终局遮罩的延迟投递（见 ``GAME_OVER_DELAY_MS``）。用 QTimer 而不是
         # ``time.sleep`` —— 后者会把 UI 线程连同那一秒里的重绘一起冻住，玩家
@@ -1126,12 +1501,18 @@ class GomokuGame(QMainWindow):
 
         # 各页面
         self.loading_screen = None
+        self.selection_mode = None
         self.selection_color = None
         self.selection_difficulty = None
         self.game_widget = None
         self.board_widget = None
         self.game_panel = None
         self.game_over_overlay = None
+        # 复盘三页
+        self.review_strength = None
+        self.review_progress = None
+        self.review_list = None
+        self.review_board = None
 
         self._init_loading()
 
@@ -1150,7 +1531,7 @@ class GomokuGame(QMainWindow):
         """
         if self.central.currentWidget() is not self.loading_screen:
             return
-        self._show_color_selection()
+        self._show_mode_selection()
 
     def _drop_pages(self):
         """切页时回收旧页面。
@@ -1171,17 +1552,21 @@ class GomokuGame(QMainWindow):
         # 定时器若还活着，回调会在 game_widget 已销毁、``self._stack`` 已被置
         # None 之后醒来 —— 那是 AttributeError，在 Qt 槽里抛就是直接崩。
         self._game_over_timer.stop()
-        for attr in ("loading_screen", "selection_color",
-                     "selection_difficulty", "game_widget"):
+        for attr in ("loading_screen", "selection_mode", "selection_color",
+                     "selection_difficulty", "game_widget",
+                     "review_strength", "review_progress", "review_list",
+                     "review_board"):
             page = getattr(self, attr, None)
             if page is not None:
                 self.central.removeWidget(page)
                 page.deleteLater()
         # board_widget / game_panel / overlay 是 game_widget 的子控件，
         # 随父一起销毁，不需要（也不能）单独 removeWidget。
-        for attr in ("loading_screen", "selection_color", "selection_difficulty",
-                     "game_widget", "board_widget", "game_panel",
-                     "game_over_overlay", "_stack"):
+        for attr in ("loading_screen", "selection_mode", "selection_color",
+                     "selection_difficulty", "game_widget", "board_widget",
+                     "game_panel", "game_over_overlay", "_stack",
+                     "review_strength", "review_progress", "review_list",
+                     "review_board"):
             setattr(self, attr, None)
 
     def _switch_page(self, page):
@@ -1193,6 +1578,36 @@ class GomokuGame(QMainWindow):
         self.central.addWidget(page)
         self.central.setCurrentWidget(page)
         anim.fade_in(page)
+
+    def _show_mode_selection(self):
+        """显示对战模式选择（加载页之后的第一个岔路口）。
+
+        新开一局与"再来一局"都从这里进 —— 两条路的第一步本来就该是同一个
+        问题"这一局跟谁下"，各走各的迟早会出现"重开一局跳过了模式选择"这种
+        不一致。
+        """
+        self._drop_pages()
+        self.selection_mode = SelectionScreen(mode="mode")
+        self.selection_mode.mode_selected.connect(self._on_mode_selected)
+        self._switch_page(self.selection_mode)
+
+    def _on_mode_selected(self, mode):
+        """选择了对战模式：0=挑战AI（走原来的颜色/难度两步），1=本地对战。"""
+        self.playmode = int(mode)
+        if self.playmode == 1:
+            self._start_local_game()
+        else:
+            self._show_color_selection()
+
+    def _start_local_game(self):
+        """本地双人对战：跳过颜色页与难度页，直接开局（黑先）。
+
+        ``gamemode`` 固定为 0（黑先）：这一模式里"玩家"不是一个确定的人，
+        谁执黑由回合决定（见 ``_on_board_click``），沿用 ``gamemode`` 只会
+        让下游一堆 ``1 if gamemode == 0 else 2`` 的分支读出无意义的答案。
+        """
+        self.gamemode = 0
+        self._start_game()
 
     def _show_color_selection(self):
         """显示执棋颜色选择"""
@@ -1223,7 +1638,10 @@ class GomokuGame(QMainWindow):
         if self.logger:
             self.logger.close()
         self.logger = GameLogger()
-        self.logger.f.write(f"  模式: {'玩家先手(黑)' if self.gamemode == 0 else 'AI先手(黑), 玩家后手(白)'}\n")
+        if self.playmode == 1:
+            self.logger.f.write("  模式: 本地双人对战(无AI参与)\n")
+        else:
+            self.logger.f.write(f"  模式: {'玩家先手(黑)' if self.gamemode == 0 else 'AI先手(黑), 玩家后手(白)'}\n")
         # 记档位名称与 C++ 可执行文件的**可用性**。后者是这份日志里唯一能回答
         # "刚才那局为什么 AI 又慢又弱"的静态信息 —— 一份日志事后翻出来，用时
         # 一列 0.5 秒和 7 秒的差别只能靠它解释。注意措辞：这一行说的是"能不能
@@ -1234,14 +1652,17 @@ class GomokuGame(QMainWindow):
 
         self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
         self.move_history = []  # 每步落子后保存棋盘快照
+        self.human_moves = []
         self.gameplayer = 1
         self.gamerule = 3
+        self.winner = 0
         self.output = 3
         self.move_count = 0
         self.game_over = False
         self.ai_thinking = False
         self.ai_first_move_done = False
         self.last_move = None
+        self.review_records = []
 
         # 清空引擎的跨局面状态（置换表 / history / killer）。
         # 原版在这里重建 main.py 的模块级全局；引擎改为提供显式入口，
@@ -1254,8 +1675,10 @@ class GomokuGame(QMainWindow):
         # 构建游戏界面
         self._build_game_ui()
         # 面板建好才知道有它，而 AI 执哪一色早在 `_on_color_selected` 就定了
-        # —— 评分卡的标题要把子色写进去，所以只能在这里补这一笔。
-        self.game_panel.set_ai_player(2 if self.gamemode == 0 else 1)
+        # —— 评分卡的标题要把子色写进去，所以只能在这里补这一笔。本地对战没有
+        # AI，这一行不写（标题保持默认）。
+        if self.playmode == 0:
+            self.game_panel.set_ai_player(2 if self.gamemode == 0 else 1)
 
     def _build_game_ui(self):
         """构建游戏主界面。
@@ -1326,8 +1749,8 @@ class GomokuGame(QMainWindow):
 
         self._update_panel()
 
-        # AI先手
-        if self.gamemode == 1:  # 玩家后手，AI先手
+        # AI先手（本地对战没有 AI，永远黑先、由玩家点第一手）
+        if self.playmode == 0 and self.gamemode == 1:
             self._ai_first_move()
 
     def _on_toggle_theme(self):
@@ -1376,15 +1799,22 @@ class GomokuGame(QMainWindow):
         if self.board[r][c] != 0:
             return
 
-        # 玩家落子
-        if self.gamemode == 0:
-            self.board[r][c] = 1  # 玩家执黑
-            player_stone = 1
-            ai_stone = 2
+        # 复盘用的局面快照。**必须在落子之前取** —— 复盘要分析的是"你面对这个
+        # 局面时选了哪一手"，不是"下完之后长什么样"。只记人机对战：本地对战
+        # 没有算法可复盘。
+        if self.playmode == 0:
+            self.human_moves.append({'seq': self.move_count + 1, 'r': r,
+                                     'c': c, 'before': self.board.copy()})
+
+        # 落子方：本地对战由回合决定（黑先），人机对战由 gamemode 决定。
+        if self.playmode == 1:
+            player_stone = 1 if self.move_count % 2 == 0 else 2
+            ai_stone = 0            # 本地对战没有 AI 回合
+        elif self.gamemode == 0:
+            player_stone, ai_stone = 1, 2   # 玩家执黑
         else:
-            self.board[r][c] = 2  # 玩家执白
-            player_stone = 2
-            ai_stone = 1
+            player_stone, ai_stone = 2, 1   # 玩家执白
+        self.board[r][c] = player_stone
 
         self.last_move = (r, c, player_stone)
         self.board_widget.set_board(self.board)
@@ -1399,9 +1829,12 @@ class GomokuGame(QMainWindow):
                 self.logger.log_board_state(self.move_count, self.board)
         self._update_panel()
 
-        # 检查玩家是否获胜
+        # 检查落子方是否获胜
         if check_win(self.board, player_stone):
+            # gamerule=2 在两种模式下都表示"有人赢了"，"是谁赢"由 `winner`
+            # 给出；人机对战的"你赢了/你输了"是把 `winner` 与玩家子色比出来的。
             self.gamerule = 2
+            self.winner = player_stone
             self.game_over = True
             self.board_widget.set_win_cells(
                 win_line(self.board, player_stone), player_stone)
@@ -1411,12 +1844,14 @@ class GomokuGame(QMainWindow):
         # 检查平局
         if self.move_count >= BOARD_SIZE * BOARD_SIZE:
             self.gamerule = 0
+            self.winner = 0
             self.game_over = True
             self._show_game_over()
             return
 
-        # AI回合
-        self._ai_turn(ai_stone)
+        # AI回合（本地对战没有这一回合，等对手点下一手）
+        if self.playmode == 0:
+            self._ai_turn(ai_stone)
 
     def _ai_turn(self, ai_stone):
         """AI回合"""
@@ -1481,6 +1916,7 @@ class GomokuGame(QMainWindow):
         # 检查AI是否获胜
         if check_win(self.board, ai_stone):
             self.gamerule = 1
+            self.winner = ai_stone
             self.game_over = True
             self.board_widget.set_win_cells(
                 win_line(self.board, ai_stone), ai_stone)
@@ -1509,6 +1945,10 @@ class GomokuGame(QMainWindow):
         判定必须防御性：``info`` 有三个产出点且字段不全（空盘分支只有
         ``depth=0, best_val=0``），搜索也可能在 depth 1 之前就被 VCF 吃光预算。
         """
+        # 本地对战没有 AI，"AI 视角分值"这条曲线没有主语 —— 不画。留一条从
+        # 第一手就凭空长出来的曲线，比留一张空图更糟：它会被当成真实评估读。
+        if self.playmode == 1:
+            return
         best = None if info is None else info.get("best_val")
         # `or is_mate(best)` 不是装饰：VCF 已证明必胜、主循环在 depth 1 之前被
         # 取消时 best_val **就是**已证明的杀棋分而 depth == 0，丢掉它等于扔掉
@@ -1545,7 +1985,14 @@ class GomokuGame(QMainWindow):
 
         self.output -= 1
 
-        if self.move_count >= 2:
+        if self.playmode == 1:
+            # 本地对战：一次悔一步。两个人的手都在这张盘上，"撤回两手"
+            # （玩家 + AI 回应）那条规则在这里没有对应物。
+            self._rewind(1)
+            self.board = (self.move_history[-1].copy() if self.move_history
+                          else np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int))
+            self.move_count -= 1
+        elif self.move_count >= 2:
             # 弹出最后两步（玩家 + AI）
             self._rewind(2)
             self.board = self.move_history[-1].copy() if self.move_history else np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
@@ -1559,6 +2006,7 @@ class GomokuGame(QMainWindow):
             # _ai_first_move 自己会 _record_score(None)，所以这里不用补
             self._ai_first_move()
             self.board_widget.set_board(self.board)
+            self._trim_human_moves()
             self._update_panel()
             return
         elif self.move_count == 1:
@@ -1569,7 +2017,17 @@ class GomokuGame(QMainWindow):
         self.last_move = None
         self.board_widget.set_board(self.board)
         self.board_widget.set_last_move(None, None, None)
+        self._trim_human_moves()
         self._update_panel()
+
+    def _trim_human_moves(self):
+        """把悔掉的步子从复盘记录里去掉。
+
+        不变量：``human_moves`` 里只留**还在盘上**的那些落子。悔棋之后若不删，
+        复盘会把玩家已经收回去的坏棋也列出来 —— 那些手根本不存在于这局棋里。
+        """
+        self.human_moves = [m for m in self.human_moves
+                            if m['seq'] <= self.move_count]
 
     def _cancel_ai(self):
         """协作式取消正在运行的 AI 搜索并等待其退出。
@@ -1594,18 +2052,136 @@ class GomokuGame(QMainWindow):
         self.ai_thinking = False
 
     def _on_restart(self):
-        """重新开始"""
+        """重新开始：回到**模式选择**，与新开局的第一步一致。
+
+        旧版直接回颜色页，等于把"跟谁下"这个问题跳过去 —— 上一局是本地对战
+        的话，重开一局会莫名其妙地变成人机对战。
+        """
         self._cancel_ai()
+        self._cancel_review(discard=True)
         if self.logger:
             # 打包版不写日志，`filepath` 是 None —— 别报一个"已保存:None"。
             if self.logger.filepath:
                 print(f"[日志] 对局日志已保存: {self.logger.filepath}")
             self.logger.close()
-        self._show_color_selection()
+        self._show_mode_selection()
+
+    # ---- 战后复盘 ----
+
+    def _cancel_review(self, discard=False):
+        """协作式取消复盘线程并等它退出。与 ``_cancel_ai`` 同一套收尾。
+
+        ``discard=False``（进度页上那颗「取消复盘」按钮）：线程停下来后照常走
+        ``_on_review_done``，把**已经算完的那部分**展示出来 —— 那正是用户点
+        取消时想看的东西。
+
+        ``discard=True``（重开局 / 退出 / 关窗）：这些调用方接着就会把复盘页面
+        连同整个 central 拆掉，结果没人收，所以置高代数让 ``_on_review_done``
+        直接返回。不这么做的话，那个回调会在页面已被 deleteLater 之后醒来并
+        ``_switch_page`` 到一个正在销毁的 widget 上。
+
+        等待有 3 秒上限。超时后线程继续跑完自己的循环 —— 它算的是只读棋盘
+        快照、不碰 UI，多跑一会儿无害。
+        """
+        if discard:
+            self._review_generation += 1
+        w = self.review_worker
+        if w is not None and w.isRunning():
+            w.cancel()
+            if not w.wait(3000):
+                print("[警告] 复盘线程未在 3 秒内响应取消")
+        if discard:
+            self.review_worker = None
+
+    def _on_review_clicked(self):
+        """从终局遮罩进入复盘：先彻底拆掉对局 UI，再问强度。"""
+        self._cancel_ai()
+        self._cancel_review(discard=True)
+        if self.logger:
+            if self.logger.filepath:
+                print(f"[日志] 对局日志已保存: {self.logger.filepath}")
+            self.logger.close()
+            self.logger = None
+        self._drop_pages()
+        self._show_review_strength()
+
+    def _show_review_strength(self):
+        """复盘强度：只列不低于本局难度的档位（``min_level``）。"""
+        self.review_strength = SelectionScreen(mode="review",
+                                               min_level=self.gamekunnan)
+        self.review_strength.review_level_selected.connect(
+            self._on_review_level_selected)
+        self._switch_page(self.review_strength)
+
+    def _on_review_level_selected(self, level):
+        self.review_level = level
+        self.review_progress = ReviewProgressScreen(len(self.human_moves),
+                                                    level)
+        self.review_progress.cancel_clicked.connect(self._cancel_review)
+        self._switch_page(self.review_progress)
+
+        human = 1 if self.gamemode == 0 else 2
+        self._review_generation += 1
+        gen = self._review_generation
+        self.review_worker = ReviewWorker(self.human_moves, human, level)
+        self.review_worker.progressed.connect(self._on_review_progress)
+        self.review_worker.completed.connect(
+            lambda recs, lv=level, g=gen: self._on_review_done(recs, lv, g))
+        self.review_worker.start()
+
+    def _on_review_progress(self, done, total):
+        # 页面可能已经被取消按钮之后的收尾流程丢掉（``_cancel_review`` 只停
+        # 线程，不停页面），这里挡一下 —— 在已 deleteLater 的控件上调方法会抛
+        # ``RuntimeError: wrapped C/C++ object has been deleted``。
+        if self.review_progress is not None:
+            self.review_progress.set_progress(done, total)
+
+    def _on_review_done(self, records, level, generation=None):
+        """复盘算完（或被取消）。只留"不是最优点"的那些。"""
+        if generation is not None and generation != self._review_generation:
+            return          # 迟到的结果：页面已被拆掉（见 ``_cancel_review``）
+        w = self.review_worker
+        cancelled = bool(w is not None and w.cancelled)
+        self.review_worker = None
+
+        # Δ > 0 才是"不是最优点"。`delta is None` 的那一类（偏离战场 / 错失
+        # 必胜 / 搜索被截断）**照收** —— 它们同样不是最优，漏掉等于把玩家最
+        # 离谱的几手藏起来。
+        self.review_records = [r for r in records
+                               if r['delta'] is None or r['delta'] > 0]
+
+        self.review_list = ReviewScreen(self.review_records, level, cancelled)
+        self.review_list.record_selected.connect(self._on_review_record_selected)
+        # 「结束复盘」接 ``_on_restart``：复盘是这一局的尾声，走完就该回到
+        # "跟谁下"那个岔路口，与终局遮罩上的「再来一局」是同一个去处。
+        self.review_list.finish_clicked.connect(self._on_restart)
+        self.review_list.exit_clicked.connect(self._on_quit)
+        self._switch_page(self.review_list)
+
+    def _on_review_record_selected(self, idx):
+        """点「棋局显示」：换到该手的复盘棋盘。"""
+        if not (0 <= idx < len(self.review_records)):
+            return
+        rec = self.review_records[idx]
+        self.review_board = ReviewBoardScreen(rec)
+        self.review_board.back_clicked.connect(self._back_to_review_list)
+        self._switch_page(self.review_board)
+
+    def _back_to_review_list(self):
+        """从复盘棋盘回到结果列表。
+
+        **不能走 ``_switch_page``**：那会 ``addWidget`` 一次，于是每看一手就把
+        列表页重新入栈一份，来回几次后栈里躺着好几份同样的页面。
+        """
+        if self.review_list is None:
+            return
+        self.central.setCurrentWidget(self.review_list)
+        anim.fade_in(self.review_list)
 
     def _on_quit(self):
         """退出"""
         self._cancel_ai()
+        self._cancel_review(discard=True)
         if self.logger:
             try:
                 self.logger.close()
@@ -1613,14 +2189,38 @@ class GomokuGame(QMainWindow):
                 pass
         self.close()
 
+    def closeEvent(self, event):
+        """关窗前收掉两个后台线程。
+
+        ``QThread`` 在跑而它所属的对象被销毁时，Qt 会抛
+        ``QThread: Destroyed while thread is still running`` 并可能直接崩。
+        复盘线程比 AI 线程活得久（十几手 × 每手数秒），窗口管理器上的叉号
+        完全可能落在它运行中间。
+        """
+        self._cancel_ai()
+        self._cancel_review(discard=True)
+        super().closeEvent(event)
+
     def _update_panel(self):
         """更新右侧面板"""
+        local = (self.playmode == 1)
+        # 轮次与 `gamemode` 同源：本地对战的黑先手等价于"玩家执黑"，下游不必
+        # 再分一次支。
         if self.gamemode == 0:
             turn = 1 if self.move_count % 2 == 0 else 2
         else:
             turn = 2 if self.move_count % 2 == 0 else 1
 
-        if self.gamerule == 1:
+        if local:
+            # 终局文案由 `winner` 给：本地对战里没有"你"，只有黑方白方。
+            if self.game_over:
+                if self.gamerule == 0:
+                    status = "平局"
+                else:
+                    status = "黑方获胜" if self.winner == 1 else "白方获胜"
+            else:
+                status = "进行中"
+        elif self.gamerule == 1:
             status = "你输了！"
         elif self.gamerule == 2:
             status = "你赢了！"
@@ -1631,14 +2231,20 @@ class GomokuGame(QMainWindow):
 
         human = 1 if self.gamemode == 0 else 2
         self.game_panel.update_info(turn, self.gamekunnan, status,
-                                    self.output, self.move_count, human=human)
+                                    self.output, self.move_count, human=human,
+                                    local=local)
 
-        # 悬停幽灵子只在**轮到玩家**时出现，且用玩家自己的颜色：AI 思考中还给
-        # 预览、或玩家执白却预览黑子，都是在骗人。
+        # 悬停幽灵子只在**轮到你**时出现，且用你的颜色：AI 思考中还给预览、
+        # 或玩家执白却预览黑子，都是在骗人。本地对战两边都是人，每一手都该有
+        # 预览 —— 颜色跟着回合走。
         if self.board_widget is not None:
-            self.board_widget.set_hover_player(
-                human if (turn == human and not self.ai_thinking
-                          and not self.game_over) else None)
+            if local:
+                self.board_widget.set_hover_player(
+                    turn if not self.game_over else None)
+            else:
+                self.board_widget.set_hover_player(
+                    human if (turn == human and not self.ai_thinking
+                              and not self.game_over) else None)
 
     def _finish_win_or_lose(self):
         """赢或输的收尾：**立刻**停表并把面板刷成终局，**延后**弹遮罩。
@@ -1659,15 +2265,33 @@ class GomokuGame(QMainWindow):
         """显示游戏结束覆盖层"""
         self._update_panel()
 
-        is_win = (self.gamerule == 2)
-        if self.gamerule == 2:
+        local = (self.playmode == 1)
+        can_review = False
+        if local:
+            # 本地对战：文案报的是"哪一方"赢，不是"你"。tone 只有 win/lose
+            # 两种（theme 里就这两条规则），平局沿用 win —— 它至少不是个
+            # "失败的红色"。
+            if self.gamerule == 2:
+                text = "黑方获胜" if self.winner == 1 else "白方获胜"
+            else:
+                text = "平局"
+            is_win = True
+            winner_str = {1: "black", 2: "white"}.get(self.winner, "draw")
+        elif self.gamerule == 2:
             text = "你赢了！"
+            is_win = True
             winner_str = "human"
         elif self.gamerule == 1:
             text = "你输了！"
+            is_win = False
             winner_str = "ai"
+            # 复盘入口**只在输给 AI 时**出现：赢了没有可复盘的东西，本地对战
+            # 根本没有 AI。判据写在这里而不是让遮罩自己猜，是因为"这一局是不是
+            # 输给 AI"只有主窗口知道（playmode + gamerule）。
+            can_review = bool(self.human_moves)
         else:
             text = "平局！"
+            is_win = False
             winner_str = "draw"
 
         # 记录对局结果到日志
@@ -1677,9 +2301,10 @@ class GomokuGame(QMainWindow):
             # 记录终局完整棋盘
             self.logger.log_board_state(self.move_count, self.board, "[终局]")
 
-        overlay = GameOverOverlay(text, is_win)
+        overlay = GameOverOverlay(text, is_win, can_review=can_review)
         overlay.restart_clicked.connect(self._on_restart)
         overlay.quit_clicked.connect(self._on_quit)
+        overlay.review_clicked.connect(self._on_review_clicked)
 
         # 几何完全交给 QStackedLayout(StackAll)：遮罩与棋盘行共用同一块区域，
         # 尺寸随窗口走。**不要**再 setGeometry —— 那会和布局打架。

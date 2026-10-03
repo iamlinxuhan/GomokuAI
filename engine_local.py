@@ -1823,10 +1823,17 @@ class Engine:
                 return mv
         return VCF_DEFENCE_NONE
 
-    def think(self, board, me, level, *, cancel=None, time_limit=None):
+    def think(self, board, me, level, *, cancel=None, time_limit=None,
+              collect=False):
         """搜索一步棋。``board`` 是 ndarray（**不会被修改**）。
 
         返回 ``(idx, info)``，``idx`` 是线性格索引；无合法着法时返回 ``(-1, info)``。
+
+        ``collect=True`` 时额外把**最后一轮跑完的**根节点候选表
+        ``[(idx, val), ...]`` 放进 ``info['root_vals']``（战后复盘要逐候选的
+        分值）。它同时会关掉渴望窗口 —— 窄窗会剪掉一部分根着法，那些着法就
+        没有分值可比，交出去的表是半截的。**默认的 False 才是与偏置路径逐位
+        相同的那一条**，`ai_move` 走的就是它。
 
         时间是**硬上限**：超时那一轮的半成品结果被丢弃，返回上一轮完整迭代
         的结果 —— 半成品里"已搜完的分支比未搜完的多"，直接取用会让引擎在
@@ -1841,13 +1848,14 @@ class Engine:
         清掉之后，独立调用只剩自己的预算与 `cancel` 约束，与文档一致。
         """
         try:
-            return self._search(board, me, level,
-                                cancel=cancel, time_limit=time_limit)
+            return self._search(board, me, level, cancel=cancel,
+                                time_limit=time_limit, collect=collect)
         finally:
             self._deadline = 0.0
             self._cancel = None
 
-    def _search(self, board, me, level, *, cancel=None, time_limit=None):
+    def _search(self, board, me, level, *, cancel=None, time_limit=None,
+                collect=False):
         # 档位超出本表（4/5 = 高级/宗师）时**退到最强的一档**，而不是报错：
         # 这条路只在 C++ 引擎不可用时才会走到，而"降级"应当降成"慢但强"，
         # 不是降成"少搜几层"。``_LOCAL_MAX_LEVEL`` 由 `engine.py` 从本表推导
@@ -1862,6 +1870,12 @@ class Engine:
         # 不动。单靠 `bias` 这个键在不在来判断会让"下发全 0"的请求走进另一条
         # 搜索路径 —— 而那条路径与旧版不同源，parity 会莫名其妙地断。
         bias_on = bias_attack != 0.0 or bias_defence != 0.0
+        # **"收集"与"偏置"是两个开关，别并成一个。** `_apply_bias` 的调用仍然
+        # 只看 `bias_on`；只有"收不收集 / 关不关渴望窗口"看 `collect_on`。
+        # 并起来会让入门档的走法被改动 —— 与 C++ 侧 `think` 同一条规矩。
+        # `collect=False` 时 `collect_on == bias_on`，整条路径与今天逐位相同，
+        # 这正是 `ai_move` 走的那一条。
+        collect_on = bias_on or collect
         self._cancel = cancel
         self._qply = cfg["qply"]
         self.timed_out = False
@@ -1884,6 +1898,10 @@ class Engine:
                 'vcf_nodes': 0}
         moves = bd.candidates()
         if not moves:
+            # 盘上无子（或满盘）→ 没有候选可比。`collect` 时也要给出空表，
+            # 而不是让 `info` 里缺这个键 —— 调用方读它时不必分两种情况。
+            if collect:
+                info['root_vals'] = []
             return -1, info
 
         best_move = moves[0]
@@ -1963,11 +1981,14 @@ class Engine:
         escape_target = min(cfg["max_depth"], normal_dep + _ESCAPE_EXTRA)
 
         for depth in range(1, cfg["max_depth"] + 1):
-            if bias_on or depth < 3 or best_val <= -STATIC_MAX:
+            # 渴望窗口与根节点全量收集不能并存：窄窗会剪掉一部分根着法，那些
+            # 着法就没有分值可比 —— 复盘拿到一张半截的表，会把"没算到"讲成
+            # "这一手没问题"。**漏关这一处不报错，只是结论悄悄变错。**
+            if collect_on or depth < 3 or best_val <= -STATIC_MAX:
                 aspiration = False
             else:
                 aspiration = True
-            cur_vals = [] if bias_on else None
+            cur_vals = [] if collect_on else None
             try:
                 if aspiration:
                     d = _ASPIRATION
@@ -1989,7 +2010,7 @@ class Engine:
             if mv < 0:
                 break
             best_move, best_val, done, first = mv, val, depth, mv
-            if bias_on:
+            if collect_on:
                 root_vals = cur_vals
             # 已找到**必胜**就不必再深搜：更深的迭代只会重复同一结论，却要
             # 花掉数倍时间。`is_mate` 的分带保证了它不会与静态分混淆。
@@ -2051,6 +2072,12 @@ class Engine:
             'qnode_ratio': (self.qnodes / self.nodes) if self.nodes else 0.0,
             'score_type': 'mate' if is_mate(best_val) else 'static',
         })
+        if collect:
+            # **最后一轮跑完的那张表**（见上面 `root_vals` 的位置）。跑不完的
+            # 一轮分值只覆盖了部分候选，拿它当结论就是用半张表做判断。
+            # 只在 `collect` 时放进 info：`info` 的键集合是对外契约，
+            # `ai_move` 那条路上的消费者不该看见一个恒为空的字段。
+            info['root_vals'] = root_vals
         return best_move, info
 
 
@@ -2146,6 +2173,50 @@ def ai_move(board, ai_player, depth, cancel=None):
     r, c = divmod(idx, BOARD_SIZE)
     info['time_ms'] = (time.monotonic() - t0) * 1000.0
     return (r, c, info)
+
+
+def analyze(board, me, level, cancel=None, time_limit=None):
+    """只读局面分析：给定局面，算出**每个候选点**的分值（战后复盘用）。
+
+    返回 ``(best_idx, best_val, cands, info)``：``best_idx`` 是本局面引擎会走的
+    那一手（线性格索引），``cands`` 是 ``[(idx, val), ...]``，``idx`` 同为线性格
+    索引。**空盘**没有候选可比，返回 ``(-1, 0, [], info)``。
+
+    ``time_limit`` 缺省时用该档位的 ``DIFFICULTY[level]['time']`` —— 与对局时
+    同一张表，复盘强度因此与"选择一个不低于本局难度的档位"这个口径天然一致。
+
+    **每次调用新建一个 `Engine()`，不碰模块级 `_ENGINE`。** 复盘必然发生在某一
+    局**之后**，拿对局的引擎来算会把复盘的置换表与 `_normal_depth` 统计留给下一
+    局 —— 后者会改变应急搜索的深度上限，正是 `reset()` 注释里点名的"不可复现"
+    来源。新建实例的代价相对一次数秒的搜索可以忽略。
+
+    **不带开局库。** `book_lookup` 只返回单个着法与它的分值，给不出逐候选的表，
+    而这条路要的正是那张表；把库里的单一结论混进一张全量搜索表里，反而会让
+    "最优点"的来源变得不可解释。
+
+    两个已知的、**有意保留**的口径：
+
+    * VCF 兜底可以把 ``best_val`` 换成杀棋分（``|best_val| > STATIC_MAX``），
+      此时它可能**高于** ``cands`` 里的最大值 —— 根搜索的表是静态分，而杀棋分
+      是 VCF 独立证出来的。所以 ``max(cands) == best_val`` 只在没有杀棋结论时
+      成立；调用方遇到杀棋分要另给文字结论（"错失必胜 / 漏防必败"），不要拿它
+      的数值直接算差值。
+    * 本函数走的是**全量搜索**，`ai_move` 在少数局面上还会经过开局库。两者给出
+      的最优着法因此可以不同 —— 复盘问的是"这手棋在算法眼里值多少分"，不是
+      "上一局引擎为什么走了那一步"。
+    """
+    eng = Engine()
+    idx, info = eng.think(board, me, level, cancel=cancel,
+                          time_limit=time_limit, collect=True)
+    cands = info.get('root_vals') or []
+    if not cands:
+        # 没有可比的最优解。三种情形在这里归一：空盘、满盘、以及搜索一轮都
+        # 没跑完（根节点连一个候选都没评估成）。**判据必须是"表空"，不是
+        # "idx < 0"** —— 空盘时 `_search` 会退回 `candidates()[0]`（天元）当
+        # 返回值，于是 idx 是有效的而表是空的；只看 idx 会把一手无根据的棋
+        # 当成"最优解"报给复盘。
+        return -1, 0, [], info
+    return idx, int(info['best_val']), list(cands), info
 
 
 def new_game():

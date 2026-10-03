@@ -729,7 +729,8 @@ int Engine::applyBias(Board& bd, int me, const SearchConfig& cfg,
 // ==================== 顶层调度 ====================
 
 int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
-                  const std::atomic<bool>* cancel, Info* info) {
+                  const std::atomic<bool>* cancel, Info* info,
+                  std::vector<std::pair<int, int32_t>>* outRoot) {
     int result = -1;
     try {
         cancel_ = cancel;
@@ -761,6 +762,9 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
         int ncand = 0;
         bd.candidates(cand, &ncand);
         if (ncand == 0) {
+            // 盘上无子（或满盘）→ 没有候选可比。清空而不是留着上一次调用
+            // 的内容：调用方复用同一个 vector 时，陈旧的表会被当成这一局的。
+            if (outRoot != nullptr) outRoot->clear();
             deadline_ = 0.0;
             cancel_ = nullptr;
             return -1;
@@ -835,6 +839,15 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
         }
 
         const bool biasOn = cfg.biasAttack != 0.0 || cfg.biasDefence != 0.0;
+        // 战后复盘要逐候选的分值：`outRoot` 非空就收集。**这里刻意把"收集"
+        // 与"偏置"分成两个开关** —— `applyBias` 的调用、以及下面的记账仍然只
+        // 看 `biasOn`，只有"要不要收集 / 要不要关掉渴望窗口"看 `collectOn`。
+        // 混成一个，入门档的走法就会被改动。
+        //
+        // `outRoot == nullptr` 时 `collectOn == biasOn`，整条路径与今天逐位相同
+        // —— 这是 `enhanced == 0` C++↔Python 逐字一致那条护栏的一部分。
+        const bool wantRoot = outRoot != nullptr;
+        const bool collectOn = biasOn || wantRoot;
         std::vector<std::pair<int, int32_t>> rootVals;
         std::vector<std::pair<int, int32_t>> curVals;
 
@@ -887,10 +900,11 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
                 }
             }
 
-            // 渴望窗口与根节点全量收集（偏置重排要用）不能并存：渴望窗口会用
-            // 窄窗剪掉一部分根着法，那些着法就没有分值可比。
+            // 渴望窗口与根节点全量收集（偏置重排、战后复盘都要用）不能并存：
+            // 渴望窗口会用窄窗剪掉一部分根着法，那些着法就没有分值可比 ——
+            // 复盘拿到一张半截的候选表，就会把"没算到"讲成"这一手没问题"。
             const bool aspiration =
-                !biasOn && !(depth < 3 || bestVal <= -STATIC_MAX);
+                !collectOn && !(depth < 3 || bestVal <= -STATIC_MAX);
             int mv = -1;
             int32_t val = 0;
             // 延伸的"路径欠账"以这一轮的根深度为基准（见 EXT_MAX_DEBT）。
@@ -917,7 +931,7 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
                     }
                 } else {
                     root(bd, me, depth, first, -INF, INF, &mv, &val,
-                         biasOn ? &curVals : nullptr);
+                         collectOn ? &curVals : nullptr);
                 }
             } catch (const SearchAborted&) {
                 break;
@@ -927,7 +941,7 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
             bestVal = val;
             done = depth;
             first = mv;
-            if (biasOn) rootVals.swap(curVals);
+            if (collectOn) rootVals.swap(curVals);
             prevPrevIterNodes = prevIterNodes;
             prevIterNodes = nodes_ - iterT0;
             lastIterSec = nowSec() - iterSecT0;
@@ -943,6 +957,11 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
                 if (depth >= escapeTarget_) break;
             }
         }
+
+        // 复盘要的候选表：**最后一轮跑完的那张**。跑不完的一轮分值只覆盖了
+        // 一部分候选，拿它当结论就是用半张表做判断 —— 与 `applyBias` 同一条
+        // 规矩。放在这里而不是循环里，是因为 `rootVals` 在循环结束后才是终值。
+        if (wantRoot) *outRoot = rootVals;
 
         // VCF 兜底：搜索没找到**更快**的杀棋时，用 VCF 的结论。判据只需比较
         // 分值 —— 杀棋分随距离单调（越短越大），所以"搜索的分不更大"就等价于
@@ -1016,6 +1035,8 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
         // 理论上到不了这里（每一层都就地捕获了），留着是为了**不让异常穿出
         // 服务端** —— 一次崩溃的搜索不该带走整个进程。
         result = -1;
+        // 半途而废的表不能当结论交出去（同上：那等于用半张表做判断）。
+        if (outRoot != nullptr) outRoot->clear();
     }
     // **无论正常返回还是抛异常，`deadline_` 与 `cancel_` 都会被清掉。**
     // 这不是洁癖：`poll` 用 `deadline_ > 0.0` 表示"当前有搜索在跑"，而 `vcf()`
