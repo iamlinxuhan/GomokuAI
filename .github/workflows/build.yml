@@ -325,6 +325,30 @@ jobs:
           # 顺带暴露了它，两处都是第一次在这套流程上真跑）。
           .\cpp\build\Release\gomoku_engine.exe --verify-tables --selftest
 
+      - name: Assert the engine does not need the MSVC redistributable
+        # 引擎必须静态链接 MSVC 运行库（见 cpp/CMakeLists.txt 里那段）。
+        # 一旦有人把它改回默认的 /MD，故障是**静默**的：包根目录没有
+        # MSVCP140.dll（只有 VCRUNTIME140*.dll 与 ucrtbase.dll，Qt / numpy
+        # 各自那份都在子目录，子进程的加载器够不着），于是没装 VC++
+        # 运行库的机器上引擎一启动就 STATUS_DLL_NOT_FOUND 退出，Python 侧
+        # 降级到本地引擎 —— 不报错、不崩，用户只觉得 AI 变慢变弱。
+        # 这种回归必须在这里就红，而不是等用户来报。
+        #
+        # 不依赖 objdump / dumpbin：PE 导入目录里的 DLL 名就是一段 ASCII，
+        # 直接在文件字节里找。用 Latin-1 编码做 1:1 的字节到字符映射，不会
+        # 因为多字节序列错位。引擎源码里没有 "MSVCP140.dll" 这个字面量，
+        # 命中即意味着它进了导入表。
+        shell: pwsh
+        run: |
+          $exe = "cpp\build\Release\gomoku_engine.exe"
+          $bytes = [IO.File]::ReadAllBytes($exe)
+          $text = [Text.Encoding]::GetEncoding(28591).GetString($bytes)
+          if ($text.Contains("MSVCP140.dll")) {
+            throw "gomoku_engine.exe 的导入表里有 MSVCP140.dll —— " +
+                  "运行库没静态链接，没装 VC++ Redist 的机器上会静默降级到本地 Python 引擎"
+          }
+          Write-Host "引擎不依赖 MSVC 运行库"
+
       - name: Resolve version
         shell: pwsh
         run: |
