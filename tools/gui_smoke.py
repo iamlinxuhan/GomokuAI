@@ -555,6 +555,39 @@ def do_local_battle(app):
     w._cancel_review(discard=True)
 
 
+def _fake_review_record(seq, delta):
+    """造一条复盘记录，只为建页面用（不经过引擎）。"""
+    return {'seq': seq, 'played': (2, 3), 'best': (2, 3) if delta == 0 else (2, 5),
+            'best_val': 0, 'played_val': -delta, 'delta': delta, 'mate': False,
+            'offboard': False, 'empty': False, 'before': np.zeros((19, 19), dtype=int)}
+
+
+def _scroll_check(app):
+    """长列表要出现滑动条，且视口高度封顶。
+
+    拿一份 40 条的合成列表直接建 ``ReviewScreen``：真实的这一局只有几手，
+    装得下，压根不触发滚动 —— 用那一局去断言"有滑动条"是测不到的。
+    """
+    recs = [_fake_review_record(2 * i + 1, 0 if i % 3 else 100 * i)
+            for i in range(40)]
+    scr = M.ReviewScreen(recs, 1)
+    scr.resize(900, 800)
+    pump(60, app)
+    area = _first_scroll_area(scr)
+    if not check(area is not None, "长列表：结果页有记录列表"):
+        return
+    check(area.height() <= M.REVIEW_LIST_H,
+          "长列表：视口高度封顶在 REVIEW_LIST_H",
+          f"{area.height()}px（封顶 {M.REVIEW_LIST_H}px）")
+    bar = area.verticalScrollBar()
+    check(bar.maximum() > 0, "长列表：出现滑动条，能翻到最后一手",
+          f"max={bar.maximum()}")
+    check(_button_texts(scr).count("棋局显示") == len(recs),
+          "长列表：每一行都有「棋局显示」",
+          f"{_button_texts(scr).count('棋局显示')} 个 / {len(recs)} 行")
+    scr.deleteLater()
+
+
 def _has_text(widget, needle):
     """这棵控件树里有没有哪个 QLabel 写着 ``needle``。
 
@@ -669,27 +702,73 @@ def do_review(app):
 
     for rec in w.review_records:
         b, p = rec['best'], rec['played']
+        if not check(rec['before'][p[0]][p[1]] == 0,
+                     f"第 {rec['seq']} 手玩家落点 ({p[0]},{p[1]}) 在原局面里是空点"):
+            break
+        if b is None:
+            # 没得比的那些（空盘起始手 / 搜索未跑完）：只要它自己交代得清楚
+            # 就行，不该有坐标，也不该被算成"可改进"。
+            if not check(rec['delta'] is None and not M._is_optimal(rec),
+                         f"第 {rec['seq']} 手未评分（无最优点、Δ 为空）"):
+                break
+            continue
         # 最优点必须是**该局面上的空点**，否则圈出来的位置毫无意义。
         if not check(rec['before'][b[0]][b[1]] == 0,
                      f"第 {rec['seq']} 手的最优点 ({b[0]},{b[1]}) 在原局面里是空点"):
             break
-        if not check(rec['before'][p[0]][p[1]] == 0,
-                     f"第 {rec['seq']} 手玩家落点 ({p[0]},{p[1]}) 在原局面里是空点"):
-            break
-        if not check(rec['delta'] is None or rec['delta'] > 0,
-                     f"第 {rec['seq']} 手的 Δ 为正（或无可比）",
+        if not check(rec['delta'] is None or rec['delta'] >= 0,
+                     f"第 {rec['seq']} 手的 Δ 非负（或无可比）",
                      str(rec['delta'])):
             break
 
-    if not w.review_records:
-        record("WARN", "复盘棋盘", "本局没有非最优下法，跳过棋盘检查")
+    # 玩家执黑时第 1 手落在空盘上 —— 它没有"最优点"可比，但也**不能消失**，
+    # 否则列表从第 3 手开始，正好是"棋谱断了"那个毛病。
+    check(len(w.human_moves) >= 1
+          and w.review_records[0]['seq'] == w.human_moves[0]['seq'],
+          "列表从玩家第一手开始，没有断档",
+          f"首条 seq={w.review_records[0]['seq'] if w.review_records else None} / "
+          f"玩家首手 seq={w.human_moves[0]['seq'] if w.human_moves else None}")
+
+    # **玩家下过的每一手都要在列表里**，走对的也在内 —— 只留错手的话列表
+    # 就断了，回头看"我第 9 手下的哪儿"会找不到。
+    check(len(w.review_records) == len(w.human_moves),
+          "每一手玩家着法都在列表里（含走对的）",
+          f"{len(w.review_records)} 条 / 玩家落了 {len(w.human_moves)} 手")
+    opt = [r for r in w.review_records if M._is_optimal(r)]
+    bad = [r for r in w.review_records if not M._is_optimal(r)]
+    check(bool(opt) and bool(bad),
+          "这一局里走对的与走错的两类都有（否则下面几条断言测不到东西）",
+          f"最优 {len(opt)} 手 / 可改进 {len(bad)} 手")
+
+    # 列表必须能滚动 —— 复盘动辄几十手，没有滚动条就等于后半盘看不见。
+    # **本局只有 4 手，装得下，当然不出现滚动条** —— 所以这条不能用真实
+    # 这一局来测，得拿一份长列表直接建页（见 ``_scroll_check``）。
+    _scroll_check(app)
+
+    # 每一行都得有「棋局显示」，包括走对的那几行。
+    check(_button_texts(w.review_list).count("棋局显示") == len(w.review_records),
+          "每一行（含最优行）都有「棋局显示」按钮",
+          f"{_button_texts(w.review_list).count('棋局显示')} 个 / {len(w.review_records)} 行")
+
+    # 走对的那一行文案是「最优」，不该再写一遍同样的坐标。
+    optimal_lines = [lab.text() for lab in w.review_list.findChildren(QLabel)
+                     if lab.property("tone") == "win"]
+    check(optimal_lines and all(l.endswith("最优") for l in optimal_lines)
+          and all("→ 最优点" not in l for l in optimal_lines),
+          "最优行的文案是「最优」，不重复坐标",
+          str(optimal_lines[:3]))
+
+    rated = [i for i, r in enumerate(w.review_records) if M._is_rated(r)]
+    if not rated:
+        record("WARN", "复盘棋盘", "本局没有可评分的着法，跳过棋盘检查")
     else:
-        w._on_review_record_selected(0)
+        # 挑一条**有最优点**的（空盘起始手没有），棋盘上才画得出那个圈。
+        w._on_review_record_selected(rated[0])
         pump(60, app)
         if check(w.review_board is not None, "点「棋局显示」后进入复盘棋盘"):
             rb = w.review_board
             bw = rb.board_widget
-            rec = w.review_records[0]
+            rec = w.review_records[rated[0]]
             check(bw is not None and bw.review_marker is not None,
                   "复盘棋盘上设置了标记",
                   str(getattr(bw, "review_marker", None)))
@@ -715,6 +794,25 @@ def do_review(app):
             check(w.central.count() == 4,
                   "返回没有把结果页重复入栈（强度/进度/结果/棋盘，共 4 页）",
                   f"栈内 {w.central.count()} 页")
+
+    # 走对的那一手同样要能看棋局 —— 用户点名的"不管是不是最优解"。
+    opt_idx = [i for i, r in enumerate(w.review_records) if M._is_optimal(r)]
+    if opt_idx:
+        n_before = w.central.count()
+        w._on_review_record_selected(opt_idx[0])
+        pump(60, app)
+        if check(w.review_board is not None, "最优行也能点开「棋局显示」"):
+            r2 = w.review_records[opt_idx[0]]
+            bw2 = w.review_board.board_widget
+            check(tuple(bw2.review_marker[0]) == tuple(r2['best'])
+                  == tuple(r2['played']),
+                  "最优行的标记是同一个点（你下的就是该下的）",
+                  str(bw2.review_marker))
+            check(w.central.count() == n_before,
+                  "换一手看棋盘不会把上一张留在栈里",
+                  f"{n_before} → {w.central.count()} 页")
+            w._back_to_review_list()
+            pump(40, app)
 
     # ---- 结果页的出口 ----
     # 复盘是一条有终点的路径：看完最后一条必须能落下去。结果页只有"棋局

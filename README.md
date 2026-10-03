@@ -23,7 +23,7 @@ reference for A/B comparisons.
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-3.0.6-brightgreen)
+![Version](https://img.shields.io/badge/version-3.0.7-brightgreen)
 
 ---
 
@@ -82,12 +82,13 @@ reference for A/B comparisons.
   no review: with no AI there is no algorithm to review against
 - **Post-game algorithmic review**: after losing to the AI you can pick a
   strength no lower than the one you played and have the engine re-compute each
-  move in turn, listing the ones **that were not optimal** (original point →
-  best point + score difference), with a progress bar and a cancel that keeps
-  what was already computed. "Show position" displays the board **as it stood
-  before that move**, with the best point ringed and your actual move drawn as
-  a ghost stone, so the two sit on one board. The review runs on its own
-  background thread (`ReviewWorker`) at the time limit of the chosen level
+  move in turn. **Every move gets a row** — the good ones marked green and
+  labelled "optimal", the rest as original point → best point + score
+  difference — with a progress bar and a cancel that keeps what was already
+  computed. "Show position" displays the board **as it stood before that move**,
+  with the best point ringed and your actual move drawn as a ghost stone, so the
+  two sit on one board. The review runs on its own background thread
+  (`ReviewWorker`) at the time limit of the chosen level
 
 ---
 
@@ -640,8 +641,8 @@ GomokuAI/
 
 ```bash
 pip install -r requirements-dev.txt
-python -m pytest -q                     # full suite, 342 tests
-python -m pytest -q -m "not perf"       # skip machine-speed-dependent thresholds (what CI runs, 321 tests)
+python -m pytest -q                     # full suite, 359 tests
+python -m pytest -q -m "not perf"       # skip machine-speed-dependent thresholds (what CI runs, 338 tests)
 ```
 
 **About the `perf` marker**: a handful of thresholds test "has the engine
@@ -693,6 +694,7 @@ deliberately preserved behaviour.
 
 | Version | Date | Contents |
 |---|---|---|
+| **v3.0.7** | 2026-10-03 | **The review screen now lists every move, none skipped.** It used to show only the moves that were *not* optimal, but a review can run for minutes — coming back to check "where did I play on move 9?" found nothing, because that move wasn't in the list. Now **every move is a row**, good ones included, marked green and labelled "optimal", and the subtitle reads "N moves, M improvable". **The opening move on an empty board and "the search never finished a round" are now their own category**: they were *never compared*, not "compared and found fine", so they say so plainly ("no candidates to compare" / "could not compare") and are **excluded from the improvable count** — counting them would have the result screen accusing the player of mistakes they never made. **A tied optimum now rings the move you actually played**: `delta == 0` only means your move scored the same as the engine's best, and `best_idx` is merely one of the tied points — it can easily be a different one, and ringing elsewhere while the row says "optimal" reads like the program contradicting itself. On a tie the best point is repointed at your own stone, so the ghost stone and the ring coincide. **The move list must not break**: `ReviewWorker` used to drop an entire row whenever the candidate table came back empty; now only a cancel drops a row. Also fixed a page leak — clicking "Show position" repeatedly stacked one full board widget tree per move viewed (each with two layers of pixmap cache), the same bug `_drop_pages` documents as "one tree left behind per game restarted"; the previous board is now reclaimed on every switch. The list height shrinks to its content under the same 420px cap, so two records no longer sit in an empty 420px box |
 | **v3.0.6** | 2026-10-03 | **Local two-player mode**: a mode screen now sits between the splash and the colour screen ("Challenge the AI" / "Local match"). The latter involves no AI at all — two people take turns on one machine — so the turn hint and the final result both speak in stone colours ("Black wins" / "White wins" / "Draw"), and its endgame overlay offers no review, since with no AI there is no algorithm to review against. **Post-game algorithmic review**: after losing to the AI the overlay gains a "Review" button. Pick a strength no lower than the difficulty you played, and the engine re-computes each of *your* moves in turn, listing the ones that were not optimal (original point → best point + score difference), with a progress bar and a cancel that keeps whatever was already computed. "Show position" displays the board **as it stood before that move**, with the best point ringed and your actual move drawn as a ghost stone so the two can be compared on one board. The result screen ends with "Finish" / "Quit". **The engine side extended the TCP protocol**: a new `analyze` request carries fields byte-identical to `compute` (including the conditional `bias_*` and `enhanced/lmr/extend` — review must use the same configuration the game did) and replies with a `cands` array. Root candidates come from a new `outRoot` out-parameter on `Engine::think`; when `outRoot == nullptr`, `collectOn == biasOn`, so the entire old path is bit-for-bit unchanged and the `enhanced == 0` C++↔Python identity is untouched. An older C++ build answers `analyze` with "unknown type", which the Python side silently degrades to local analysis — both directions of the protocol are safe. Worth recording: **to get a complete candidate table you must disable the aspiration window while collecting** — a narrow window prunes some root moves, leaving them with no score to compare; missing that one spot raises no error, it just yields a half-filled table |
 | **v3.0.5** | 2026-10-02 | **Windows promoted to stable** (verified on real hardware, `_testing` dropped), and "log or not" moved from a platform-implied default to an explicit filename declaration: every platform now has `run_debug` (writes logs next to the executable) and `run_play` (writes none), with installers shipping play. The naming scheme was overhauled — `AMD` → `amd`, `x86_32` → `x32`, and ARM's family and bit-width merged into `aarch64` / `armv7`. Variants are baked in **at build time** (by injecting a `_build_flavor.py` line), not inferred back from the filename. Fixed the black console window that popped up when launching the engine from the GUI process (`CREATE_NO_WINDOW`). From earlier: `cpp/src/bitops.h` gathers the `__builtin_*` calls into a cross-compiler wrapper, falling back to `<intrin.h>` where MSVC lacks them — before this the C++ engine simply did not compile under MSVC; the workflow's manual dispatch gained a `linux` input so you can build amd64 only, or skip Linux entirely. **The Linux installers now ship an application icon**: previously they installed no icon file at all and the `.desktop` entry had no `Icon=` key, so the menu fell back to a blank one. All four architectures now generate per-size PNGs from the existing `.ico` at build time (`python3-pil` via apt, no new runtime dependency) and install them under `/usr/share/icons/hicolor/<size>/apps/gomoku-ai.png`; the `.deb` gained `hicolor-icon-theme` in `Depends:` so `index.theme` and the icon-cache trigger are present, and the `.tar.gz` `install.sh` copies the tree and refreshes the cache when the tool exists. **The window icon is now set by the program itself**: the `.desktop` alone could not fix it, because the titlebar and taskbar read the window's own icon property (`_NET_WM_ICON` on X11, `app_id` on Wayland) and only `setWindowIcon()` writes that — with the icon installed, a running window still showed X.Org's fallback logo. `main.py` now loads a PNG generated from the same `.ico` at build time, bundles it into all three PyInstaller variants via `--add-data`, and calls `setDesktopFileName("gomoku-ai")` so KWin ties the window to the menu entry. The icon is downscaled to 128×128 before being handed to `setWindowIcon()`: a 256×256 ARGB image is 262152 bytes and does not fit in a single X request (262140), so the `_NET_WM_ICON` write silently failed and left the titlebar blank while the taskbar — which goes through the `.desktop` — looked fine. Release asset names and count are unchanged |
 | **v3.0.4** | 2026-10-01 | The endgame now lights up the five first and settles afterwards: a red line sweeps across the five (extending half a cell past each end, scaled by √2/2 on diagonals), the overlay is delayed by one second, and "elapsed" stops the moment the stone lands — previously the overlay covered the whole screen and the player could not see where they had lost. Also removed the endgame "last move" ring (it sat right on the line's endpoint and cut a notch out of it). The panel's theme toggle became its own row: text 12px → 14px and centred, with the sun / moon now self-drawn (emoji never resolves to a colour font on most machines, yielding only monochrome glyphs that vary by machine) |

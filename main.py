@@ -184,14 +184,29 @@ class ReviewWorker(QThread):
         self.completed.emit(records)
 
     def _one(self, item):
-        """分析一手。返回记录，或 ``None``（没有可比的最优解）。"""
+        """分析一手。返回记录，或 ``None``（**只**在被取消时）。
+
+        只有取消才丢行。其余"算不出结论"的情形一律照出一行 —— 结果页列的是
+        一整局棋谱，中间少一行就等于棋谱断了。
+        """
         before = item['before']
         played = (item['r'], item['c'])
         best_idx, best_val, cands, _info = engine.analyze(
             before, self.human, self.level, cancel=self._cancel)
-        if self._cancel.is_set() or not cands:
-            # 空盘（玩家执黑第一手）没有候选可比；取消时也不再产出记录。
+        if self._cancel.is_set():
             return None
+        if not cands:
+            # 两手空空的两个来源，都不该让这一行消失：
+            #  * **空盘**（玩家执黑第一手）：盘上没有子，也就没有"最优点"这
+            #    个概念 —— 不是走错，是没得比。
+            #  * 搜索连一轮都没跑完：截断了，同样没得比。
+            # 两者都记 ``best=None``，结果页按"未评分"处理（见 ``_record_line``）。
+            return {
+                'seq': item['seq'], 'played': played, 'best': None,
+                'best_val': None, 'before': before, 'mate': False,
+                'played_val': None, 'delta': None, 'offboard': False,
+                'empty': not bool(np.any(before)),
+            }
         table = dict(cands)
         played_idx = played[0] * BOARD_SIZE + played[1]
         rec = {
@@ -215,12 +230,19 @@ class ReviewWorker(QThread):
             #    说法是"错失必胜"，判为"偏离战场"就是把最严重的一手讲成无害。
             legal = set(Board.from_array(before).candidates())
             rec.update({'played_val': None, 'delta': None,
-                        'offboard': played_idx not in legal})
+                        'offboard': played_idx not in legal, 'empty': False})
         else:
             played_val = table[played_idx]
-            rec.update({'played_val': played_val,
-                        'delta': best_val - played_val,
-                        'offboard': False})
+            delta = best_val - played_val
+            rec.update({'played_val': played_val, 'delta': delta,
+                        'offboard': False, 'empty': False})
+            if delta == 0:
+                # **并列最优。** ``delta == 0`` 只说明玩家这一手与引擎的最优
+                # **同分**，而 ``best_idx`` 只是同分者里被挑中的一个 —— 完全
+                # 可能是另一个点。圈在别处却写着"最优"，读起来就是程序在说
+                # 反话。同分即意味着玩家下的这颗**也是**最优，把圈指回它自己：
+                # 幽灵子与圈重合，"你下的这颗就是最好的那一颗"。
+                rec['best'] = played
         return rec
 
 
@@ -237,14 +259,45 @@ def _fmt_point(rc):
     return "%s%d" % (chr(ord('A') + c), r + 1)
 
 
+def _is_rated(rec):
+    """这一手到底有没有被评过。
+
+    空盘起始手与"搜索一轮都没跑完"都记 ``best=None`` —— 它们是**没得比**，
+    不是"比过了、没问题"。这两类既要进列表（棋谱得连续），又不能算进
+    "可改进"的计数里，否则结果页会耸人听闻地报出一个玩家没犯过的错。
+    """
+    return rec['best'] is not None
+
+
+def _is_optimal(rec):
+    """这一手是不是就是引擎眼中的最优点。
+
+    ``delta == 0`` 才算 —— ``delta is None``（偏离战场 / 搜索被截断）是
+    **没比较过**，不是"比较了、没问题"，两者绝不能归成一句"最优"。
+    """
+    return rec['delta'] == 0 and not rec['offboard']
+
+
 def _record_line(rec):
     """一条复盘记录的正文。
+
+    **每一手都进列表，包括走对的那些。** 复盘动辄算上几分钟，只列错手的话
+    用户回头就找不到"我当时第 9 手走哪儿了" —— 列表要有从头到尾的连续性，
+    结论才落在一条完整的棋谱上而不是一串孤立的错误。
 
     分值差在杀棋局面里没有量纲意义（两个杀棋分之差是 2×10⁷ 这个量级），
     所以那里改报一句文字结论 —— 光甩一个七位数只会让人以为程序算错了。
     """
-    head = "第 %d 手   %s → 最优点 %s" % (
-        rec['seq'], _fmt_point(rec['played']), _fmt_point(rec['best']))
+    head = "第 %d 手   %s" % (rec['seq'], _fmt_point(rec['played']))
+    if not _is_rated(rec):
+        # 空盘起始手没有"最优点"可言；搜索没跑完一轮则是没算出来。都不编。
+        return head + ("   空盘起始手，无候选可比" if rec['empty']
+                       else "   未能比较（搜索未跑完一轮）")
+    if _is_optimal(rec):
+        # 走对了就不必再报一遍同样的坐标（``played == best``，写成
+        # "J13 → 最优点 J13" 只会让人以为程序在说胡话）。
+        return head + "   最优"
+    head += " → 最优点 %s" % _fmt_point(rec['best'])
     if rec['offboard']:
         return head + "   偏离战场（不在候选点内）"
     if rec['mate']:
@@ -294,18 +347,23 @@ class ReviewProgressScreen(Screen):
 
 
 class ReviewScreen(Screen):
-    """复盘结果列表。每行一条"非最优下法"，带一个「棋局显示」按钮。"""
+    """复盘结果列表。**每一手一行**（走对的也在内），各带一个「棋局显示」按钮。"""
 
     record_selected = pyqtSignal(int)   # 选中记录在 self.records 里的下标
     finish_clicked = pyqtSignal()       # 结束复盘：回模式选择页
     exit_clicked = pyqtSignal()         # 退出游戏
 
     def __init__(self, records, level, cancelled=False):
-        super().__init__(title="复盘结果",
-                         subtitle="强度「%s」%s" % (
-                             engine.difficulty_name(level),
-                             "（已取消，仅列出已算完的部分）" if cancelled else ""),
-                         backdrop=True)
+        # 只数**评过且不是最优**的那些。"没得比"的两类不算错 —— 这一行是要
+        # 说"你哪几手可以更好"，把空盘起始手算进去就成了凭空指控。
+        blunders = sum(1 for r in records
+                       if _is_rated(r) and not _is_optimal(r))
+        super().__init__(
+            title="复盘结果",
+            subtitle="强度「%s」· 共 %d 手，其中 %d 手可改进%s" % (
+                engine.difficulty_name(level), len(records), blunders,
+                "（已取消，仅列出已算完的部分）" if cancelled else ""),
+            backdrop=True)
         self.records = list(records)
         self.setup_ui()
 
@@ -323,7 +381,7 @@ class ReviewScreen(Screen):
 
     def _build_list(self):
         if not self.records:
-            return faint_label("本局没有发现非最优下法")
+            return faint_label("本局没有可复盘的着法")
         inner = QWidget()
         col = QVBoxLayout(inner)
         col.setContentsMargins(0, 0, 0, 0)
@@ -331,6 +389,10 @@ class ReviewScreen(Screen):
         for i, rec in enumerate(self.records):
             text = QLabel(_record_line(rec))
             text.setProperty("role", "value")
+            # 走对的那几手标绿：一眼扫出"哪几手没问题"比逐行读文字快得多，
+            # 而这份列表的用处正是**回头定位**（复盘算了几分钟之后）。
+            if _is_optimal(rec):
+                text.setProperty("tone", "win")
             show = button("棋局显示", "ghost", width=110)
             show.clicked.connect(lambda _=False, idx=i:
                                  self.record_selected.emit(idx))
@@ -533,6 +595,10 @@ class BoardWidget(QWidget):
         ``best_rc`` / ``played_rc`` 是 ``(r, c)``（任一可为 ``None``）。
         ``played_player`` 决定幽灵子的颜色。**只存状态、不落子** —— 幽灵子不进
         ``self.board``，复盘棋盘展示的仍是"那一手落子之前"的真实局面。
+
+        走对的那一手两者**重合**（``played == best``）：幽灵子先画、圈后画，
+        于是看到的是一颗被圈住的子 —— "你下的这颗，正是该下的那颗"。这是
+        故意的，不必特判成只画圈。
         """
         self.review_marker = (best_rc, played_rc, played_player)
         self.update()
@@ -2144,11 +2210,11 @@ class GomokuGame(QMainWindow):
         cancelled = bool(w is not None and w.cancelled)
         self.review_worker = None
 
-        # Δ > 0 才是"不是最优点"。`delta is None` 的那一类（偏离战场 / 错失
-        # 必胜 / 搜索被截断）**照收** —— 它们同样不是最优，漏掉等于把玩家最
-        # 离谱的几手藏起来。
-        self.review_records = [r for r in records
-                               if r['delta'] is None or r['delta'] > 0]
+        # **一手不落地全收**，走对的也收。复盘动辄算几分钟，只留错手的话
+        # 列表就断了：用户回头看"我第 9 手到底下哪儿了"会找不到，而棋谱的
+        # 说服力恰恰来自连续。`_is_optimal` 负责把走对的那些标出来（绿字 +
+        # 「最优」），不是靠把它们删掉。
+        self.review_records = list(records)
 
         self.review_list = ReviewScreen(self.review_records, level, cancelled)
         self.review_list.record_selected.connect(self._on_review_record_selected)
@@ -2159,9 +2225,18 @@ class GomokuGame(QMainWindow):
         self._switch_page(self.review_list)
 
     def _on_review_record_selected(self, idx):
-        """点「棋局显示」：换到该手的复盘棋盘。"""
+        """点「棋局显示」：换到该手的复盘棋盘。
+
+        **换一手就回收上一张棋盘。** ``_switch_page`` 只 ``addWidget``，不回收
+        —— 连着看十手就会在栈里堆十棵完整的棋盘控件树（每棵还带两层 pixmap
+        缓存），与 ``_drop_pages`` 注释里那个"每重开一局留一棵"是同一个毛病。
+        """
         if not (0 <= idx < len(self.review_records)):
             return
+        if self.review_board is not None:
+            self.central.removeWidget(self.review_board)
+            self.review_board.deleteLater()
+            self.review_board = None
         rec = self.review_records[idx]
         self.review_board = ReviewBoardScreen(rec)
         self.review_board.back_clicked.connect(self._back_to_review_list)
