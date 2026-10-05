@@ -8,8 +8,8 @@ import time
 
 import pytest
 
-from client import LocalRoom, RoomClient
-from room import Room, SeatSpec
+from client import LocalRoom, RoomClient, local_ip
+from room import Room, RoomConfig, SeatSpec
 from server import RoomServer
 from wire import WireError
 
@@ -100,6 +100,26 @@ def test_close_stops_reader_and_rejects_sends():
             c.move(9, 9)
     finally:
         local.stop()
+
+
+def test_local_room_passes_config_through_welcome():
+    """LocalRoom 的 config 透传到 Room，随 welcome 下发给每个客户端。"""
+    cfg = RoomConfig(allow_undo=False, undo_limit=1, allow_review=False,
+                     allow_restart=False, show_ai_scores=False)
+    local = LocalRoom(SeatSpec("remote"), SeatSpec("remote"), config=cfg)
+    c = RoomClient()
+    try:
+        rep = c.connect(local.host, local.port, local.name, "black")
+        assert rep["config"] == cfg.to_json()
+    finally:
+        c.close()
+        local.stop()
+
+
+def test_local_ip_is_a_string():
+    """local_ip() 在有无网络时都必须给出可显示的地址，不能抛异常。"""
+    ip = local_ip()
+    assert isinstance(ip, str) and ip
 
 
 class _ColAI:

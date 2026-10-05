@@ -173,7 +173,7 @@ M4c 对 UI 级覆盖的调整（理由详见 `tests/test_game_flow.py` 模块 do
 | **M1** | 抽取 `Session`（状态/规则/悔棋），`main.py` 委托，兼容垫片（只读 property） | 契约测试、全量、`gui_smoke`、`ui_e2e` 全绿；行为零变化 |
 | **M2** | `Player` 抽象 + 本地驱动；人机 / 本地双人 / AI-AI 统一走 Player；无头 AI-AI 批量基准（同 `selfplay` 报告格式）| 三种模式行为与契约一致；基准可复现 |
 | **M3** | `wire` / `room` / `server` / `bot`；两个 Bot 过 loopback 对局；专用服务器多房间骨架 | socket 集成测试进 pytest；错版本明确拒绝；端口独立可配 |
-| **M4** | UI 改造成 `RoomClient` 客户端；内置服务端；"对局域网开放"/"加入房间"；全功能（悔棋协商、本地复盘、事件化图表）| `ui_e2e` 单机五档不变；新增两客户端 loopback e2e；单机硬回归项全绿 |
+| **M4** | UI 改造成 `RoomClient` 客户端；内置服务端；"对局域网开放"/"加入房间"；全功能（悔棋协商、本地复盘、事件化图表）| ✅ `ui_e2e` 单机五档全过；loopback 双客户端 e2e（socket 级 + UI 级）；完整套件 412 passed（见第 13 节）|
 | **M5** | 断线重连、观战、房间码、局域网发现、`--server` 打包与文档 | 按需排序，每项独立 |
 
 ## 8. 待验证的开放点
@@ -294,3 +294,32 @@ M4c 对 UI 级覆盖的调整（理由详见 `tests/test_game_flow.py` 模块 do
 验证：`pytest -q -m "not perf"` 全绿（399 passed / 1 skipped）；
 `tools/ui_e2e.py --levels 1` 全部通过；`tools/gui_smoke.py` 141 通过 /
 0 警告 / 0 失败。
+
+## 13. M4d 完成记录（2026-10-05）——M4 收官
+
+* `room.py`：`RoomConfig`（`allow_undo` / `undo_limit` / `allow_review` /
+  `allow_restart` / `show_ai_scores`，**默认全开 = 原单机行为**），随
+  `welcome` 下发；服务端权威校验悔棋开关与额度，UI 只做入口级禁用。
+* 远程悔棋协商：`undo_proposed` / `undo_response`；**pending 期间冻结对局**
+  （`_await_move` 两分支都不落子，远程着法攥住不丢），同意则按申请时存下的
+  方案执行，拒绝只广播结果。
+* `client.py`：`local_ip()`（UDP connect 探测，不真发包）；`LocalRoom`
+  支持 `host="0.0.0.0"` 开房、透传 `config`、`auto_consent` 显式化；
+  `connect` 失败立即关 socket。
+* `main.py`：模式页第三张卡「局域网联机」→ 创建/加入；开房复用颜色页，
+  等待遮罩展示 `本机IP:端口`（对手入座的首个事件收回它）；加入页失败
+  **原地**显示中文原因（`seat_taken` / `no_room` / `proto_mismatch`…）可
+  重试；单机与 LAN 共用 `_attach_room` 与 `_on_room_event`，没有第二套
+  对局逻辑；UI 按配置禁用悔棋/重开/复盘入口与评分曲线。
+
+验证（全部在冻结代码上执行）：
+
+| 闸门 | 结果 |
+|---|---|
+| `pytest -q -m "not perf"` | **412 passed / 1 skipped / 0 failed** |
+| `tools/ui_e2e.py`（五档完整对局） | 全部通过（深度 2/4/6/9/9，追点与开局库检查齐全） |
+| `tools/gui_smoke.py` | 141 通过 / 0 警告 / 0 失败 |
+
+已知边界（留给 M5）：两台真机 + 防火墙/多网卡未手工验证（同机双客户端的
+LAN 路径已由 socket 级与 UI 级测试覆盖）；加入**专用服务器**（多房间/房间名）
+未接 UI；开房界面暂无 `RoomConfig` 配置入口；观战/断线重连未做。

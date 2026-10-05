@@ -111,7 +111,9 @@ class RoomServer:
             room.attach(stone, wire)
             wire.send({"type": "welcome", "proto": PROTO_VERSION,
                        "room": room.name, "seat": seat_name,
-                       "seats": room.seats_json(), **room.state_payload()})
+                       "seats": room.seats_json(),
+                       "config": room.config.to_json(),
+                       **room.state_payload()})
 
             while not self._stop.is_set():
                 msg = wire.recv()
@@ -129,8 +131,12 @@ class RoomServer:
                         wire.send({"type": "error", "code": exc.code,
                                    "message": exc.message})
                 elif t == "undo_response":
-                    wire.send({"type": "error", "code": "not_supported",
-                               "message": "悔棋协商将在后续版本提供"})
+                    try:
+                        room.submit_undo_response(stone,
+                                                  bool(msg.get("accept")))
+                    except WireError as exc:
+                        wire.send({"type": "error", "code": exc.code,
+                                   "message": exc.message})
                 elif t == "ping":
                     wire.send({"type": "pong"})
                 else:

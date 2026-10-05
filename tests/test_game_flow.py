@@ -35,10 +35,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton
 
 import main as M
 import room as room_module
+from client import LocalRoom, RoomClient
+from room import SeatSpec
 
 BOARD_SIZE = 19
 
@@ -443,4 +445,171 @@ def test_restart_returns_to_mode_selection(monkeypatch, qapp):
         assert win.central.currentWidget() is win.selection_mode
         assert win._room is None, "重开后房间应已拆掉"
     finally:
+        _teardown(win, qapp)
+
+
+# ==================== 局域网与 RoomConfig（M4d）====================
+
+def test_lan_mode_opens_menu_and_join_screen(monkeypatch, qapp):
+    """第三张卡 → 开房/加入岔路口；加入页离屏可构造、可原地报错。"""
+    monkeypatch.setattr(M, "GameLogger", _DummyLogger)
+    win = M.GomokuGame()
+    win.show()
+    try:
+        win._on_mode_selected(2)
+        qapp.processEvents()
+        assert win.playmode == 2
+        assert win.lan_menu is not None
+        assert win.central.currentWidget() is win.lan_menu
+        texts = [lab.text() for lab in win.lan_menu.findChildren(QLabel)]
+        assert any("创建房间" in t for t in texts), texts
+        assert any("加入房间" in t for t in texts), texts
+
+        win.lan_menu.join_clicked.emit()
+        qapp.processEvents()
+        assert win.lan_join is not None
+        assert win.central.currentWidget() is win.lan_join
+
+        # 端口不是数字：留在加入页显示原因（不发起连接）
+        win._on_lan_join_requested("127.0.0.1", "not-a-port", 1)
+        qapp.processEvents()
+        assert win.lan_join is not None
+        assert "端口" in win.lan_join.error_label.text()
+    finally:
+        _teardown(win, qapp)
+
+
+def test_lan_join_seat_taken_shows_error(monkeypatch, qapp):
+    """加入方选到已被占的席位：失败留在加入页，错误可读。"""
+    monkeypatch.setattr(M, "GameLogger", _DummyLogger)
+    local = LocalRoom(SeatSpec("remote"), SeatSpec("remote"),
+                      name=M.LAN_ROOM_NAME)
+    holder = RoomClient()
+    holder.connect(local.host, local.port, local.name, "black")
+    win = M.GomokuGame()
+    win.show()
+    try:
+        win._on_mode_selected(2)
+        qapp.processEvents()
+        win._on_lan_join_requested("127.0.0.1", str(local.port), 1)
+        qapp.processEvents()
+        assert win.lan_join is not None
+        assert "已被占用" in win.lan_join.error_label.text()
+        assert win._room_clients == {}, "失败后不该留下半开的客户端"
+    finally:
+        holder.close()
+        local.stop()
+        _teardown(win, qapp)
+
+
+def test_lan_host_waits_then_guest_joins_and_plays(monkeypatch, qapp):
+    """开房方等待 → 对手入座自动进棋盘 → 双方落子经房间回显。"""
+    monkeypatch.setattr(M, "GameLogger", _DummyLogger)
+    win = M.GomokuGame()
+    win.show()
+    guest = RoomClient()
+    try:
+        win._on_mode_selected(2)
+        qapp.processEvents()
+        win._on_lan_create()
+        qapp.processEvents()
+        assert win.selection_color is not None, "创建房间应先走颜色页"
+
+        win._on_color_selected(0)              # 房主执黑
+        qapp.processEvents()
+        assert win.lan_wait is not None, "开房后应显示等待遮罩"
+        assert win._room is not None and win._room.host == "0.0.0.0"
+        assert win._room.room.auto_consent is False, "LAN 对手的悔棋要协商"
+
+        # 客人（另一台设备的等价物）从 127.0.0.1 入座
+        guest.connect("127.0.0.1", win._room.port, M.LAN_ROOM_NAME, "white")
+        assert _pump_until(qapp, lambda: win.lan_wait is None), \
+            "对手入座后应收回等待屏"
+        assert win.central.currentWidget() is win.game_widget
+        assert win.session.human_stone == 1
+
+        # 房主先手落子 → 客人收到；客人应一手 → 房主棋盘回显
+        _human_click(qapp, win, 9, 9)
+        assert _pump_until(qapp, lambda: win.board[9][9] == 1)
+        guest.move(8, 8)
+        assert _pump_until(qapp, lambda: win.board[8][8] == 2), "对手着法未回显"
+        assert win.output == 3, "LAN 默认额度应与单机一致（3）"
+    finally:
+        guest.close()
+        _teardown(win, qapp)
+
+
+def test_room_config_disables_ui_entries(monkeypatch, qapp):
+    """welcome 的 RoomConfig 落到界面：禁悔棋/重开、限额度、关复盘与曲线。"""
+    monkeypatch.setattr(M, "GameLogger", _DummyLogger)
+    win = M.GomokuGame()
+    win.show()
+    try:
+        win.playmode = 0
+        win.gamemode = 0
+        win._build_game_ui()
+        win._room_config = {"allow_undo": False, "undo_limit": 1,
+                            "allow_review": False, "allow_restart": False,
+                            "show_ai_scores": False}
+        win._apply_room_config()
+        assert not win.game_panel.undo_btn.isEnabled()
+        assert not win.game_panel.restart_btn.isEnabled()
+        assert win.output == 1, "面板剩余次数应与房间下发额度一致"
+
+        # 就算是"输给 AI"，allow_review=False 也不给复盘入口
+        win.human_moves = [{"seq": 1, "r": 9, "c": 9}]
+        win.gamerule = 1
+        win.winner = 2
+        win.game_over = True
+        win._show_game_over()
+        assert win.game_over_overlay.can_review is False
+        assert win.game_over_overlay.can_restart is False
+        labels = [b.text() for b in
+                  win.game_over_overlay.findChildren(QPushButton)]
+        assert all("算法复盘" not in t for t in labels), labels
+        assert all("再来一局" not in t for t in labels), labels
+
+        n = len(win.game_panel._series)
+        win._record_score({"best_val": 123.0, "depth": 3})
+        assert len(win.game_panel._series) == n, "show_ai_scores=False 不追点"
+    finally:
+        _teardown(win, qapp)
+
+
+def test_undo_proposed_dialog_paths(monkeypatch, qapp):
+    """对手提案 → 弹窗 → 经我方连接应答；自己发起的提案不弹窗。
+
+    真实 QMessageBox 的模态交互在离屏下无法自动点，这里替换掉弹窗本身，
+    覆盖它两侧的分支逻辑（弹窗实现本身由 Qt 保证）。
+    """
+    class _StubClient:
+        def __init__(self):
+            self.responses = []
+
+        def undo_response(self, accept):
+            self.responses.append(accept)
+
+    monkeypatch.setattr(M, "GameLogger", _DummyLogger)
+    monkeypatch.setattr(M.QMessageBox, "question",
+                        staticmethod(lambda *a, **k: M.QMessageBox.Yes))
+    win = M.GomokuGame()
+    win.show()
+    stub = _StubClient()
+    try:
+        win.playmode = 2
+        win.session.human_stone = 2
+        win._room_clients[2] = stub
+        win._on_room_undo_proposed({"type": "undo_proposed", "by": 1})
+        assert stub.responses == [True], "同意要经我方连接发出"
+
+        monkeypatch.setattr(M.QMessageBox, "question",
+                            staticmethod(lambda *a, **k: M.QMessageBox.No))
+        win._on_room_undo_proposed({"type": "undo_proposed", "by": 1})
+        assert stub.responses == [True, False]
+
+        # 自己发起的申请房间也会广播回来：不弹窗、不应答
+        win._on_room_undo_proposed({"type": "undo_proposed", "by": 2})
+        assert stub.responses == [True, False]
+    finally:
+        win._room_clients = {}
         _teardown(win, qapp)

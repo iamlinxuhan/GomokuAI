@@ -14,7 +14,7 @@ import time
 import pytest
 
 import room as room_module
-from room import Room, SeatSpec
+from room import Room, RoomConfig, SeatSpec
 from server import RoomServer
 from wire import PROTO_VERSION, WireConnection
 
@@ -110,6 +110,40 @@ def _drain_until(wire, pred, timeout=5.0):
         if pred(msg):
             return msg, seen
     raise AssertionError("未等到期望报文；收到：%r" % (seen,))
+
+
+def _collect_for(wire, seconds):
+    """收一段时间的报文（超时继续），用于断言"什么都没发生"。"""
+    from wire import WireError
+    out = []
+    t0 = time.time()
+    while time.time() - t0 < seconds:
+        try:
+            out.append(wire.recv(timeout=0.2))
+        except WireError:
+            continue
+    return out
+
+
+def _wait(pred, timeout=5.0):
+    """轮询等待（房间线程与测试线程的调度先后不确定时用）。"""
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if pred():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def _room_server(black, white, *, config=None, auto_consent=False,
+                 name="demo"):
+    """按测试需要现建一个房间服务器；返回 (srv, room, port)。"""
+    srv = RoomServer("127.0.0.1")
+    room = Room(name, black, white, config=config,
+                auto_consent=auto_consent)
+    srv.add_room(room)
+    port = srv.start(0)
+    return srv, room, port
 
 
 # ==================== 完整对局 ====================
@@ -306,7 +340,8 @@ def test_undo_after_reply_pops_two(monkeypatch):
         srv.stop()
 
 
-def test_undo_remote_opponent_requires_consent(server):
+def test_undo_remote_opponent_goes_through_proposal(server):
+    """M4d：远程对手不再回 undo_needs_consent，而是进入协商（提案广播）。"""
     _srv, _room, port = server
     b, rb = _hello_join(port, seat="black")
     w, rw = _hello_join(port, seat="white")
@@ -316,8 +351,177 @@ def test_undo_remote_opponent_requires_consent(server):
         _drain_until(b, lambda m: m.get("type") == "state"
                      and m.get("move_no") == 1)
         b.send({"type": "undo_request"})
+        # 双方都收到提案；请求方不该收到错误
+        prop_b, seen_b = _drain_until(
+            b, lambda m: m.get("type") == "undo_proposed")
+        prop_w, _ = _drain_until(
+            w, lambda m: m.get("type") == "undo_proposed")
+        assert prop_b["by"] == 1 and prop_w["by"] == 1
+        assert not [m for m in seen_b if m.get("type") == "error"]
+    finally:
+        b.close()
+        w.close()
+
+
+# ==================== RoomConfig 与远程协商（M4d）====================
+
+def test_welcome_carries_room_config():
+    cfg = RoomConfig(allow_undo=False, undo_limit=1, allow_review=False,
+                     allow_restart=False, show_ai_scores=False)
+    srv, _room, port = _room_server(SeatSpec("remote"), SeatSpec("remote"),
+                                    config=cfg)
+    wire = None
+    try:
+        wire, rep = _hello_join(port, seat="black")
+        assert rep["type"] == "welcome"
+        assert rep["config"] == cfg.to_json()
+    finally:
+        if wire is not None:
+            wire.close()
+        srv.stop()
+
+
+def test_room_config_disallow_undo_is_rejected():
+    srv, room, port = _room_server(SeatSpec("remote"), SeatSpec("remote"),
+                                   config=RoomConfig(allow_undo=False))
+    b = w = None
+    try:
+        b, rb = _hello_join(port, seat="black")
+        w, rw = _hello_join(port, seat="white")
+        assert rb["type"] == "welcome" and rw["type"] == "welcome"
+        b.send({"type": "move", "r": 9, "c": 9})
+        _drain_until(b, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+        b.send({"type": "undo_request"})
         err, _ = _drain_until(b, lambda m: m.get("type") == "error")
-        assert err["code"] == "undo_needs_consent"
+        assert err["code"] == "undo_disabled"
+        assert room.session.move_count == 1        # 棋盘没动
+    finally:
+        if b is not None:
+            b.close()
+        if w is not None:
+            w.close()
+        srv.stop()
+
+
+def test_room_config_undo_limit_is_enforced():
+    """额度 1：第一次悔棋成功，第二次被拒（撤到请求方上一次落子之前）。"""
+    srv, room, port = _room_server(SeatSpec("remote"), SeatSpec("remote"),
+                                   config=RoomConfig(undo_limit=1),
+                                   auto_consent=True)
+    b = w = None
+    try:
+        b, rb = _hello_join(port, seat="black")
+        w, rw = _hello_join(port, seat="white")
+        assert rb["type"] == "welcome" and rw["type"] == "welcome"
+        # 房间线程在等两席位就位后才把额度设成 config 值：等它跑完这一拍
+        assert _wait(lambda: room.session.output == 1), "房间就绪后额度应生效"
+
+        b.send({"type": "move", "r": 9, "c": 9})
+        _drain_until(b, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+        b.send({"type": "undo_request"})
+        applied, _ = _drain_until(
+            b, lambda m: m.get("type") == "undo_applied")
+        assert applied["move_no"] == 0 and room.session.output == 0
+
+        b.send({"type": "move", "r": 9, "c": 9})
+        _drain_until(b, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+        b.send({"type": "undo_request"})
+        err, _ = _drain_until(b, lambda m: m.get("type") == "error")
+        assert err["code"] == "undo_unavailable"
+        assert room.session.move_count == 1        # 第二次没有生效
+    finally:
+        if b is not None:
+            b.close()
+        if w is not None:
+            w.close()
+        srv.stop()
+
+
+def test_undo_proposal_then_reject_keeps_board(server):
+    _srv, room, port = server
+    b, rb = _hello_join(port, seat="black")
+    w, rw = _hello_join(port, seat="white")
+    try:
+        assert rb["type"] == "welcome" and rw["type"] == "welcome"
+        b.send({"type": "move", "r": 9, "c": 9})
+        _drain_until(b, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+
+        b.send({"type": "undo_request"})
+        _drain_until(w, lambda m: m.get("type") == "undo_proposed")
+        # pending 期间再提一次：明确回 undo_pending，不覆盖已存方案
+        b.send({"type": "undo_request"})
+        err, _ = _drain_until(b, lambda m: m.get("type") == "error")
+        assert err["code"] == "undo_pending"
+
+        w.send({"type": "undo_response", "accept": False})
+        rejected, _ = _drain_until(
+            b, lambda m: m.get("type") == "undo_rejected")
+        assert rejected["by"] == 1
+        time.sleep(0.2)                            # 若错误执行了，这里能看到
+        assert room.session.move_count == 1
+        assert room.session.board[9][9] == 1
+        assert room.session.output == 3            # 拒绝不消耗额度
+    finally:
+        b.close()
+        w.close()
+
+
+def test_undo_proposal_then_accept_rewinds(server):
+    _srv, room, port = server
+    b, rb = _hello_join(port, seat="black")
+    w, rw = _hello_join(port, seat="white")
+    try:
+        assert rb["type"] == "welcome" and rw["type"] == "welcome"
+        b.send({"type": "move", "r": 9, "c": 9})
+        _drain_until(b, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+
+        b.send({"type": "undo_request"})
+        _drain_until(w, lambda m: m.get("type") == "undo_proposed")
+        w.send({"type": "undo_response", "accept": True})
+        applied, _ = _drain_until(
+            b, lambda m: m.get("type") == "undo_applied")
+        assert applied["by"] == 1 and applied["move_no"] == 0
+        _drain_until(w, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 0)
+        assert room.session.move_count == 0
+        assert not room.session.board.any()
+        assert room.session.output == 2
+    finally:
+        b.close()
+        w.close()
+
+
+def test_undo_pending_freezes_moves(server):
+    """pending 期间落子被冻结：不产生 move 事件，但协商结束后不丢着法。"""
+    _srv, room, port = server
+    b, rb = _hello_join(port, seat="black")
+    w, rw = _hello_join(port, seat="white")
+    try:
+        assert rb["type"] == "welcome" and rw["type"] == "welcome"
+        b.send({"type": "move", "r": 9, "c": 9})
+        _drain_until(b, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+
+        b.send({"type": "undo_request"})
+        _drain_until(w, lambda m: m.get("type") == "undo_proposed")
+
+        # 轮到白，白在 pending 期间发一手：不能落，也不能报错或丢
+        w.send({"type": "move", "r": 8, "c": 8})
+        got = _collect_for(w, 0.5)
+        assert not [m for m in got if m.get("type") == "move"], got
+        assert room.session.move_count == 1
+        assert room.session.board[8][8] == 0
+
+        # 拒绝后解冻：白那一手按原样落下（冻结的是对局，不是通道）
+        w.send({"type": "undo_response", "accept": False})
+        _drain_until(w, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 2, timeout=5.0)
+        assert room.session.board[8][8] == 2
     finally:
         b.close()
         w.close()

@@ -201,7 +201,13 @@ def test_game_smoke_stone_anim_and_undo(monkeypatch, qapp):
         assert bw._anim is not None, "落子应启动覆盖式动画"
 
         # 悔棋：set_last_move(None) 应取消在途动画（stop 不发 finished，
-        # 收尾由 _cancel_stone_anim 手动完成）
+        # 收尾由 _cancel_stone_anim 手动完成）。
+        #
+        # **先等 AI 回合结束再悔**：`_on_undo` 在 AI 思考中会直接返回，而
+        # "玩家落子回显"与"AI 回合事件到达"是两件独立的事 —— 不等它，悔棋
+        # 偶尔会落进思考窗口被静默丢掉（全量运行时随机红过）。等到自己回合
+        # 后：AI 未落子则撤 1 手、已落子则撤 2 手，两种时序都回到空盘。
+        assert _wait(qapp, lambda: not win.ai_thinking), "AI 回合未结束"
         win._on_undo()
         assert _wait(qapp, lambda: win.move_count == 0
                      and bw.board[9][9] == 0), "悔棋未回退"

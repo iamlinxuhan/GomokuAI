@@ -13,7 +13,8 @@ import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QStackedWidget, QStackedLayout,
-    QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea
+    QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea,
+    QLineEdit, QMessageBox
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QThread, QObject, QAbstractAnimation, pyqtSignal, QRect,
@@ -30,7 +31,7 @@ import charts
 import engine
 import theme
 from board_geometry import BoardGeometry
-from client import LocalRoom, RoomClient
+from client import LocalRoom, RoomClient, local_ip
 from engine import (BOARD_SIZE, Board, evaluate, is_mate,
                     new_game, win_line)
 from gamelog import GameLogger
@@ -81,6 +82,10 @@ MAX_SCALE = 1.35                    # 初始尺寸上限：棋盘再大就一眼
 #: 用户的反馈正是"还没看见 AI 的连五在哪里，就被三个大字遮住了"。这一秒留给
 #: 已经画好的红线与蓝环。两侧（赢、输）都给，平局不给：平局没有连五可看。
 GAME_OVER_DELAY_MS = 1000
+
+#: 局域网房间名。开房方与加入方必须是同一个（M4d 的 LAN 只有一桌，
+#: 不做房间列表；"专用服务器多房间"那条路走 server.py 的 --room）。
+LAN_ROOM_NAME = "lan"
 
 # 终局那条红线的颜色。**刻意不随主题走。**
 #
@@ -1317,12 +1322,12 @@ class SelectionScreen(Screen):
 
     color_selected = pyqtSignal(int)  # 0=黑先, 1=白后
     difficulty_selected = pyqtSignal(int)  # 档位 1-5，对应 engine.DIFFICULTY
-    mode_selected = pyqtSignal(int)  # 0=挑战AI, 1=本地对战
+    mode_selected = pyqtSignal(int)  # 0=挑战AI, 1=本地对战, 2=局域网联机
     review_level_selected = pyqtSignal(int)  # 复盘强度，档位 1-5
 
     #: 四个模式的标题/副标题，与 ``setup_ui`` 里的卡片分支一一对应。
     _TITLES = {
-        "mode": ("选择对战模式", "挑战 AI，或与身边的人对坐下棋"),
+        "mode": ("选择对战模式", "挑战 AI、与身边人对坐，或局域网联机"),
         "color": ("选择执棋颜色", "黑棋为先手，白棋为后手"),
         "difficulty": ("选择 AI 难度", "难度越高，AI 思考越深入"),
         "review": ("选择复盘强度",
@@ -1341,10 +1346,12 @@ class SelectionScreen(Screen):
 
     def setup_ui(self):
         if self.mode == "mode":
-            # 两张大卡：挑战 AI / 本地对战。face 用棋子本身 —— "对面是程序还是
-            # 人"这件事，一颗子和两颗子比两个字更容易一眼分出来。
+            # 三张大卡：挑战 AI / 本地对战 / 局域网联机。face 用棋子本身 ——
+            # "对面是程序还是人"这件事，一颗子和两颗子比两个字更容易一眼分
+            # 出来；局域网那张同样是两颗子（两个玩家各一台设备）。
             cards = [("挑战 AI", "primary", 0, _strength_bar([1]), "与算法对弈"),
-                     ("本地对战", "success", 1, _strength_bar([1, 2]), "两人同机轮流下")]
+                     ("本地对战", "success", 1, _strength_bar([1, 2]), "两人同机轮流下"),
+                     ("局域网联机", "danger", 2, _strength_bar([1, 2]), "和好友各用一台设备")]
             for i, (text, tone, value, face, sub) in enumerate(cards):
                 btn = card_button(text, tone, face=face, sub=sub,
                                   index=f"{i + 1:02d}")
@@ -1421,10 +1428,139 @@ class SelectionScreen(Screen):
         # 5 张卡在 SPACE_XL(24) 下是 5×160+4×24 = 896px，仍塞得进 WINDOW_W=1022
         # —— 但只剩 126px 余量，而卡片是 setFixedSize 的（不随窗口缩放），
         # 颜色页那种"留白富余"的观感会被挤掉。降到 SPACE_LG(16) 得 864px。
-        # 只调难度页：颜色页/mode 页都只有 2 张卡，宽间距是那两张页面的节奏。
+        # 只调难度页：颜色页 / mode 页都只有 2–3 张卡，宽间距是那两张页面的节奏。
         gap = (theme.SPACE_LG if self.mode in ("difficulty", "review")
                else theme.SPACE_XL)
         self.add_content(hbox(*self._cards, spacing=gap))
+
+
+# ==================== 局域网联机（M4d）====================
+class LanMenuScreen(Screen):
+    """局域网联机的岔路口：创建房间 / 加入房间。"""
+
+    create_clicked = pyqtSignal()
+    join_clicked = pyqtSignal()
+    back_clicked = pyqtSignal()
+
+    def __init__(self):
+        super().__init__(title="局域网联机",
+                         subtitle="创建房间，或加入好友的对局")
+        self._cards = []
+        cards = [("创建房间", "primary", "等好友输入你的地址加入"),
+                 ("加入房间", "success", "输入房主显示的地址")]
+        for i, (text, tone, sub) in enumerate(cards):
+            btn = card_button(text, tone, sub=sub, index=f"{i + 1:02d}")
+            sig = self.create_clicked if i == 0 else self.join_clicked
+            btn.clicked.connect(lambda _=False, s=sig: s.emit())
+            self._cards.append(btn)
+        self.add_content(hbox(*self._cards, spacing=theme.SPACE_XL))
+
+        back = button("← 返回", "ghost", width=150)
+        back.clicked.connect(self.back_clicked.emit)
+        self.add_footer(back)
+
+
+class LanJoinScreen(Screen):
+    """加入房间：填 IP / 端口，点颜色即发起连接。
+
+    失败（没有房间 / 席位被占 / 版本不符）不发信号出去，而是**留在本页**
+    显示原因，用户可以直接改地址重试 —— 连接失败是联机的常态，不该把
+    人弹回模式选择页重新走一遍。
+    """
+
+    join_requested = pyqtSignal(str, str, int)   # host, port, stone
+    back_clicked = pyqtSignal()
+
+    def __init__(self, host: str = "", port: str = "", error: str = ""):
+        super().__init__(title="加入房间",
+                         subtitle="输入房主等待页显示的地址，选一种执子颜色")
+        form = QVBoxLayout()
+        form.setSpacing(theme.SPACE_SM)
+        self.host_edit = self._field(form, "房主 IP", host, "例如 192.168.1.7")
+        self.port_edit = self._field(form, "端口", port, "例如 51234")
+        self.add_content(self._as_widget(form))
+
+        black_btn = button("执黑加入", "primary", width=150)
+        white_btn = button("执白加入", "ghost", width=150)
+        black_btn.clicked.connect(lambda: self._emit_join(1))
+        white_btn.clicked.connect(lambda: self._emit_join(2))
+        self.add_content(hbox(black_btn, white_btn, spacing=theme.SPACE_LG))
+
+        self.error_label = faint_label("")
+        self.add_content(self.error_label)
+        if error:
+            self.error_label.setText(error)
+
+        back = button("← 返回", "ghost", width=150)
+        back.clicked.connect(self.back_clicked.emit)
+        self.add_footer(back)
+
+    @staticmethod
+    def _field(form, label, text, placeholder):
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(theme.SPACE_SM)
+        tag = faint_label(label, align=Qt.AlignRight | Qt.AlignVCenter)
+        tag.setFixedWidth(72)
+        edit = QLineEdit(text)
+        edit.setPlaceholderText(placeholder)
+        edit.setFixedWidth(260)
+        edit.setFixedHeight(theme.CONTROL_H)
+        lay.addWidget(tag)
+        lay.addWidget(edit)
+        form.addWidget(row)
+        return edit
+
+    @staticmethod
+    def _as_widget(layout):
+        """把裸布局塞进一个控件，好交给 ``Screen.add_content``（它要 QWidget）。"""
+        box = QWidget()
+        box.setLayout(layout)
+        return box
+
+    def _emit_join(self, stone: int) -> None:
+        self.join_requested.emit(self.host_edit.text().strip(),
+                                 self.port_edit.text().strip(), stone)
+
+
+class LanWaitScreen(Screen):
+    """房主等待对手加入：把本机 IP 与房间端口摆出来，可取消整场。"""
+
+    cancel_clicked = pyqtSignal()
+
+    def __init__(self, ip: str, port: int, stone: int):
+        super().__init__(
+            title="等待对手加入",
+            subtitle="请对方在另一台设备上选「加入房间」，并选择另一种颜色")
+        self.add_content(title_label(f"{ip}:{port}", role="title"))
+        self.add_content(faint_label(
+            "你执%s · 对方请选执%s"
+            % ("黑" if stone == 1 else "白", "白" if stone == 1 else "黑")))
+        cancel = button("✕ 取消等待", "danger", width=150)
+        cancel.clicked.connect(self.cancel_clicked.emit)
+        self.add_content(cancel)
+
+
+def _lan_join_error_text(exc) -> str:
+    """把连接层错误翻成用户能照着做的一句话。"""
+    if isinstance(exc, TimeoutError):
+        return "连接超时：检查 IP、端口与两台设备是否在同一局域网"
+    if isinstance(exc, OSError):
+        return "连接被拒绝或中断：检查 IP、端口与防火墙"
+    code = getattr(exc, "code", "")
+    known = {
+        "seat_taken": "该颜色已被占用，换一种颜色试试",
+        "no_room": "没有找到这个房间：请确认房主正在等待、地址没有抄错",
+        "proto_mismatch": "双方游戏版本不一致，无法联机",
+        "already_started": "这一局已经开始了，等下一局再进",
+        "timeout": "连接超时：检查 IP、端口与两台设备是否在同一局域网",
+        "io": "连接被拒绝或中断：检查 IP、端口与防火墙",
+    }
+    if code in known:
+        return known[code]
+    msg = getattr(exc, "message", "") or str(exc)
+    return f"连接失败：{msg}"
 
 
 # ==================== 游戏结束覆盖层 ====================
@@ -1443,16 +1579,22 @@ class GameOverOverlay(Screen):
     quit_clicked = pyqtSignal()
     review_clicked = pyqtSignal()
 
-    def __init__(self, result_text, is_win, can_review=False):
+    def __init__(self, result_text, is_win, can_review=False,
+                 can_restart=True):
         """``can_review`` 为真时多一个「算法复盘」按钮。
 
         **只在"输给 AI"这一种结局上为真**（见 ``_show_game_over``）：赢了没有
         可复盘的东西，本地两人对战则根本没有 AI 参与 —— 没有算法可复盘。
+
+        ``can_restart=False``（房间配置 ``allow_restart=False``）时干脆不放
+        「再来一局」按钮：禁用一颗已经画出来的按钮，用户还是要先读一遍它再
+        失望；不画才是诚实的。
         """
         super().__init__(root_name="overlayRoot")
         self.result_text = result_text
         self.is_win = is_win
         self.can_review = can_review
+        self.can_restart = can_restart
         self.setup_ui()
 
     def setup_ui(self):
@@ -1460,11 +1602,14 @@ class GameOverOverlay(Screen):
         result.setProperty("tone", "win" if self.is_win else "lose")
         self.add_content(result)
 
-        restart_btn = button("🔄 再来一局", "success", width=150)
-        restart_btn.clicked.connect(self.restart_clicked.emit)
+        btns = []
+        if self.can_restart:
+            restart_btn = button("🔄 再来一局", "success", width=150)
+            restart_btn.clicked.connect(self.restart_clicked.emit)
+            btns.append(restart_btn)
         quit_btn = button("✕ 退出游戏", "danger", width=150)
         quit_btn.clicked.connect(self.quit_clicked.emit)
-        btns = [restart_btn, quit_btn]
+        btns.append(quit_btn)
         if self.can_review:
             review_btn = button("📊 算法复盘", "primary", width=150)
             review_btn.clicked.connect(self.review_clicked.emit)
@@ -1556,7 +1701,7 @@ class GomokuGame(QMainWindow):
         # UI / 线程侧状态
         self.gamemode = 0  # 0=先手(黑), 1=后手(白)
         self.gamekunnan = 1
-        self.playmode = 0  # 0=挑战AI, 1=本地双人对战
+        self.playmode = 0  # 0=挑战AI, 1=本地双人对战, 2=局域网联机
         self.ai_thinking = False
 
         # AI Worker
@@ -1575,6 +1720,11 @@ class GomokuGame(QMainWindow):
         # 人类回合开始时（turn 事件）的棋盘快照：复盘 human_moves 的
         # ``before`` 就取它，语义是"落子前"，与旧版逐字一致。
         self._pending_snapshot = None
+        #: welcome 下发的 RoomConfig（dict）。None = 没有配置信息（离线构造的
+        #: 测试直连），一切按默认全开处理，见 ``_cfg``。
+        self._room_config = None
+        # 颜色页选完之后去哪：单机走难度页，LAN 开房走开监听 + 等待对手。
+        self._color_next = "difficulty"
 
         # 复盘 Worker（与 AI Worker 同一套收尾方式，见 ``_cancel_review``）
         self.review_worker = None
@@ -1610,6 +1760,11 @@ class GomokuGame(QMainWindow):
         self.board_widget = None
         self.game_panel = None
         self.game_over_overlay = None
+        # LAN 页（M4d）：菜单 / 加入表单建在 central 上；等待遮罩叠在棋盘页上
+        self.lan_menu = None
+        self.lan_join = None
+        self.lan_wait = None
+        self._game_row = None       # 棋盘行容器（收回等待遮罩时切回它）
         # 复盘三页
         self.review_strength = None
         self.review_progress = None
@@ -1742,9 +1897,9 @@ class GomokuGame(QMainWindow):
         # None 之后醒来 —— 那是 AttributeError，在 Qt 槽里抛就是直接崩。
         self._game_over_timer.stop()
         for attr in ("loading_screen", "selection_mode", "selection_color",
-                     "selection_difficulty", "game_widget",
-                     "review_strength", "review_progress", "review_list",
-                     "review_board"):
+                     "selection_difficulty", "game_widget", "lan_menu",
+                     "lan_join", "review_strength", "review_progress",
+                     "review_list", "review_board"):
             page = getattr(self, attr, None)
             if page is not None:
                 # 先停页面树里的在途动画（fade_in / 落子 / 脉动）再删 ——
@@ -1752,11 +1907,12 @@ class GomokuGame(QMainWindow):
                 _stop_animations(page)
                 self.central.removeWidget(page)
                 page.deleteLater()
-        # board_widget / game_panel / overlay 是 game_widget 的子控件，
+        # board_widget / game_panel / overlay / lan_wait 是 game_widget 的子控件，
         # 随父一起销毁，不需要（也不能）单独 removeWidget。
         for attr in ("loading_screen", "selection_mode", "selection_color",
                      "selection_difficulty", "game_widget", "board_widget",
-                     "game_panel", "game_over_overlay", "_stack",
+                     "game_panel", "game_over_overlay", "_stack", "_game_row",
+                     "lan_menu", "lan_join", "lan_wait",
                      "review_strength", "review_progress", "review_list",
                      "review_board"):
             setattr(self, attr, None)
@@ -1784,12 +1940,36 @@ class GomokuGame(QMainWindow):
         self._switch_page(self.selection_mode)
 
     def _on_mode_selected(self, mode):
-        """选择了对战模式：0=挑战AI（走原来的颜色/难度两步），1=本地对战。"""
+        """选择了对战模式：0=挑战AI（走原来的颜色/难度两步），1=本地对战，
+        2=局域网联机（开房 / 加入，M4d）。"""
         self.playmode = int(mode)
         if self.playmode == 1:
             self._start_local_game()
+        elif self.playmode == 2:
+            self._show_lan_menu()
         else:
             self._show_color_selection()
+
+    def _show_lan_menu(self):
+        """局域网联机的岔路口：创建 / 加入。"""
+        self._drop_pages()
+        self.lan_menu = LanMenuScreen()
+        self.lan_menu.create_clicked.connect(self._on_lan_create)
+        self.lan_menu.join_clicked.connect(self._open_lan_join)
+        self.lan_menu.back_clicked.connect(self._show_mode_selection)
+        self._switch_page(self.lan_menu)
+
+    def _on_lan_create(self):
+        """创建房间：先选自己的执子色（复用颜色页），再开监听等待。"""
+        self._show_color_selection(next_step="lan_host")
+
+    def _open_lan_join(self, error: str = ""):
+        """建/重建「加入房间」页（失败后留在原地显示原因）。"""
+        self._drop_pages()
+        self.lan_join = LanJoinScreen(error=error)
+        self.lan_join.join_requested.connect(self._on_lan_join_requested)
+        self.lan_join.back_clicked.connect(self._show_lan_menu)
+        self._switch_page(self.lan_join)
 
     def _start_local_game(self):
         """本地双人对战：跳过颜色页与难度页，直接开局（黑先）。
@@ -1801,8 +1981,13 @@ class GomokuGame(QMainWindow):
         self.gamemode = 0
         self._start_game()
 
-    def _show_color_selection(self):
-        """显示执棋颜色选择"""
+    def _show_color_selection(self, next_step="difficulty"):
+        """显示执棋颜色选择。
+
+        ``next_step``：选完颜色去哪 —— 单机走难度页；LAN 开房走"绑端口 +
+        等待对手"。颜色页本身完全复用，两种流程共用同一个 ``color_selected``。
+        """
+        self._color_next = next_step
         self._drop_pages()
         self.selection_color = SelectionScreen(mode="color")
         self.selection_color.color_selected.connect(self._on_color_selected)
@@ -1811,6 +1996,9 @@ class GomokuGame(QMainWindow):
     def _on_color_selected(self, mode):
         """选择了执棋颜色"""
         self.gamemode = mode
+        if self._color_next == "lan_host":
+            self._start_lan_host(mode)
+            return
         self._show_difficulty_selection()
 
     def _show_difficulty_selection(self):
@@ -1869,6 +2057,8 @@ class GomokuGame(QMainWindow):
         self._last_undo = None
         self._move_in_flight = False
         self._pending_snapshot = None
+        # 上一局（可能是 LAN）的 RoomConfig 不能带进新局；本局配置等 welcome。
+        self._room_config = None
 
         # 清空引擎的跨局面状态（置换表 / history / killer）。房间的对局线程
         # 启动时也会 reset_engine()；这里保留是为了让"新局"的语义在 UI 侧也
@@ -1890,27 +2080,168 @@ class GomokuGame(QMainWindow):
         # 两个席位都是 remote，于是两条 RoomClient 从同一进程接入 —— 恰好也
         # 走一遍"两个客户端坐进一个房间"的联机路径。
         try:
-            self._room = LocalRoom(black_spec, white_spec)
-            self._room_bridge = _RoomBridge()
-            self._room_bridge.event.connect(self._on_room_event)
+            room = LocalRoom(black_spec, white_spec)
             if self.playmode == 1:
-                for seat, stone in (("black", 1), ("white", 2)):
-                    client = RoomClient(on_event=self._room_bridge.event.emit)
-                    client.connect(self._room.host, self._room.port,
-                                   self._room.name, seat)
-                    self._room_clients[stone] = client
+                specs = [("black", 1), ("white", 2)]
             else:
                 seat = "black" if self.session.human_stone == 1 else "white"
-                client = RoomClient(on_event=self._room_bridge.event.emit)
-                client.connect(self._room.host, self._room.port,
-                               self._room.name, seat)
-                self._room_clients[self.session.human_stone] = client
+                specs = [(seat, self.session.human_stone)]
+            # LocalRoom 默认绑 127.0.0.1，但显式给本机地址，语义更清楚。
+            self._attach_room(room, specs, host="127.0.0.1")
         except Exception as exc:                    # noqa: BLE001
             # 本机 loopback 理论上不会失败；真失败时给出可见的错误并退回模式
             # 选择页，而不是留在"看着能下、点了没反应"的假对局页上。
             print(f"[房间] 启动失败: {type(exc).__name__}: {exc}")
             self._close_room()
             self._show_mode_selection()
+
+    # ------------------------------------------------------------------
+    # 局域网开房 / 加入（M4d）
+    # ------------------------------------------------------------------
+
+    def _start_lan_host(self, gamemode):
+        """创建局域网房间：绑 0.0.0.0 监听，本机客户端连 127.0.0.1。
+
+        对手在另一台机器上，悔棋走 ``undo_proposed`` 协商（``LocalRoom``
+        的 ``auto_consent=False``）—— 不能自动拿别人的棋。等对手就位后房间
+        广播 state/turn，``_hide_lan_wait`` 收回等待遮罩露出棋盘。
+        """
+        self.playmode = 2
+        stone = 1 if gamemode == 0 else 2
+        seat = "black" if stone == 1 else "white"
+        self._prepare_lan_game("局域网联机（房主，执%s）"
+                               % ("黑" if stone == 1 else "白"))
+        self.session.human_stone = stone
+        try:
+            room = LocalRoom(SeatSpec("remote"), SeatSpec("remote"),
+                             name=LAN_ROOM_NAME, host="0.0.0.0",
+                             auto_consent=False)
+            # 同机客户端不能连 0.0.0.0（那是监听地址，不是可连接地址）。
+            self._attach_room(room, [(seat, stone)], host="127.0.0.1")
+        except Exception as exc:                    # noqa: BLE001
+            print(f"[房间] 创建局域网房间失败: {type(exc).__name__}: {exc}")
+            self._close_room()
+            self._show_mode_selection()
+            return
+        self._show_lan_wait(room.port, stone)
+
+    def _on_lan_join_requested(self, host, port, stone):
+        """加入方：握手成功才进对局；失败留在本页显示中文原因。"""
+        if not host:
+            self._lan_join_error("请输入房主的 IP 地址")
+            return
+        try:
+            port_no = int(port)
+            if not (1 <= port_no <= 65535):
+                raise ValueError
+        except ValueError:
+            self._lan_join_error("端口要是 1–65535 的数字")
+            return
+
+        self.playmode = 2
+        self.gamemode = 0 if stone == 1 else 1
+        self._prepare_lan_game("局域网联机（加入方，执%s）"
+                               % ("黑" if stone == 1 else "白"))
+        # human_stone 必须在 attach 之前设好：welcome 是 connect 内同步
+        # 触发的，_on_room_state 的重放口径依赖它。
+        self.session.human_stone = stone
+        seat = "black" if stone == 1 else "white"
+        try:
+            self._attach_room(None, [(seat, stone)], host=host, port=port_no,
+                              room_name=LAN_ROOM_NAME)
+        except Exception as exc:                    # noqa: BLE001
+            self._lan_join_error(_lan_join_error_text(exc))
+            return
+        self._update_panel()
+
+    def _lan_join_error(self, text):
+        """连接失败：拆掉半成品对局，重建加入页并显示原因（可原地重试）。"""
+        self._close_room()
+        self._open_lan_join(error=text)
+
+    def _prepare_lan_game(self, mode_text):
+        """LAN 开房 / 加入共用的开局准备。
+
+        与单机 ``_start_game`` 的差别只有日志模式行与席位来源：拆旧局、
+        开日志、复位 UI 镜像、建棋盘都在这里，事件处理、渲染、悔棋、终局
+        全部走同一条 ``_on_room_event`` 路径 —— 不复制第二套对局逻辑。
+        """
+        self._close_room()
+        if self.logger:
+            self.logger.close()
+        self.logger = GameLogger()
+        self.logger.f.write(f"  模式: {mode_text}\n")
+        self.logger.f.write("  难度: 无（玩家对战）\n")
+        self.logger.f.write(
+            f"  引擎: {engine.binary_path() or 'C++ 不可用，将用本地 Python 引擎'}\n\n")
+        self.logger.f.flush()
+
+        # LAN 双方都是 remote 人类席位；规则真源仍在房间的 Session 里，
+        # 这里的 session 只是事件回放出来的 UI 镜像（与人机/本地对战一致）。
+        self.session.configure("pvp")
+        self.session.reset()
+        self.ai_thinking = False
+        self.review_records = []
+        self._room_finished = False
+        self._last_undo = None
+        self._move_in_flight = False
+        self._pending_snapshot = None
+        self._room_config = None
+        new_game()
+        self._build_game_ui()
+
+    def _show_lan_wait(self, port, stone):
+        """房主等待遮罩：叠在棋盘页上，对手就位后的首个事件收回它。"""
+        self.lan_wait = LanWaitScreen(local_ip(), port, stone)
+        self.lan_wait.cancel_clicked.connect(self._on_lan_cancel)
+        self._stack.addWidget(self.lan_wait)
+        self._stack.setCurrentWidget(self.lan_wait)
+        anim.fade_in(self.lan_wait)
+
+    def _hide_lan_wait(self):
+        """对手已就位（房间开始了 state/turn 广播）：收回等待遮罩露棋盘。"""
+        wait, self.lan_wait = self.lan_wait, None
+        if wait is None:
+            return
+        if self._stack is not None:
+            self._stack.removeWidget(wait)
+        wait.deleteLater()
+        if self._stack is not None and self._game_row is not None:
+            self._stack.setCurrentWidget(self._game_row)
+
+    def _on_lan_cancel(self):
+        """取消等待：整只拆掉房间与连接，回模式选择。"""
+        self._close_room()
+        self._show_mode_selection()
+
+    def _attach_room(self, room, client_specs, *, host=None, port=None,
+                     room_name=None):
+        """把本 UI 接入一个房间（单机 / LAN 共用）。
+
+        ``room`` 非 None：本 UI 创建并持有它（拆局时 ``stop()``）；加入
+        远端房间时为 None，地址从 host/port/room_name 给。
+        ``client_specs`` 是 ``[(seat_name, stone), ...]``：人机一条（人类
+        席位），本地双人两条，LAN 一条（自己的席位）。
+
+        失败时把已建立的连接连桥一起拆掉，再把异常抛给调用方 —— 单机回
+        模式选择页，LAN 留在加入页显示原因。
+        """
+        if room is None and (host is None or port is None
+                             or room_name is None):
+            raise ValueError("加入远端房间必须给全 host/port/room_name")
+        self._room = room
+        bridge = _RoomBridge()
+        bridge.event.connect(self._on_room_event)
+        self._room_bridge = bridge
+        try:
+            for seat, stone in client_specs:
+                client = RoomClient(on_event=bridge.event.emit)
+                client.connect(host or room.host, port or room.port,
+                               room_name or room.name, seat)
+                self._room_clients[stone] = client
+        except Exception:
+            self._close_room()
+            raise
 
     def _build_game_ui(self):
         """构建游戏主界面。
@@ -1946,6 +2277,9 @@ class GomokuGame(QMainWindow):
         # setContentsMargins**：实测它被忽略，子控件拿到的是控件全尺寸
         # （棋盘因此变成 750x750、k=1.033，不再是设计基准 1:1）。
         game_row = QWidget()
+        # LAN 等待遮罩收回时要切回这一行；保存引用而不是在 QStackedLayout
+        # 里按索引找（布局顺序是添加顺序，改天多插一个控件就静默切错）。
+        self._game_row = game_row
         row = QHBoxLayout(game_row)
         row.setContentsMargins(GAP, GAP, GAP, GAP)
         row.setSpacing(theme.SPACE_SM)
@@ -2044,6 +2378,12 @@ class GomokuGame(QMainWindow):
             self._on_room_game_over(ev)
         elif t == "undo_applied":
             self._on_room_undo_applied(ev)
+        elif t == "undo_proposed":
+            self._on_room_undo_proposed(ev)
+        elif t == "undo_rejected":
+            # 我是请求方（对面才有 pending 弹窗）：棋盘与面板都没变，
+            # 提示一句即可，不动任何状态。
+            print(f"[房间] 对手拒绝了悔棋（席位 {ev.get('by')}）")
         elif t == "error":
             # 服务器权威拒绝（非法着法 / 悔棋不可用 / 协议错）。UI 从未改过
             # 状态，只需恢复可交互并把原因打出来；房间每次拒绝都带明确 code。
@@ -2054,6 +2394,12 @@ class GomokuGame(QMainWindow):
         """welcome / state：全量同步（入座、开局、每次落子后、悔棋后）。"""
         if self.board_widget is None or self.game_panel is None:
             return                  # 页面已拆：丢掉迟到的排队事件
+
+        # 房主还在等待屏上时，这个 state 说明对手已入座、对局开始了。
+        self._hide_lan_wait()
+        if "config" in ev:
+            self._room_config = dict(ev["config"])
+            self._apply_room_config()
 
         move_no = int(ev.get("move_no", 0))
         result = int(ev.get("result", 3))
@@ -2084,11 +2430,14 @@ class GomokuGame(QMainWindow):
             self.session.game_over = True
         else:
             # 有人赢：房间的 Session 是 pvp（result 只到 2），"谁赢了"看
-            # winner 与 UI 侧 playmode/石色的关系，重放成人机/本地对战的
-            # 既有口径（AI 赢 = 1、人赢 = 2、本地对战都是 2）。
+            # winner 与 UI 侧 playmode/石色的关系，重放成人机/本地对战/LAN
+            # 的既有口径（AI 赢 = 1、人赢 = 2、本地对战都是 2、LAN 按我方色）。
             self.session.game_over = True
             if self.playmode == 1:
                 self.session.gamerule = 2
+            elif self.playmode == 2:
+                self.session.gamerule = (
+                    2 if self.session.winner == self.session.human_stone else 1)
             elif self.session.winner == self.session.ai_stone:
                 self.session.gamerule = 1
             else:
@@ -2116,8 +2465,8 @@ class GomokuGame(QMainWindow):
         self.board_widget.set_board(self.board)
         self.board_widget.set_last_move(r, c, stone)
 
-        if self.playmode == 1 or stone == self.session.human_stone:
-            # 人类着法（本地双人局两边都是人类）。
+        if self.playmode in (1, 2) or stone == self.session.human_stone:
+            # 人类着法（本地双人 / LAN 双方都是人类）。
             if self.logger:
                 self.logger.log_human(move_no, stone, r, c)
                 # 每隔约5步记录一次完整棋盘状态
@@ -2152,15 +2501,23 @@ class GomokuGame(QMainWindow):
         """turn：轮到谁。人机局借此维护"思考中"与复盘快照；双人局恒空闲。"""
         if self.game_panel is None:
             return
+        self._hide_lan_wait()
         stone = int(ev["stone"])
         if self.playmode == 0:
             is_ai = (stone == self.session.ai_stone)
             self.ai_thinking = is_ai
             self.game_panel.show_thinking(is_ai, stone)
-            self.game_panel.undo_btn.setEnabled(not is_ai)
+            self.game_panel.undo_btn.setEnabled(not is_ai
+                                                and self._cfg("allow_undo"))
             if not is_ai:
                 # 人类落子前的局面：move 事件记录 human_moves 时取它。
                 self._pending_snapshot = self.board.copy()
+        elif self.playmode == 2:
+            # LAN：没有本地 AI，思考态恒空；悔棋按钮由房间配置控制
+            # （对手的悔棋提案另有 _on_room_undo_proposed 的弹窗）。
+            self.ai_thinking = False
+            self.game_panel.show_thinking(False)
+            self.game_panel.undo_btn.setEnabled(self._cfg("allow_undo"))
         else:
             self.ai_thinking = False
             self.game_panel.show_thinking(False)
@@ -2180,6 +2537,9 @@ class GomokuGame(QMainWindow):
             self.session.gamerule = 0
         elif self.playmode == 1:
             self.session.gamerule = 2
+        elif self.playmode == 2:
+            self.session.gamerule = (
+                2 if winner == self.session.human_stone else 1)
         elif winner == self.session.ai_stone:
             self.session.gamerule = 1
         else:
@@ -2206,6 +2566,59 @@ class GomokuGame(QMainWindow):
         if self.game_panel is not None:
             self.game_panel.truncate_series(int(ev["move_no"]))
 
+    def _on_room_undo_proposed(self, ev):
+        """对手申请悔棋（M4d）：弹窗问用户，经我方连接应答。
+
+        只有 ``auto_consent=False`` 的远程对手会走到这里（单机人机 /
+        本地双人自动同意，直接收 undo_applied）；房间在 pending 期间冻结
+        对局，所以这里的弹窗可以慢慢等用户点。
+
+        槽在 Qt 主线程（跨线程投递见 ``_RoomBridge``），弹窗安全。
+        **自己发起的申请房间也会广播回来**（by == 我方席位），不弹窗。
+        """
+        by = ev.get("by")
+        me = self.session.human_stone
+        if not me or by == me:
+            print(f"[房间] 悔棋申请已发给对手（席位 {by}）")
+            return
+        client = self._room_clients.get(me)
+        if client is None:
+            return
+        answer = QMessageBox.question(
+            self, "悔棋请求", "对手请求悔棋，是否同意？",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        try:
+            client.undo_response(answer == QMessageBox.Yes)
+        except RuntimeError:
+            pass                    # 连接已断（退出/重开路径）
+
+    def _cfg(self, name, default=True):
+        """读房间功能开关。
+
+        没有 config（测试直连、旧连接）时按**默认全开**返回 —— 与
+        ``RoomConfig`` 的默认值一致，"没有配置"永远不能变成"禁用"。
+        """
+        conf = self._room_config
+        if not conf:
+            return default
+        return bool(conf.get(name, default))
+
+    def _apply_room_config(self):
+        """把 welcome 下发的 RoomConfig 落到界面上。
+
+        面板的悔棋 / 重开按钮与复盘入口是**入口级**禁用：房间服务端该
+        拒绝的仍然拒绝（allow_undo / undo_limit），UI 只是别让用户白点。
+        """
+        if self.game_panel is None:
+            return
+        self.game_panel.undo_btn.setEnabled(
+            self._cfg("allow_undo") and not self.ai_thinking)
+        self.game_panel.restart_btn.setEnabled(self._cfg("allow_restart"))
+        limit = (self._room_config or {}).get("undo_limit")
+        if limit is not None:
+            # 面板显示的剩余次数与房间同源（房间在 _run 里把额度设为 config）。
+            self.session.output = int(limit)
+
     def _record_score(self, info=None):
         """把一个分值挂进面板的两张图。**三个 `move_history.append` 各调一次。**
 
@@ -2222,9 +2635,12 @@ class GomokuGame(QMainWindow):
         判定必须防御性：``info`` 有三个产出点且字段不全（空盘分支只有
         ``depth=0, best_val=0``），搜索也可能在 depth 1 之前就被 VCF 吃光预算。
         """
-        # 本地对战没有 AI，"AI 视角分值"这条曲线没有主语 —— 不画。留一条从
-        # 第一手就凭空长出来的曲线，比留一张空图更糟：它会被当成真实评估读。
-        if self.playmode == 1:
+        # 本地对战 / LAN 都没有本地 AI，"AI 视角分值"这条曲线没有主语 ——
+        # 不画。留一条从第一手就凭空长出来的曲线，比留一张空图更糟：它会被
+        # 当成真实评估读。房间配置 show_ai_scores=False 也走这里。
+        if self.playmode in (1, 2):
+            return
+        if not self._cfg("show_ai_scores"):
             return
         best = None if info is None else info.get("best_val")
         # `or is_mate(best)` 不是装饰：VCF 已证明必胜、主循环在 depth 1 之前被
@@ -2245,7 +2661,9 @@ class GomokuGame(QMainWindow):
 
         * 人机局 → 人类席位那条连接；房间对 AI 对手立即同意（撤到请求方
           上一次落子之前，见 ``room.py``），AI 先手被撤会重下天元；
-        * 本地双人 → 最后一手所属的连接（黑先交替，看 move_count 奇偶）。
+        * 本地双人 → 最后一手所属的连接（黑先交替，看 move_count 奇偶）；
+        * LAN → 我方连接；对手在另一台机器上，房间广播 undo_proposed，
+          对手的 UI 弹窗应答（``_on_room_undo_proposed``）。
         """
         if self.game_over or self.ai_thinking or self._move_in_flight:
             return
@@ -2304,6 +2722,7 @@ class GomokuGame(QMainWindow):
         self._pending_snapshot = None
         self._room_finished = False
         self._last_undo = None
+        self._room_config = None
 
     def _on_restart(self):
         """重新开始：回到**模式选择**，与新开局的第一步一致。
@@ -2469,14 +2888,28 @@ class GomokuGame(QMainWindow):
     def _update_panel(self):
         """更新右侧面板"""
         local = (self.playmode == 1)
-        # 轮次与 `gamemode` 同源：本地对战的黑先手等价于"玩家执黑"，下游不必
-        # 再分一次支。
-        if self.gamemode == 0:
+        lan = (self.playmode == 2)
+        # 轮次：单机人机要照顾 AI 先手（gamemode=1 时"轮到谁"要从玩家视角
+        # 翻过来）；本地对战与 LAN 都是黑先交替，与 gamemode（我执哪色）无关。
+        if self.playmode in (1, 2):
+            turn = 1 if self.move_count % 2 == 0 else 2
+        elif self.gamemode == 0:
             turn = 1 if self.move_count % 2 == 0 else 2
         else:
             turn = 2 if self.move_count % 2 == 0 else 1
 
-        if local:
+        if lan:
+            # LAN：双方都是人，报"你"的胜负（human_stone），信息行没有 AI。
+            if self.game_over:
+                if self.gamerule == 0:
+                    status = "平局"
+                elif self.winner == self.session.human_stone:
+                    status = "你赢了！"
+                else:
+                    status = "你输了！"
+            else:
+                status = "进行中"
+        elif local:
             # 终局文案由 `winner` 给：本地对战里没有"你"，只有黑方白方。
             if self.game_over:
                 if self.gamerule == 0:
@@ -2497,13 +2930,13 @@ class GomokuGame(QMainWindow):
         human = 1 if self.gamemode == 0 else 2
         self.game_panel.update_info(turn, self.gamekunnan, status,
                                     self.output, self.move_count, human=human,
-                                    local=local)
+                                    local=local or lan)
 
         # 悬停幽灵子只在**轮到你**时出现，且用你的颜色：AI 思考中还给预览、
-        # 或玩家执白却预览黑子，都是在骗人。本地对战两边都是人，每一手都该有
-        # 预览 —— 颜色跟着回合走。
+        # 或玩家执白却预览黑子，都是在骗人。本地对战与 LAN 两边都是人，
+        # 每一手都该有预览 —— 颜色跟着回合走。
         if self.board_widget is not None:
-            if local:
+            if local or lan:
                 self.board_widget.set_hover_player(
                     turn if not self.game_over else None)
             else:
@@ -2531,8 +2964,24 @@ class GomokuGame(QMainWindow):
         self._update_panel()
 
         local = (self.playmode == 1)
+        lan = (self.playmode == 2)
         can_review = False
-        if local:
+        if lan:
+            # LAN：对手是人不是 AI，没有"算法复盘"的素材；文案从"你"的
+            # 视角出发（human_stone 是这一局里我执的颜色）。
+            if self.gamerule == 0:
+                text = "平局！"
+                is_win = False
+                winner_str = "draw"
+            elif self.winner == self.session.human_stone:
+                text = "你赢了！"
+                is_win = True
+                winner_str = "human"
+            else:
+                text = "你输了！"
+                is_win = False
+                winner_str = "remote"
+        elif local:
             # 本地对战：文案报的是"哪一方"赢，不是"你"。tone 只有 win/lose
             # 两种（theme 里就这两条规则），平局沿用 win —— 它至少不是个
             # "失败的红色"。
@@ -2552,8 +3001,9 @@ class GomokuGame(QMainWindow):
             winner_str = "ai"
             # 复盘入口**只在输给 AI 时**出现：赢了没有可复盘的东西，本地对战
             # 根本没有 AI。判据写在这里而不是让遮罩自己猜，是因为"这一局是不是
-            # 输给 AI"只有主窗口知道（playmode + gamerule）。
-            can_review = bool(self.human_moves)
+            # 输给 AI"只有主窗口知道（playmode + gamerule）。房间配置
+            # allow_review=False 时同样不给 —— 入口级禁用。
+            can_review = bool(self.human_moves) and self._cfg("allow_review")
         else:
             text = "平局！"
             is_win = False
@@ -2566,7 +3016,8 @@ class GomokuGame(QMainWindow):
             # 记录终局完整棋盘
             self.logger.log_board_state(self.move_count, self.board, "[终局]")
 
-        overlay = GameOverOverlay(text, is_win, can_review=can_review)
+        overlay = GameOverOverlay(text, is_win, can_review=can_review,
+                                  can_restart=self._cfg("allow_restart"))
         overlay.restart_clicked.connect(self._on_restart)
         overlay.quit_clicked.connect(self._on_quit)
         overlay.review_clicked.connect(self._on_review_clicked)

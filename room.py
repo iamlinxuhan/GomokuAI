@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import queue
 import threading
+import time
+from dataclasses import dataclass
 
 from players import AIPlayer, PlayerSpec, reset_engine
 from session import Session
@@ -24,6 +26,32 @@ from wire import WireError
 #: 内部哨兵：状态被悔棋改变（回主循环重新判断轮次）/ 中止。
 _RECHECK = object()
 _ABORT = object()
+
+
+@dataclass
+class RoomConfig:
+    """房间功能开关（M4d）。默认值 = 今天的单机行为，一个不多一个不少。
+
+    随 ``welcome`` 下发，客户端据此禁用入口（悔棋按钮、复盘、重开、
+    评分曲线）。**服务端该守的仍然守**：``allow_undo`` 与 ``undo_limit``
+    在 :meth:`Room.submit_undo_request` 里权威校验，UI 的按钮只是第一道
+    —— 客户端可以改自己的界面，但改不了别人的房间。
+    """
+
+    allow_undo: bool = True
+    undo_limit: int = 3
+    allow_review: bool = True
+    allow_restart: bool = True
+    show_ai_scores: bool = True
+
+    def to_json(self) -> dict:
+        return {
+            "allow_undo": self.allow_undo,
+            "undo_limit": self.undo_limit,
+            "allow_review": self.allow_review,
+            "allow_restart": self.allow_restart,
+            "show_ai_scores": self.show_ai_scores,
+        }
 
 
 class SeatSpec:
@@ -42,19 +70,25 @@ class SeatSpec:
 
 class Room:
     def __init__(self, name: str, black: SeatSpec, white: SeatSpec,
-                 *, auto_consent: bool = False):
+                 *, auto_consent: bool = False, config: RoomConfig | None = None):
         self.name = name
         self.specs = {1: black, 2: white}
         self.session = Session()
         self.session.configure("pvp")   # 无人类席位：不记复盘快照
         self.session.reset()
+        self.config = config if config is not None else RoomConfig()
         self.result = None              # {"winner","reason","moves"}
         self.started = False
         self.done = threading.Event()
         #: 远程对手的悔棋是否自动同意。应用内房间（``LocalRoom``）为 True：
         #: 两个客户端都在同一进程里，沿用单机"悔棋直接生效"的旧行为；
-        #: 专用服务器的远程对手保持 False，走 M4d 的协商流程。
+        #: 专用服务器的远程对手保持 False，走 M4d 的协商流程；LAN 房间
+        #: （对手在另一台机器上）也传 False。
         self.auto_consent = bool(auto_consent)
+        #: 待应答的悔棋提案 ``{"by": stone, "plan": n}``；非 None 期间
+        #: :meth:`_await_move` 冻结对局（见那里的注释）。只许在 ``_game_lock``
+        #: 内读写。
+        self._pending_undo = None
         self._conns = {1: None, 2: None}     # stone -> WireConnection
         self._members = []                   # [(conn, stone), ...]
         self._queues = {1: queue.Queue(), 2: queue.Queue()}
@@ -138,28 +172,66 @@ class Room:
 
         对手是服务端 AI → **立即同意**（单机内置房间走这条）；对手是同一
         进程内的本地房间成员（``auto_consent``）→ 同样立即同意（本地双人
-        沿用单机旧行为）；其余远程对手 → 协商尚未实现（M4d），明确回错而
-        不是静默忽略。
+        沿用单机旧行为）；其余远程对手 → 进入 M4d 的协商流程：存下方案并
+        广播 ``undo_proposed``，等对手调用 :meth:`submit_undo_response`。
+
+        开关（``config.allow_undo``）与额度（``config.undo_limit``）由房间
+        权威校验；已有 pending 时明确回 ``undo_pending``，不覆盖已存方案。
         """
         if stone not in self.specs:
             raise WireError("bad_seat", "未知席位")
         with self._game_lock:
+            if not self.config.allow_undo:
+                raise WireError("undo_disabled", "这个房间禁用了悔棋")
             if self.session.game_over:
                 raise WireError("undo_unavailable", "对局已结束")
+            # can_undo 把"额度用尽"和"没有可悔的棋"合并成一条；对客户端
+            # 都表现为"悔不了"，沿用同一个错误码。
             if not self.session.can_undo():
                 raise WireError("undo_unavailable", "没有可悔的棋")
-            if self.specs[3 - stone].kind != "ai" and not self.auto_consent:
-                raise WireError("undo_needs_consent",
-                                "远程对手的悔棋协商尚未实现")
+            if self._pending_undo is not None:
+                raise WireError("undo_pending", "已有悔棋申请等待对手应答")
             plan = self._undo_plan(stone)
             if plan is None:
                 raise WireError("undo_unavailable", "没有可悔的棋")
-            self.session.output -= 1
-            self.session.rewind(plan)
-            self._recheck = True
-            self.broadcast({"type": "undo_applied", "by": stone,
-                            "move_no": self.session.move_count})
-            self.broadcast({"type": "state", **self.state_payload()})
+            if self.specs[3 - stone].kind == "ai" or self.auto_consent:
+                self._apply_undo(stone, plan)
+                return
+            # 远程对手：存下方案、冻结对局，等应答。方案不会过时 ——
+            # pending 期间 _await_move 不落子（否则"撤几步"当场失效）。
+            self._pending_undo = {"by": stone, "plan": plan}
+        self.broadcast({"type": "undo_proposed", "by": stone})
+
+    def submit_undo_response(self, stone: int, accept: bool) -> None:
+        """对 ``undo_proposed`` 的应答（M4d）。
+
+        只有提案的**对手**能应答（``stone`` 是应答者席位）。同意就用申请
+        时存下的方案执行；拒绝只广播结果、棋盘不动。两种结果都清 pending
+        并唤醒主循环 —— 主循环在 :meth:`_await_move` 里轮询等待它。
+        """
+        with self._game_lock:
+            pending = self._pending_undo
+            if pending is None:
+                raise WireError("no_pending_undo", "当前没有待应答的悔棋申请")
+            if stone != 3 - pending["by"]:
+                raise WireError("bad_seat", "只有对手可以应答悔棋申请")
+            self._pending_undo = None
+            if accept:
+                self._apply_undo(pending["by"], pending["plan"])
+        if not accept:
+            self.broadcast({"type": "undo_rejected", "by": pending["by"]})
+        with self._cv:
+            self._cv.notify_all()
+
+    def _apply_undo(self, stone: int, plan: int) -> None:
+        """执行一次已批准的悔棋。**调用方必须持有 ``_game_lock``**：
+        与主循环的"落子 + 广播"串行，避免撤到一半时有人落子。"""
+        self.session.output -= 1
+        self.session.rewind(plan)
+        self._recheck = True
+        self.broadcast({"type": "undo_applied", "by": stone,
+                        "move_no": self.session.move_count})
+        self.broadcast({"type": "state", **self.state_payload()})
 
     def _undo_plan(self, stone: int):
         """本房间的悔棋政策：撤到请求方上一次落子**之前**。
@@ -207,6 +279,10 @@ class Room:
             return
 
         reset_engine()
+        # 悔棋额度以 config 为准（session.reset() 里的 3 只是默认值）。
+        # 放在这里而不是 __init__：等所有席位就位后再定，客户端拿到的
+        # welcome / state 与真实额度一致。
+        self.session.output = int(self.config.undo_limit)
         self.broadcast({"type": "state", **self.state_payload()})
 
         while (not self.session.game_over) and (not self._stop.is_set()):
@@ -222,6 +298,13 @@ class Room:
             with self._game_lock:
                 if self._recheck:
                     self._recheck = False
+                    continue
+                if self._pending_undo is not None:
+                    # 极窄的窗口：提案恰好在 `_await_move` 返回之后到达。
+                    # 不落子；远程着法**退回队列**而不是丢弃 —— 丢掉的话
+                    # 客户端会停在"在途"状态，等不到回显。
+                    if self.specs[stone].kind == "remote":
+                        self._queues[stone].put((r, c))
                     continue
                 if self.session.game_over or self._stop.is_set():
                     break
@@ -251,44 +334,70 @@ class Room:
 
     def _await_move(self, stone: int):
         """等待/计算当前席位的着法。返回 ``(r, c, info)``、``_RECHECK`` 或
-        ``_ABORT``。远程席位等待着法时不持锁；AI 在棋盘快照上搜索。"""
+        ``_ABORT``。远程席位等待着法时不持锁；AI 在棋盘快照上搜索。
+
+        M4d：悔棋协商 pending 期间**冻结对局** —— 两个分支在开新工作前
+        都等 ``_pending_undo`` 清空。不这么做的话，双方会继续落子，而
+        申请时按当时手数算好的悔棋方案（撤几步）在应答到达时就失效了。
+        """
         spec = self.specs[stone]
         if spec.kind == "ai":
-            board = self.session.board.copy()
-            player = AIPlayer(PlayerSpec("ai", level=spec.level))
-            # 把房间的中止信号作为**协作取消**传下去（与旧 AIWorker 同一条
-            # 协议）：重开/退出时连接断开 → detach → `_stop` 置位 → 搜索在
-            # 下一次节点轮询就退出，而不是跑满时间预算后还占着进程内的 AI
-            # 互斥锁，让同进程的下一局 reset_engine 一直等它。
-            r, c, info = player.choose_move(board, stone, cancel=self._stop)
-            with self._game_lock:
-                if self._recheck:
-                    return _RECHECK
-                if self._stop.is_set():
-                    return _ABORT
-                if self.session.game_over:
-                    return _ABORT
-                current = 1 if self.session.move_count % 2 == 0 else 2
-                if current != stone:
-                    return _RECHECK
-                return int(r), int(c), info
+            while not self._stop.is_set():
+                if self._pending_undo is not None:
+                    time.sleep(0.1)
+                    continue
+                # 快照必须在协商结束后重取：同意的悔棋会改棋盘。
+                board = self.session.board.copy()
+                player = AIPlayer(PlayerSpec("ai", level=spec.level))
+                # 把房间的中止信号作为**协作取消**传下去（与旧 AIWorker 同一条
+                # 协议）：重开/退出时连接断开 → detach → `_stop` 置位 → 搜索在
+                # 下一次节点轮询就退出，而不是跑满时间预算后还占着进程内的 AI
+                # 互斥锁，让同进程的下一局 reset_engine 一直等它。
+                r, c, info = player.choose_move(board, stone, cancel=self._stop)
+                with self._game_lock:
+                    if self._recheck:
+                        return _RECHECK
+                    if self._stop.is_set():
+                        return _ABORT
+                    if self.session.game_over:
+                        return _ABORT
+                    if self._pending_undo is not None:
+                        # 提案在搜索期间到达：这一手基于旧局面，作废重算
+                        # （释放 _game_lock 后回到循环顶等待协商结果）。
+                        continue
+                    current = 1 if self.session.move_count % 2 == 0 else 2
+                    if current != stone:
+                        return _RECHECK
+                    return int(r), int(c), info
+            return _ABORT
 
+        held = None     # pending 期间先攥住、协商结束后再校验的着法
         while not self._stop.is_set():
-            if self._recheck:
-                self._recheck = False
-                return _RECHECK
-            try:
-                r, c = self._queues[stone].get(timeout=0.1)
-            except queue.Empty:
+            if held is None:
+                if self._pending_undo is not None:
+                    time.sleep(0.1)
+                    continue
+                if self._recheck:
+                    self._recheck = False
+                    return _RECHECK
+                try:
+                    held = self._queues[stone].get(timeout=0.1)
+                except queue.Empty:
+                    continue
+            if self._pending_undo is not None:
+                # 协商中：手头这一手先攥住（不能丢，也不能落）。
+                time.sleep(0.1)
                 continue
             with self._game_lock:
+                if self._pending_undo is not None:
+                    continue        # 释放锁，回循环顶等协商结束
                 if self._recheck:
                     self._recheck = False
                     return _RECHECK
                 current = 1 if self.session.move_count % 2 == 0 else 2
                 if current != stone:
                     return _RECHECK
-                return int(r), int(c), None
+                return int(held[0]), int(held[1]), None
         return _ABORT
 
     def _finish_aborted(self) -> None:

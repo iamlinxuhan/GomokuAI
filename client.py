@@ -4,9 +4,10 @@
 两种连接形态共用同一个协议（``wire.py``）：
 
 * 加入专用/其他玩家开的房间：``RoomClient.connect(host, port, room, seat)``；
-* 应用内“对局域网开放”的本地房间：``LocalRoom`` 在 127.0.0.1 的临时端口上
-  起一个真正的 ``RoomServer``，客户端照常走 TCP 连它 —— 与 MC 的内置服务端
-  同一个思路：**单机与联机只有一条代码路径**。
+* 应用内“对局域网开放”的本地房间：``LocalRoom`` 在临时端口上起一个真正的
+  ``RoomServer``，客户端照常走 TCP 连它 —— 与 MC 的内置服务端同一个思路：
+  **单机与联机只有一条代码路径**。单机绑 127.0.0.1；LAN 开房绑 0.0.0.0
+  （``local_ip()`` 帮房主公布地址，M4d）。
 
 事件回调 ``on_event``：``welcome`` 在 ``connect`` 返回前**同步**发出，其余
 在读取线程上发出。Qt 侧由 M4b 的适配层投递回主线程（``pyqtSignal``）。
@@ -14,29 +15,55 @@
 
 from __future__ import annotations
 
+import socket
 import threading
 
-from room import Room, SeatSpec
+from room import Room, RoomConfig, SeatSpec
 from server import RoomServer
 from wire import PROTO_VERSION, WireConnection, WireError
 
 
-class LocalRoom:
-    """应用内房间：``RoomServer(127.0.0.1:0)`` + 一个房间。
+def local_ip() -> str:
+    """本机在局域网里的地址（UDP connect 探测，**不真发包**）。
 
-    ``port`` 是内核分配的真实端口 —— "对局域网开放"时把这个服务端绑到
-    0.0.0.0 并公布端口即可（M4c）。
+    连 192.0.2.1（TEST-NET-1，保留给文档、不可路由）只是让内核按路由表
+    选出"出网时会用的本地地址"；UDP 没有握手，这个 connect 不产生流量。
+    没有网络 / 路由失败时退回 127.0.0.1 —— 同机开两个客户端仍然可用，
+    只是对方得手填这个回环地址。
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.connect(("192.0.2.1", 80))
+        return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        sock.close()
+
+
+class LocalRoom:
+    """应用内房间：``RoomServer(host:0)`` + 一个房间。
+
+    ``port`` 是内核分配的真实端口 —— "对局域网开放"时把 ``host`` 传
+    "0.0.0.0"，服务端就会监听所有网卡，端口由 ``local_ip()`` 一起公布
+    （M4d）。注意：**同机的客户端要连 127.0.0.1**，0.0.0.0 是监听地址，
+    不是可连接的地址。
 
     ``auto_consent=True``：同进程内的对手（本地双人的另一条连接）悔棋无需
-    协商，沿用单机旧行为。专用服务器不受影响（``Room`` 默认 False）。
+    协商，沿用单机旧行为。LAN 房间传 False —— 对手在另一台机器上，悔棋
+    走 ``undo_proposed`` / ``undo_response`` 协商；专用服务器默认 False。
+
+    ``config`` 透传给 ``Room``，随 ``welcome`` 下发。
     """
 
     def __init__(self, black: SeatSpec, white: SeatSpec, name: str = "local",
-                 host: str = "127.0.0.1"):
+                 host: str = "127.0.0.1", config: RoomConfig | None = None,
+                 auto_consent: bool = True):
         self.host = host
         self.name = name
         self.server = RoomServer(host)
-        self.room = Room(name, black, white, auto_consent=True)
+        self.room = Room(name, black, white, auto_consent=auto_consent,
+                         config=config)
         self.server.add_room(self.room)
         self.port = self.server.start(0)
 
@@ -63,20 +90,29 @@ class RoomClient:
 
     def connect(self, host: str, port: int, room: str, seat: str,
                 timeout: float = 5.0) -> dict:
-        """握手 + 入座；成功返回 ``welcome`` 报文（并已发给 on_event）。"""
+        """握手 + 入座；成功返回 ``welcome`` 报文（并已发给 on_event）。
+
+        被拒（``no_room`` / ``seat_taken`` …）时抛 ``WireError``，并**立即
+        关闭这条 TCP 连接**：调用方（加入房间界面）会在失败后原地重试，
+        不能每试一次就留一条没人管的半开 socket。
+        """
         if self._wire is not None:
             raise RuntimeError("这个客户端已经连接")
         wire = WireConnection.connect(host, port, timeout)
-        wire.send({"type": "hello", "proto": PROTO_VERSION, "name": "ui"})
-        rep = wire.recv(timeout=timeout)
-        if rep.get("type") != "hello_ok":
-            raise WireError(rep.get("code", "hello_failed"),
-                            rep.get("message", "握手失败"))
-        wire.send({"type": "join", "room": room, "seat": seat})
-        rep = wire.recv(timeout=timeout)
-        if rep.get("type") != "welcome":
-            raise WireError(rep.get("code", "join_failed"),
-                            rep.get("message", "入座失败"))
+        try:
+            wire.send({"type": "hello", "proto": PROTO_VERSION, "name": "ui"})
+            rep = wire.recv(timeout=timeout)
+            if rep.get("type") != "hello_ok":
+                raise WireError(rep.get("code", "hello_failed"),
+                                rep.get("message", "握手失败"))
+            wire.send({"type": "join", "room": room, "seat": seat})
+            rep = wire.recv(timeout=timeout)
+            if rep.get("type") != "welcome":
+                raise WireError(rep.get("code", "join_failed"),
+                                rep.get("message", "入座失败"))
+        except Exception:
+            wire.close()
+            raise
 
         self._wire = wire
         self.seat = seat
@@ -97,6 +133,10 @@ class RoomClient:
 
     def undo_request(self) -> None:
         self._send({"type": "undo_request"})
+
+    def undo_response(self, accept: bool) -> None:
+        """应答对手的悔棋提案（M4d）。``accept=False`` 即拒绝。"""
+        self._send({"type": "undo_response", "accept": bool(accept)})
 
     def _send(self, obj) -> None:
         wire = self._wire
