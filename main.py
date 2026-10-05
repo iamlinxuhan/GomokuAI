@@ -13,10 +13,10 @@ import numpy as np
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QHBoxLayout, QStackedWidget, QStackedLayout,
-    QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea
+    QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea, QButtonGroup
 )
 from PyQt5.QtCore import (
-    Qt, QTimer, QThread, pyqtSignal, QRect, QPoint, QPointF,
+    Qt, QTimer, QThread, pyqtSignal, QRect, QPoint, QPointF, QSize,
     QElapsedTimer, QEasingCurve, QVariantAnimation
 )
 from PyQt5.QtGui import (
@@ -35,8 +35,34 @@ from engine import (BOARD_SIZE, Board, ai_move, evaluate, is_mate,
 from gamelog import GameLogger
 from session import Session
 from ui_kit import (BrandMark, InfoRow, Screen, StoneFace, TurnIndicator,
-                    button, card_button, faint_label, hbox, separator,
+                    button as _ui_button, card_button as _ui_card_button,
+                    faint_label, hbox as _ui_hbox, separator,
                     subtitle_label, title_label)
+
+# ---- ui_kit 的"半缩放"补丁 ----------------------------------------------
+#
+# ``ui_kit.py`` 是冻结的，而且它的 ``button(height=CONTROL_H)`` /
+# ``card_button(size=CARD_PX)`` / ``hbox(spacing=SPACE_MD)`` 把度量写成了**默认
+# 参数** —— 默认参数在 def 那一刻就固化，换档之后纹丝不动。所以在这里套一层
+# 同名的本地包装：**调用方一个字符都不用改**，但默认值改成按当前档位现取。
+#
+# 只补默认值，不覆盖显式传参 —— 调用方写死的 ``height=32`` 之类的字面量另有
+# `_px()` 处理（见下）。
+def button(text, variant="primary", *, height=None, width=None):
+    return _ui_button(text, variant,
+                      height=theme.CONTROL_H if height is None else height,
+                      width=width)
+
+
+def card_button(text, tone, *, face=None, sub="", index="", size=None):
+    return _ui_card_button(text, tone, face=face, sub=sub, index=index,
+                           size=theme.CARD_PX if size is None else size)
+
+
+def hbox(*widgets, spacing=None, align=None):
+    return _ui_hbox(*widgets,
+                    spacing=theme.SPACE_MD if spacing is None else spacing,
+                    align=align)
 
 # ==================== 界面常量 ====================
 CELL_SIZE = 34                      # 设计基准：格距
@@ -73,6 +99,92 @@ MIN_W = GAP + MIN_BOARD + theme.SPACE_SM + PANEL_W + GAP     # 766
 MIN_H = 494
 MAX_SCALE = 1.35                    # 初始尺寸上限：棋盘再大就一眼看不全 19 路了
 
+# ---- 字号档位相关的工具 --------------------------------------------------
+
+#: 自动适配的急停开关。离屏测试平台报的是 800×600，若自动适配无条件生效，
+#: 冒烟与截图里窗口会从 1022×750 变成 736×540，把既有的尺寸断言全搅乱。
+#: 由 ``tests/conftest.py`` 与 ``tools/gui_smoke.py`` 置 0。写法仿
+#: ``gamelog.LOG_DIR_ENV``（同一个仓库里的既有惯例）。
+AUTOFIT_ENV = "GOMOKU_AI_UI_AUTOFIT"
+
+
+#: 窗口外框（标题栏 + 边框）高度的兜底值，只在 ``frameGeometry()`` 还量不出来
+#: 时用（首次 show 之前）。``_fit_cap_h`` 要从可用高度里扣掉它 —— 屏幕可用区
+#: 是**不含**外框的，而窗口总高是"客户区 + 外框"，不扣就等于让标题栏悬到屏幕
+#: 外，正是用户报的那个"启动尺寸超出屏幕高度"。
+FRAME_FALLBACK_H = 40
+
+
+def _autofit_enabled() -> bool:
+    return os.environ.get(AUTOFIT_ENV, "1") != "0"
+
+
+def _px(base: int) -> int:
+    """设计像素 → 当前档位下的像素。"""
+    return max(1, int(round(base * theme.scale_factor())))
+
+
+def settings_button():
+    """全局唯一的「设置」入口：**右上角那枚小齿轮**。
+
+    所有页面共用**同一个个控件对象**（挂在主窗口上，见
+    ``GomokuGame.settings_btn``）—— 位置、尺寸、样式各页一字不差。曾经的做法
+    是每页各挂一个按钮（页面底部的脚注 + 对局面板的紧凑版），结果是三种长相、
+    三种位置，而且面板里那版被变体 QSS 的 ``padding`` 裁成了残缺的一条
+    （用户 2026-10-05 的截图）。
+
+    ``iconOnly`` 是给 ``theme`` 认的：只有它能把变体那条为文字按钮写的左右
+    padding 压回去。
+    """
+    b = button("⚙", "ghost", height=_px(32), width=_px(32))
+    b.setProperty("iconOnly", "true")
+    b.setToolTip("字号 / 主题")
+    return b
+
+
+def _page_title_label(page):
+    """页面的主标题控件；没有就返回 ``None``。
+
+    ``Screen`` 骨架的标题是 ``role="title"``，对局面板的是 ``role="panel-title"``
+    —— 齿轮要贴在它右边，所以得先把它找出来。按 ``role`` 认而不是按控件顺序，
+    是因为面板里除了标题还有一堆别的 label。
+    """
+    for role in ("panel-title", "title"):
+        for lbl in page.findChildren(QLabel):
+            if lbl.property("role") == role:
+                return lbl
+    return None
+
+
+def _design_size() -> tuple:
+    """按**当前档位**现算的设计窗口尺寸。
+
+    ``WINDOW_W`` / ``WINDOW_H`` 是 normal 档的基准（tools 与测试上按模块常量
+    引用，不能变成会漂的值），这里是它在别的档位下的对应物。
+    """
+    gap = theme.SPACE_MD
+    return (gap + BOARD_PX + theme.SPACE_SM + theme.PANEL_W + gap,
+            gap + BOARD_PX + gap)
+
+
+def _autofit_scale(avail_w: int, avail_h: int) -> str:
+    """按屏幕可用区选**初始**档位。只降不升。
+
+    用户报的那台 1920×1080 @150% 的机器上，Qt 的逻辑可用区只有 1280×720：
+    设计尺寸 1022×750 摆不下，而按 1:1 画的字相对屏幕又偏大。这里据此降一档，
+    让窗口在逻辑像素上重新"看起来是那么大"。
+
+    **纯函数**（不碰 Qt、不读全局），便于单测。判据与 ``_initial_size`` 同一个
+    ``k``：缩不进去就降档。
+    """
+    dw, dh = _design_size()
+    if avail_w <= 0 or avail_h <= 0:
+        return "normal"
+    k = min(avail_w * 0.92 / dw, avail_h * 0.92 / dh)
+    if k < 0.92:
+        return "small"
+    return "normal"
+
 #: 终局到结算遮罩之间的停顿。
 #:
 #: 遮罩是**整屏**盖住棋盘的，一落子就弹等于把"你输在哪"当场抹掉 —— 2026-10-01
@@ -87,10 +199,11 @@ GAME_OVER_DELAY_MS = 1000
 # 调的：``DANGER`` 在深色档是一支亮粉，落在橙金木盘上的亮度对比只有 1.06:1，
 # 整条线等同于没画。所以取浅色档那支深红：木盘上 2.30–3.10:1，对白子 5.70:1。
 #
-# 走 ``_PALETTES`` 而不是 ``theme.DANGER``：后者是 PEP 562 的按主题取值，恰恰
-# 是这里要避开的东西。做成 ``theme.LAST_*`` 那样的新跨主题常量更干净，但
-# ``theme.py`` 是冻结的。
-_WIN_LINE_COLOR = theme._PALETTES["light"]["DANGER"]    # 深红
+# 走 ``theme.WIN_LINE``（一个真实的模块属性）而**不是** ``theme.DANGER`` ——
+# 后者是 PEP 562 的按主题取值，恰恰是这里要避开的东西。颜色本身定义在
+# ``theme.py`` 里（``tests/test_no_literal_colors.py`` 要求颜色只在那一个文件里
+# 出现），这里只取用。
+_WIN_LINE_COLOR = theme.WIN_LINE                        # 深红
 
 # 棋盘几何的设计基准（1:1）。绘制、命中判定、无头测试全部经由它，
 # 不要再在别处写第二份 `MARGIN + c * CELL_SIZE`。
@@ -330,14 +443,14 @@ class ReviewProgressScreen(Screen):
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
         # 与加载页同一套尺寸：进度条是同一件东西，只是量纲从"毫秒"变成"手"。
-        self.progress_bar.setFixedHeight(5)
-        self.progress_bar.setFixedWidth(300)
+        self.progress_bar.setFixedHeight(_px(5))
+        self.progress_bar.setFixedWidth(_px(300))
         self.add_content(self.progress_bar)
 
         self.step_label = faint_label("第 0/%d 手" % self.total)
         self.add_content(self.step_label)
 
-        cancel_btn = button("✕ 取消复盘", "danger", width=150)
+        cancel_btn = button("✕ 取消复盘", "danger", width=_px(150))
         cancel_btn.clicked.connect(self.cancel_clicked.emit)
         self.add_content(cancel_btn)
 
@@ -374,9 +487,9 @@ class ReviewScreen(Screen):
         # 出口放在**列表底下**而不是用 ``add_footer`` 贴到窗口最底边：
         # 复盘是一条有终点的路径（结果 → 棋局显示 → 返回），看完最后一条
         # 就该有地方落下去，让视线从列表自然接到按钮上。
-        finish = button("🏠 结束复盘", "primary", width=150)
+        finish = button("🏠 结束复盘", "primary", width=_px(150))
         finish.clicked.connect(self.finish_clicked.emit)
-        quit_btn = button("✕ 退出游戏", "danger", width=150)
+        quit_btn = button("✕ 退出游戏", "danger", width=_px(150))
         quit_btn.clicked.connect(self.exit_clicked.emit)
         self.add_content(hbox(finish, quit_btn, spacing=theme.SPACE_LG))
 
@@ -394,7 +507,7 @@ class ReviewScreen(Screen):
             # 而这份列表的用处正是**回头定位**（复盘算了几分钟之后）。
             if _is_optimal(rec):
                 text.setProperty("tone", "win")
-            show = button("棋局显示", "ghost", width=110)
+            show = button("棋局显示", "ghost", width=_px(110))
             show.clicked.connect(lambda _=False, idx=i:
                                  self.record_selected.emit(idx))
             col.addWidget(hbox(text, show, spacing=theme.SPACE_MD))
@@ -402,12 +515,12 @@ class ReviewScreen(Screen):
 
         area = QScrollArea()
         area.setWidgetResizable(True)
-        area.setFixedWidth(REVIEW_ROW_W + 24)
+        area.setFixedWidth(_px(REVIEW_ROW_W) + _px(24))
         area.setWidget(inner)
         # **高度按内容收缩，封顶 ``REVIEW_LIST_H``。** 定高的用意是兜住
         # "几十条记录"那种极端（否则整页撑得比窗口还高）；但只有两条记录
         # 时也摆一个 420px 的空框，看上去像列表没加载出来。
-        area.setFixedHeight(min(REVIEW_LIST_H,
+        area.setFixedHeight(min(_px(REVIEW_LIST_H),
                                 inner.sizeHint().height() + 2 * theme.SPACE_SM))
         return area
 
@@ -426,7 +539,16 @@ class ReviewBoardScreen(Screen):
     def setup_ui(self):
         board = BoardWidget()
         # 只读：不接 ``mousePressEvent``（基类什么都不做），也不给悬停预览。
-        board.setFixedSize(BOARD_PX, BOARD_PX)
+        #
+        # **不再无条件 setFixedSize(BOARD_PX, BOARD_PX)。** 定死 726 正是
+        # "复盘界面无法缩放"的直接原因：窗口被压小之后那张盘还是 726，底部
+        # 按钮被顶出可视区。
+        #
+        # 但也不能只是"给下限 + 让它 Expanding"就算完 —— `Screen` 的骨架把
+        # 正文塞在两根 stretch 之间，横向还带 AlignCenter，控件只会拿到自己的
+        # sizeHint，撑不开。所以这里按**页面可见区域**现算边长（`_fit_board_side`），
+        # 并在 `resizeEvent` 里跟着窗口走。
+        board.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         board.set_board(self.rec['before'])
         board.set_last_move(None, None, None)
         board.set_hover_player(None)
@@ -438,9 +560,46 @@ class ReviewBoardScreen(Screen):
         self.board_widget = board
         self.add_content(board)
 
-        back = button("← 返回复盘", "primary", width=150)
+        back = button("← 返回复盘", "primary", width=_px(150))
         back.clicked.connect(self.back_clicked.emit)
         self.add_content(back)
+        # 首次布局前先定一个尺寸，避免构造期拿到 0×0 让 `geom` 退化成除零。
+        self._fit_board_side()
+
+    #: 棋盘以外那一摞的高度（标题 + 副标题 + 两段间距 + 返回按钮 + 页面边距），
+    #: 按**设计像素**估。写死是为了让 `_fit_board_side` 不依赖布局测量 ——
+    #: 它要在 resizeEvent 里跑，而那时布局往往还没算完。
+    _REVIEW_CHROME = 210
+
+    def _fit_board_side(self) -> int:
+        """复盘棋盘的边长：min(设计边长, 页面装得下的边长)。
+
+        量的是**窗口**而不是本页 —— 本页在滚动区里，窗口矮的时候它会保持
+        自己的最小高度（否则就成了"页面高度取决于棋盘、棋盘又取决于页面高度"
+        的循环），用它算永远缩不下去。
+        """
+        win = self.window()
+        page_h = win.height() if win is not None and win.height() > 0 else self.height()
+        avail_h = page_h - _px(self._REVIEW_CHROME)
+        avail_w = self.width() - 2 * theme.SPACE_XL
+        side = min(_px(BOARD_PX), avail_h, avail_w)
+        return max(_px(MIN_BOARD), int(side))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        bw = getattr(self, "board_widget", None)   # 构造期可能先于 setup_ui 触发
+        if bw is None:
+            return
+        side = self._fit_board_side()
+        bw.setFixedSize(side, side)
+        # 棋盘改了尺寸，本页的最小尺寸也跟着变，得让主窗口把滚动区的最小值
+        # 重算一次。**延到下一轮事件循环**：这里还在布局过程中，当场改会与
+        # QScrollArea 的调整互相触发；延后一步就收敛（棋盘边长只取决于窗口
+        # 高度，不依赖这次同步的结果）。
+        win = self.window()
+        sync = getattr(win, "_sync_central_min", None)
+        if sync is not None:
+            QTimer.singleShot(0, sync)
 
     def _played_player(self):
         """玩家那一手用的是谁的子色 —— 幽灵子的颜色。
@@ -450,6 +609,56 @@ class ReviewBoardScreen(Screen):
         才等价，而这里要的是"这一手是谁下的"。
         """
         return 1 if self.rec['seq'] % 2 == 1 else 2
+
+
+class SettingsScreen(Screen):
+    """设置页：字号档位 + 深/浅主题。
+
+    **点选即刻生效并落盘**（``theme.set_scale(..., persist=True)``），随后整页
+    重建 —— 否则用户点了"特大"却看不见任何变化，会以为按钮没坏就是没生效。
+    重建由主窗口的 ``_rebuild_settings`` 负责：页面自己不掌握 ``QStackedWidget``。
+
+    四个档位按钮用 ``QButtonGroup`` 互斥（默认 ``autoExclusive``），外观走现成的
+    ``QPushButton[variant="ghost"]:checked`` —— 不需要为它新增任何 QSS。
+    """
+
+    scale_selected = pyqtSignal(str)
+    theme_toggled = pyqtSignal()
+    back_clicked = pyqtSignal()
+
+    def __init__(self):
+        super().__init__(title="设置",
+                         subtitle="字号立即生效并记住；下次打开还是这一档",
+                         backdrop=True)
+        self.setup_ui()
+
+    def setup_ui(self):
+        group = QButtonGroup(self)
+        row = []
+        for name in theme.available_scales():
+            b = button(theme.scale_label(name), "ghost", width=_px(110))
+            b.setCheckable(True)
+            b.setChecked(name == theme.current_scale())
+            # 当前档位再单独给个 tooltip，鼠标停在按钮上就能确认选中的是它。
+            if name == theme.current_scale():
+                b.setToolTip("当前档位")
+            b.clicked.connect(lambda _=False, n=name: self.scale_selected.emit(n))
+            group.addButton(b)
+            row.append(b)
+        # 让 group 活到本页销毁 —— 只挂在局部变量上会被 GC 掉，互斥随之失效。
+        self._scale_group = group
+        self.add_content(hbox(*row, spacing=theme.SPACE_SM))
+
+        self.add_content(faint_label("当前：%s" % theme.scale_label(
+            theme.current_scale())))
+
+        theme_btn = button("🌓 切换深色 / 浅色主题", "ghost", width=_px(280))
+        theme_btn.clicked.connect(self.theme_toggled.emit)
+        self.add_content(theme_btn)
+
+        back = button("← 返回", "primary", width=_px(150))
+        back.clicked.connect(self.back_clicked.emit)
+        self.add_content(back)
 
 
 # ==================== 加载界面 ====================
@@ -496,8 +705,8 @@ class LoadingScreen(Screen):
         self.progress_bar.setValue(0)
         self.progress_bar.setTextVisible(False)
         # 5px：与 32px 标题、14px 副标题同处一屏时，6px 会显得像根横梁。
-        self.progress_bar.setFixedHeight(5)
-        self.progress_bar.setFixedWidth(300)
+        self.progress_bar.setFixedHeight(_px(5))
+        self.progress_bar.setFixedWidth(_px(300))
         self.add_content(self.progress_bar)
 
         self._elapsed = QElapsedTimer()
@@ -1018,7 +1227,9 @@ class GamePanel(QFrame):
     def __init__(self):
         super().__init__()
         self.setProperty("role", "panel")
-        self.setFixedWidth(PANEL_W)
+        # 走 ``theme.PANEL_W`` 而**不是**模块常量 ``PANEL_W``：后者在 import 那
+        # 一刻就绑成了 normal 档的值，换档后不会跟着走。
+        self.setFixedWidth(theme.PANEL_W)
         self._thinking = False
         self._pulse_anim = None      # AI 思考的呼吸动画（须持有，否则被 GC）
         self._elapsed = 0
@@ -1046,6 +1257,10 @@ class GamePanel(QFrame):
         layout.setSpacing(theme.SPACE_LG)
 
         # 段 1：标题
+        #
+        # 设置齿轮**不在这里** —— 它是主窗口右上角那枚固定的按钮，浮在面板
+        # 之上，所有页面同一个位置（见 `GomokuGame.settings_btn`）。曾经放这
+        # 一行里，被变体 QSS 的 padding 裁成了残缺的一条。
         head = QHBoxLayout()
         head.setSpacing(theme.SPACE_SM)
         head.addWidget(title_label("五子棋 AI", role="panel-title"),
@@ -1061,7 +1276,7 @@ class GamePanel(QFrame):
         #
         # 说明文字与图标**都挂在按钮上**（不是并列的两个控件）：文案写着"点击
         # 以切换"，整条就该是热区，只让 18px 的图标可点是自相矛盾的。
-        self.theme_btn = button("", "ghost", height=32)
+        self.theme_btn = button("", "ghost", height=_px(32))
         self.theme_btn.setToolTip("切换深色 / 浅色主题")
         self.theme_btn.clicked.connect(self.theme_clicked.emit)
 
@@ -1254,7 +1469,31 @@ class GamePanel(QFrame):
 
 
 # ==================== 选择界面 ====================
-def _strength_bar(players, diameter=28):
+def _page_content_w() -> int:
+    """选择页可用的内容宽度（已扣掉页面左右边距）。
+
+    量的是"窗口大概会有多宽"而不是本页当前的 ``width()`` —— 选择页是在
+    构造期把自己排好的，那时它还没进布局，``width()`` 是 0。
+    """
+    w = _design_size()[0]
+    if _autofit_enabled():
+        scr = QApplication.primaryScreen()
+        if scr is not None:
+            w = min(w, int(scr.availableGeometry().width() * 0.92))
+    return max(_px(320), w - 2 * theme.SPACE_XL)
+
+
+def _card_fit_size(n: int, gap: int) -> int:
+    """``n`` 张卡 + ``(n-1)`` 段 gap 塞进页面内容宽度时的卡片边长。
+
+    封顶 ``theme.CARD_PX``（正常屏幕上一张都不缩，观感与从前一致），下限
+    ``_px(88)`` —— 再小就放不下卡面那两行字，宁可让它横向滚动。
+    """
+    avail = _page_content_w()
+    return max(_px(88), min(theme.CARD_PX, (avail - (n - 1) * gap) // n))
+
+
+def _strength_bar(players, diameter=28, card_px=None):
     """N 颗棋子的强度条：**颗数越多排得越紧，棋子本身不缩小**。
 
     ``ui_kit.stone_row`` 是个纯 hbox —— 每颗子一个 1.25×d 的方盒（多出来的
@@ -1272,7 +1511,9 @@ def _strength_bar(players, diameter=28):
     一改这里就静默画歪。直接问控件要尺寸。
     """
     # 卡片内容区：card_button 的 contentsMargins 左右各留 SPACE_MD。
-    avail = theme.CARD_PX - 2 * theme.SPACE_MD
+    # ``card_px`` 由调用方传**该页实际用的卡片边长** —— 五张卡在小屏上会被
+    # `_card_fit_size` 压小，这里再按 ``theme.CARD_PX`` 算宽度就会溢出。
+    avail = (theme.CARD_PX if card_px is None else card_px) - 2 * theme.SPACE_MD
     side = StoneFace(players[0], diameter).width()     # 方盒边长，含投影余量
     if len(players) == 1:
         step = side
@@ -1319,18 +1560,28 @@ class SelectionScreen(Screen):
         self.setup_ui()
 
     def setup_ui(self):
+        # 卡片行的间距：难度/复盘页 5 张卡用 LG(16)，颜色/mode 页只有 2 张，
+        # 宽间距是那两张页面的节奏。卡片边长按"这一页要放几张"现算，塞不下
+        # 就整体缩小（封顶 CARD_PX，正常屏幕上等于不缩）。
+        gap = (theme.SPACE_LG if self.mode in ("difficulty", "review")
+               else theme.SPACE_XL)
+
         if self.mode == "mode":
+            size = _card_fit_size(2, gap)
             # 两张大卡：挑战 AI / 本地对战。face 用棋子本身 —— "对面是程序还是
             # 人"这件事，一颗子和两颗子比两个字更容易一眼分出来。
-            cards = [("挑战 AI", "primary", 0, _strength_bar([1]), "与算法对弈"),
-                     ("本地对战", "success", 1, _strength_bar([1, 2]), "两人同机轮流下")]
+            cards = [("挑战 AI", "primary", 0,
+                      _strength_bar([1], card_px=size), "与算法对弈"),
+                     ("本地对战", "success", 1,
+                      _strength_bar([1, 2], card_px=size), "两人同机轮流下")]
             for i, (text, tone, value, face, sub) in enumerate(cards):
                 btn = card_button(text, tone, face=face, sub=sub,
-                                  index=f"{i + 1:02d}")
+                                  index=f"{i + 1:02d}", size=size)
                 btn.clicked.connect(lambda _=False, v=value:
                                     self.mode_selected.emit(v))
                 self._cards.append(btn)
         elif self.mode == "color":
+            size = _card_fit_size(2, gap)
             # 卡面直接放那颗子本身（黑 = player 1），不再用 ⚫/⚪ 字符 ——
             # 那两个字符由 CJK 字体回退渲染成一个小圆点，既不是棋子也不是
             # 那个颜色，是这张卡片最关键的区分信息却最看不清的地方。
@@ -1338,7 +1589,7 @@ class SelectionScreen(Screen):
                      ("白棋", "white", 1, 2, "后手")]
             for i, (text, tone, value, player, sub) in enumerate(cards):
                 btn = card_button(text, tone, face=StoneFace(player), sub=sub,
-                                  index=f"{i + 1:02d}")
+                                  index=f"{i + 1:02d}", size=size)
                 btn.clicked.connect(lambda _=False, v=value:
                                     self.color_selected.emit(v))
                 self._cards.append(btn)
@@ -1384,13 +1635,15 @@ class SelectionScreen(Screen):
             # —— 那是上一页的事。反过来，颜色选择页与面板的回合指示**不能**
             # 这么改，那里的子必须如实显示黑白。
             bar_player = 2 if theme.current_theme() == "dark" else 1
+            size = _card_fit_size(len(levels), gap)
             for level, tone in zip(levels, tones):
                 # N 颗子当强度条 —— 用的是棋盘上那套材质，不是另画一个图标。
                 # 排不下时收紧的是**间隙**，不是棋子（见 _strength_bar）。
                 btn = card_button(engine.difficulty_name(level), tone,
-                                  face=_strength_bar([bar_player] * level),
+                                  face=_strength_bar([bar_player] * level,
+                                                     card_px=size),
                                   sub="思考上限 %g 秒" % engine.DIFFICULTY[level]["time"],
-                                  index=f"{level:02d}")
+                                  index=f"{level:02d}", size=size)
                 # 同一批卡片服务于两个页面，只有"点了发哪个信号"不同。
                 sig = (self.review_level_selected if self.mode == "review"
                        else self.difficulty_selected)
@@ -1398,12 +1651,14 @@ class SelectionScreen(Screen):
                 self._cards.append(btn)
 
         # 5 张卡在 SPACE_XL(24) 下是 5×160+4×24 = 896px，仍塞得进 WINDOW_W=1022
-        # —— 但只剩 126px 余量，而卡片是 setFixedSize 的（不随窗口缩放），
-        # 颜色页那种"留白富余"的观感会被挤掉。降到 SPACE_LG(16) 得 864px。
-        # 只调难度页：颜色页/mode 页都只有 2 张卡，宽间距是那两张页面的节奏。
-        gap = (theme.SPACE_LG if self.mode in ("difficulty", "review")
-               else theme.SPACE_XL)
+        # —— 但只剩 126px 余量。降到 SPACE_LG(16) 得 864px，只调难度/复盘页：
+        # 颜色页/mode 页都只有 2 张卡，宽间距是那两张页面的节奏。
+        # 卡片边长已在上面的分支里按窗口宽度现算（`_card_fit_size`）。
         self.add_content(hbox(*self._cards, spacing=gap))
+
+        # 「设置」入口**不在这里挂**：它是主窗口右上角那枚固定的齿轮
+        # （`GomokuGame.settings_btn`），页面怎么换都不动它。曾经每页各挂一个，
+        # 结果是三种长相三种位置 —— 见 2026-10-05 的反馈。
 
 
 # ==================== 游戏结束覆盖层 ====================
@@ -1439,13 +1694,13 @@ class GameOverOverlay(Screen):
         result.setProperty("tone", "win" if self.is_win else "lose")
         self.add_content(result)
 
-        restart_btn = button("🔄 再来一局", "success", width=150)
+        restart_btn = button("🔄 再来一局", "success", width=_px(150))
         restart_btn.clicked.connect(self.restart_clicked.emit)
-        quit_btn = button("✕ 退出游戏", "danger", width=150)
+        quit_btn = button("✕ 退出游戏", "danger", width=_px(150))
         quit_btn.clicked.connect(self.quit_clicked.emit)
         btns = [restart_btn, quit_btn]
         if self.can_review:
-            review_btn = button("📊 算法复盘", "primary", width=150)
+            review_btn = button("📊 算法复盘", "primary", width=_px(150))
             review_btn.clicked.connect(self.review_clicked.emit)
             btns.append(review_btn)
         self.add_content(hbox(*btns, spacing=theme.SPACE_LG))
@@ -1468,15 +1723,107 @@ class GomokuGame(QMainWindow):
         ``setMinimumSize`` 负责，两处各管一头。
         """
         screen = QApplication.primaryScreen()
-        if screen is None:
-            return (WINDOW_W, WINDOW_H)
+        dw, dh = _design_size()
+        if screen is None or not _autofit_enabled():
+            return (dw, dh)
         avail = screen.availableGeometry()
         # 留 8% 余量，避免贴着屏幕边缘（任务栏、窗口阴影、部分 WM 的吸附区）。
+        #
+        # **可用高度要再扣掉窗口外框。** 屏幕可用区量的是"能给窗口多少"，
+        # 而这里算的是**客户区**尺寸 —— 标题栏与边框是加在它外面的。不扣这一下，
+        # 客户区贴着可用区上沿时，标题栏就悬到屏幕外了（用户报的正是这个）。
+        avail_h = max(1, avail.height() - FRAME_FALLBACK_H)
         k = min(MAX_SCALE,
-                (avail.width() * 0.92) / WINDOW_W,
-                (avail.height() * 0.92) / WINDOW_H)
-        k = max(k, 1.0)
-        return (int(WINDOW_W * k), int(WINDOW_H * k))
+                (avail.width() * 0.92) / dw,
+                (avail_h * 0.92) / dh)
+        # **不再有 `k = max(k, 1.0)` 这条下限。** 那正是 1920×1080 @150% 上
+        # 窗口 1022×750 比 1280×720 的逻辑屏还高 30px 的原因；而且随之抬上去的
+        # `setMinimumSize` 让用户连手动拖小都做不到。下限改由 `setMinimumSize`
+        # 单独管，且它也被夹进可用区（见 `__init__`）。
+        return (int(dw * k), int(dh * k))
+
+    @classmethod
+    def _min_size(cls) -> tuple:
+        """窗口最小尺寸：按档位缩放后，夹进**初始尺寸**，再夹进屏幕可用区。
+
+        **夹初始尺寸这一下是硬约束，不是保险。** ``Qt`` 会把 ``resize()`` 静默
+        夹回最小尺寸 —— 所以最小尺寸一旦大于按比例算出来的初始尺寸，"启动尺寸
+        按比例来"就是一句空话，窗口会直接变成最小尺寸那么大。用户报的
+        1920×1080 @150% 上正是这样：初始算出 852×625，最小却被
+        ``_build_game_ui`` 抬到 652，窗口被迫长高，加标题栏一起冲出可用区。
+
+        下限只管"再小就不好用了"；装不下的部分由滚动兜底接手
+        （``_sync_central_min`` + 中央那层 ``QScrollArea``）。
+        """
+        iw, ih = cls._initial_size()
+        mw, mh = min(_px(MIN_W), iw), min(_px(MIN_H), ih)
+        if _autofit_enabled():
+            screen = QApplication.primaryScreen()
+            if screen is not None:
+                av = screen.availableGeometry()
+                mw, mh = min(mw, av.width()), min(mh, av.height())
+        return (max(1, mw), max(1, mh))
+
+    def _fit_cap_h(self) -> int:
+        """``minimumHeight`` 可抬到的上限。
+
+        三处夹紧，缺一不可：
+
+        1. **当前档位的设计高度** ``_design_size()[1]`` —— 原来的写法是模块常量
+           ``WINDOW_H``（normal 档的 750）。小屏降档后仍按 750 算，等于把窗口
+           最小高度顶回屏幕外，``_initial_size()`` 再怎么算也压不下去。
+        2. 可用高度**扣掉窗口外框**（``_frame_h``，量不到就用
+           ``FRAME_FALLBACK_H``）再乘系数 —— 可用区不含标题栏。
+        3. 上层 ``_build_game_ui`` 还会再夹一次 ``_initial_size()[1]``。
+
+        自动适配关掉时（离屏测试）保持原样返回 ``WINDOW_H``：那些断言全按
+        设计尺寸写。
+        """
+        if not _autofit_enabled():
+            return WINDOW_H
+        dh = _design_size()[1]
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return dh
+        frame = self._frame_h if self._frame_h else FRAME_FALLBACK_H
+        cap = int(max(1, screen.availableGeometry().height() - frame) * 0.96)
+        return max(_px(MIN_H), min(dh, cap))
+
+    def _sync_central_min(self):
+        """中央容器的最小尺寸 = 当前页需要的，但夹在 [设计下限, 设计尺寸] 之间。
+
+        不能直接用页面自然的 ``minimumSizeHint()``：游戏页在这个环境里量出来是
+        **778px**，比设计高度 750 还高 —— 那样默认窗口下就会平白多出一条 28px
+        的竖向滚动条，纯粹的观感退化（这套布局一直都是"宁可把面板挤一点"）。
+
+        也不能用一个固定常量 ``MIN_H``：复盘列表页要 620px，窗口缩到 500 时它
+        会被硬压进 500 —— 底部按钮被裁掉，而且因为"最小值说放得下"，连滚动条
+        都不会给。
+
+        夹一下之后语义就对了：**默认窗口下照旧挤压，窗口比这一页真正需要的还
+        小时才滚**。
+        """
+        if self._syncing_min:
+            return
+        page = self.central.currentWidget()
+        if page is None:
+            return
+        need = page.minimumSizeHint()
+        dw, dh = _design_size()
+        w = max(_px(MIN_W), min(need.width(), dw))
+        h = max(_px(MIN_H), min(need.height(), dh))
+        if self.central.minimumSize() != QSize(w, h):
+            self._syncing_min = True
+            try:
+                self.central.setMinimumSize(w, h)
+            finally:
+                self._syncing_min = False
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._sync_central_min()
+        # 齿轮钉在右上角，窗口一变宽就得跟着走。
+        self._place_settings_button()
 
     def _center_on_screen(self):
         """把窗口摆到所在屏幕可用区中央。"""
@@ -1494,9 +1841,16 @@ class GomokuGame(QMainWindow):
         窗口管理器加上标题栏／边框之前是不可信的，构造期算出来的中心会偏。
         """
         super().showEvent(event)
+        if not self._frame_h:
+            # 客户区之外的那一圈（标题栏、边框）。离屏平台两者相等、量出来是 0，
+            # 那就保持 0，由 `_fit_cap_h` 退回 ``FRAME_FALLBACK_H``。
+            self._frame_h = max(0, self.frameGeometry().height()
+                                - self.geometry().height())
         if not self._centered:
             self._centered = True
             self._center_on_screen()
+        # 首次 show 之前 `width()` 还不可信，齿轮的位置在这里再钉一次。
+        self._update_settings_button()
 
     def __init__(self):
         super().__init__()
@@ -1505,8 +1859,26 @@ class GomokuGame(QMainWindow):
         # 装在这儿离屏冒烟才会真的执行这套样式。
         theme.install()
 
+        # 小屏自动降档：**只在用户从未在设置页存过档位时**才自作主张，
+        # 一旦用户选过就以他为准（`saved_scale()` 返回非 None）。
+        # `persist=False` —— 自动判定是按这台机器现算的，不该写进配置里，
+        # 否则换台机器会带着上一台的档位。
+        screen = QApplication.primaryScreen()
+        if _autofit_enabled() and screen is not None and theme.saved_scale() is None:
+            av = screen.availableGeometry()
+            theme.set_scale(_autofit_scale(av.width(), av.height()), persist=False)
+
         self.setWindowTitle("五子棋 AI")
-        self.setMinimumSize(MIN_W, MIN_H)
+        # 标题栏 + 边框的高度，第一次 show 之后才量得准（见 `showEvent`）。
+        # ``_fit_cap_h`` 要从可用高度里扣掉它；量到之前用保守常量兜底。
+        self._frame_h = 0
+        # 设置入口挂在哪一页上 —— 从对局/复盘中途进来的也要能原路回去。
+        self._settings_origin = None
+        self._scale_changed_in_settings = False
+        # 复盘结果页重建所需的参数（换档后要按同一份材料重建一份）。
+        self.review_cancelled = False
+        self._review_board_idx = None
+        self.setMinimumSize(*self._min_size())
         self.resize(*self._initial_size())
         self._centered = False      # 只在首次 show 时居中一次
         # 这里**不要**再写 setStyleSheet("background-color: ...")。Qt 会把
@@ -1551,8 +1923,43 @@ class GomokuGame(QMainWindow):
         self.logger = None
 
         # 中央容器
+        #
+        # **外面套一层 QScrollArea，包的是 central 本身，不是逐页包。**
+        # 逐页包（曾经的想法）是错的：`_init_loading` 直接 `central.addWidget`，
+        # 不走 `_switch_page`，会造出一半有 wrapper、一半没有的混合栈，而
+        # `_drop_pages` / `_on_review_record_selected` 的 `removeWidget(page)`
+        # 也会变成空操作。包在外面之后，`central.currentWidget()` 仍然返回
+        # **页面对象本身**，全部身份比较与 `count()` 一字不改。
+        #
+        # `widgetResizable` 让内容撑满视口；内容最小值（QStackedWidget 取所有
+        # 页面最小值的最大者）超过视口时才出滚动条 —— 也就是窗口比内容矮时。
         self.central = QStackedWidget()
-        self.setCentralWidget(self.central)
+        self._syncing_min = False
+        # 换页时把中央容器的最小尺寸同步成"这一页真正需要的大小"（封顶设计
+        # 尺寸）。挂在 currentChanged 上而不是逐个切页点手写 —— 这个仓库里
+        # `setCurrentWidget` 有 5 处（含 `_back_to_review_list` 这种刻意绕开
+        # `_switch_page` 的），漏一处就是一条静默的裁切。
+        self.central.currentChanged.connect(lambda _=0: self._on_page_changed())
+        self._outer = QScrollArea()
+        self._outer.setWidgetResizable(True)
+        self._outer.setFrameShape(QFrame.NoFrame)
+        # 背景透明由 theme 的 QSS 给（在这里 setStyleSheet 会传播给子页面，
+        # 把各页的底色一起刷掉）。
+        self._outer.setWidget(self.central)
+        self.setCentralWidget(self._outer)
+
+        # ---- 全局唯一的「设置」入口：主窗口自己的子控件，永远停在右上角 ----
+        #
+        # 不做成"每页各挂一个"（曾经的做法）：页面底部一版、对局面板里一版，
+        # 两种长相两种位置，而且面板里那版被变体 QSS 的 padding 裁成了残缺的
+        # 一条（用户 2026-10-05 的截图）。挂在这里之后，"同一个位置"是**结构**
+        # 保证的 —— 页面怎么换它都不动，只是按页类型开关可见性。
+        #
+        # 它是主窗口的子控件、不在 `central` 里，所以 `_drop_pages` 不会碰它，
+        # 换页也不会让它重建。
+        self.settings_btn = settings_button()
+        self.settings_btn.setParent(self)
+        self.settings_btn.clicked.connect(self._show_settings)
 
         # 各页面
         self.loading_screen = None
@@ -1563,6 +1970,7 @@ class GomokuGame(QMainWindow):
         self.board_widget = None
         self.game_panel = None
         self.game_over_overlay = None
+        self.settings_screen = None
         # 复盘三页
         self.review_strength = None
         self.review_progress = None
@@ -1695,7 +2103,7 @@ class GomokuGame(QMainWindow):
         # None 之后醒来 —— 那是 AttributeError，在 Qt 槽里抛就是直接崩。
         self._game_over_timer.stop()
         for attr in ("loading_screen", "selection_mode", "selection_color",
-                     "selection_difficulty", "game_widget",
+                     "selection_difficulty", "game_widget", "settings_screen",
                      "review_strength", "review_progress", "review_list",
                      "review_board"):
             page = getattr(self, attr, None)
@@ -1707,9 +2115,69 @@ class GomokuGame(QMainWindow):
         for attr in ("loading_screen", "selection_mode", "selection_color",
                      "selection_difficulty", "game_widget", "board_widget",
                      "game_panel", "game_over_overlay", "_stack",
-                     "review_strength", "review_progress", "review_list",
-                     "review_board"):
+                     "settings_screen", "review_strength", "review_progress",
+                     "review_list", "review_board"):
             setattr(self, attr, None)
+        # 这三样指的是页面本身，页面已经拆了 —— 不清就是悬垂引用，
+        # `_back_from_settings` 拿它去 `central.indexOf()` 会拿到 -1（还好），
+        # 但语义已经错了。
+        self._settings_origin = None
+        self._scale_changed_in_settings = False
+        self._review_board_idx = None
+
+    def _on_page_changed(self):
+        """当前页换了：重算中央容器的下限，顺带刷一下右上角齿轮的可见性。"""
+        self._sync_central_min()
+        self._update_settings_button()
+
+    def _place_settings_button(self):
+        """把设置齿轮钉在**当前页主标题文字的右边**。
+
+        不是窗口右上角：那是外框外沿，齿轮摆在那儿会压在页面留白之外、和面板
+        的圆角边框叠在一起 —— 用户 2026-10-05 的截图原话是「遮挡 GUI」。跟着
+        标题走之后，它在每一页都紧挨着主标题，落点由内容决定。
+
+        主标题的两处几何都算得出来，因为 ``title_label`` 把对齐写死成
+        ``AlignCenter``：面板标题行里那个 label 拿的是 sizeHint 宽度，屏幕页
+        的标题在 ``AlignCenter`` 下也是 sizeHint 宽度 —— 两种情况下"文字左边
+        起点 = 控件左边 + (控件宽 − 文字宽)/2"都成立。
+        """
+        b = getattr(self, "settings_btn", None)
+        if b is None:
+            return
+        page = self.central.currentWidget()
+        if page is None:
+            return
+        lbl = _page_title_label(page)
+        if lbl is None:
+            # 没标题的页（当前只有加载页，而它本来就不显示齿轮）：退到页面
+            # 右上角，至少不会跑到窗口外。
+            corner = page.mapTo(self, QPoint(page.width(), 0))
+            b.move(max(0, corner.x() - theme.SPACE_XL - b.width()),
+                   max(0, corner.y() + theme.SPACE_XL))
+        else:
+            tl = lbl.mapTo(self, QPoint(0, 0))
+            text_w = lbl.fontMetrics().horizontalAdvance(lbl.text())
+            x = tl.x() + (lbl.width() - text_w) // 2 + text_w + theme.SPACE_SM
+            y = tl.y() + (lbl.height() - b.height()) // 2
+            b.move(max(0, x), max(0, y))
+        b.raise_()
+
+    def _update_settings_button(self):
+        """按当前页决定齿轮是否显示。
+
+        加载页是开场过场、设置页自己就是设置 —— 这两页藏起来，其余一律显示。
+        （用户 2026-10-05：「他妈的加载界面你放个设置干啥」。）
+        """
+        b = getattr(self, "settings_btn", None)
+        if b is None:
+            return
+        page = self.central.currentWidget()
+        show = page is not None and not isinstance(
+            page, (LoadingScreen, SettingsScreen))
+        b.setVisible(show)
+        if show:
+            self._place_settings_button()
 
     def _switch_page(self, page):
         """统一收口的切页：入栈 + 置当前 + 180ms 淡入。
@@ -1732,6 +2200,213 @@ class GomokuGame(QMainWindow):
         self.selection_mode = SelectionScreen(mode="mode")
         self.selection_mode.mode_selected.connect(self._on_mode_selected)
         self._switch_page(self.selection_mode)
+
+    # ---- 设置页 ----
+
+    def _show_settings(self):
+        """进设置页。**记住从哪一页进来的**。
+
+        对局中、复盘中、看复盘棋盘时都能进设置 —— 用户 2026-10-05 的原话是
+        「难道指望用户退出棋局回首页吗」。所以进来先记下来路，出去时原路返回；
+        而换过档之后那一页的度量已经过期，还得先按新档位重建（见
+        `_back_from_settings`）。
+        """
+        origin = self.central.currentWidget()
+        if origin is not None and origin is not self.settings_screen:
+            self._settings_origin = origin
+        self._scale_changed_in_settings = False
+        if self.settings_screen is None:
+            self.settings_screen = SettingsScreen()
+            self._wire_settings(self.settings_screen)
+        self._switch_page(self.settings_screen)
+
+    def _wire_settings(self, page):
+        page.scale_selected.connect(self._on_scale_selected)
+        page.theme_toggled.connect(self._on_theme_toggled)
+        page.back_clicked.connect(self._back_from_settings)
+
+    def _on_scale_selected(self, name):
+        """换档：落盘 → 作废棋盘缓存 → 整页重建。
+
+        **缓存必须显式作废。** ``board_render`` 读的是 live 的
+        ``theme.RADIUS_*``（属性访问，会跟着档位变），而 ``BoardWidget._static``
+        的缓存键只含 ``(width, height, dpr)`` —— 档位不在键里，不清就会画出
+        旧圆角的木盘。
+        """
+        if name == theme.current_scale():
+            return
+        theme.set_scale(name, persist=True)
+        self._scale_changed_in_settings = True
+        self._invalidate_board_caches()
+        self._rebuild_settings()
+
+    def _on_theme_toggled(self):
+        theme.toggle_theme(persist=True)
+        # 主题不改变任何像素度量，木盘半径也没变 —— 但卡片强度条的**子色**
+        # 是按主题挑的（见 `SelectionScreen.setup_ui` 里的 `bar_player`），
+        # 所以重建设置页之外，模式页也在下次进入时重建（`_show_mode_selection`
+        # 每次都会新建）。
+        self._rebuild_settings()
+
+    def _invalidate_board_caches(self):
+        """把所有还活着的 `BoardWidget` 的绘制缓存清掉。"""
+        for w in self.findChildren(BoardWidget):
+            w._static = None
+            w._stones = None
+            w._cache_key = None
+            w._stones_dirty = True
+            w.update()
+
+    def _rebuild_settings(self):
+        """原地重建设置页（尺寸/配色变了，旧页的布局已经不对）。"""
+        old = self.settings_screen
+        self.settings_screen = SettingsScreen()
+        self._wire_settings(self.settings_screen)
+        self.central.addWidget(self.settings_screen)
+        self.central.setCurrentWidget(self.settings_screen)
+        if old is not None:
+            self.central.removeWidget(old)
+            old.deleteLater()
+        anim.fade_in(self.settings_screen)
+
+    def _back_from_settings(self):
+        """离开设置页：回**进来时那一页**；换过档就先按新档位重建它。
+
+        **不调 `_show_mode_selection`** —— 那会把模式页也拆了重建，白闪一下，
+        而且模式页本来就是按当前字号新建的（每次进入都重建），直接切回去即可。
+        """
+        origin = self._settings_origin
+        changed = self._scale_changed_in_settings
+        self._scale_changed_in_settings = False
+        if origin is None or origin is self.settings_screen:
+            origin = self.selection_mode
+        if origin is None:
+            self._show_mode_selection()
+            return
+        if changed and self.central.indexOf(origin) >= 0:
+            origin = self._rebuild_for_scale(origin)
+        self._settings_origin = origin
+        # 设置页是**借道**的一页，离开就把它从栈里摘掉（不销毁 —— 下次直接复用）。
+        # 留着不走的话，来回进几次设置就让 QStackedWidget 一直显示有这一页，
+        # 而它的存在与否对别的流程毫无意义（比如复盘那套按页数做的断言）。
+        if self.settings_screen is not None:
+            self.central.removeWidget(self.settings_screen)
+        self.central.setCurrentWidget(origin)
+        anim.fade_in(origin)
+
+    def _rebuild_for_scale(self, page):
+        """换档后按新度量重建 ``page``，返回重建出来的页面对象。
+
+        面板宽度、卡片边长、按钮宽度全是**构造期**按档位算死的值，换档之后旧
+        页面不会自己跟着变 —— 不重建就是"字号变了、布局还是旧的"。但重建必须
+        把状态带过去，否则"调个字号"就变成了"弃局"，那正是这一轮要消灭的事。
+
+        加载页与复盘进度页不重建：前者是过场、马上就被模式页取代；后者正被复盘
+        线程持有（``set_progress`` 还在往上推），换掉它等于把进度条丢了 —— 而它
+        是秒级的过场，度量过期没有观感影响。
+        """
+        if page is self.game_widget:
+            return self._rebuild_game_page()
+        if page is self.review_list and self.review_records:
+            self.review_list = ReviewScreen(self.review_records,
+                                            self.review_level,
+                                            self.review_cancelled)
+            self.review_list.record_selected.connect(
+                self._on_review_record_selected)
+            self.review_list.finish_clicked.connect(self._on_restart)
+            self.review_list.exit_clicked.connect(self._on_quit)
+            return self._replace_page(page, self.review_list, "review_list")
+        if (page is self.review_board and self._review_board_idx is not None
+                and self.review_records):
+            idx = self._review_board_idx
+            if idx < len(self.review_records):
+                self.review_board = ReviewBoardScreen(self.review_records[idx])
+                self.review_board.back_clicked.connect(self._back_to_review_list)
+                return self._replace_page(page, self.review_board,
+                                          "review_board")
+        if isinstance(page, SelectionScreen):
+            return self._rebuild_selection(page)
+        return page
+
+    def _replace_page(self, old, new, attr):
+        """在栈里**原地替换** ``old``：新页入栈、旧页拆掉，返回新页。"""
+        setattr(self, attr, new)
+        self.central.addWidget(new)
+        self.central.removeWidget(old)
+        old.deleteLater()
+        return new
+
+    def _rebuild_selection(self, old):
+        """按旧页自己的 ``mode``/``min_level`` 重建一个选择页，并重接信号。"""
+        new = SelectionScreen(mode=old.mode, min_level=old.min_level)
+        sig, slot = {
+            "mode": (new.mode_selected, self._on_mode_selected),
+            "color": (new.color_selected, self._on_color_selected),
+            "difficulty": (new.difficulty_selected, self._on_difficulty_selected),
+            "review": (new.review_level_selected, self._on_review_level_selected),
+        }[old.mode]
+        sig.connect(slot)
+        attr = {"mode": "selection_mode", "color": "selection_color",
+                "difficulty": "selection_difficulty",
+                "review": "review_strength"}[old.mode]
+        if getattr(self, attr, None) is old:
+            return self._replace_page(old, new, attr)
+        # 这一页还留在栈里但没有句柄（理论上不会）：只换页面，不覆盖句柄。
+        self.central.addWidget(new)
+        self.central.removeWidget(old)
+        old.deleteLater()
+        return new
+
+    def _rebuild_game_page(self):
+        """按新档位重建对局页，**盘面与状态原样带过去**。
+
+        状态清单是照着 ``_start_game`` 的重置表来的（那份表列全了"一局"包含
+        什么），外加面板自己那几个不落在棋盘上的量：图表序列、用时、思考态、
+        最后一手的落点环、终局连线的红线与遮罩。
+
+        ``self.board`` / ``self.move_history`` 不用备份 —— 它们**就是**当前局面，
+        ``_build_game_ui`` 只读不写；要额外救回来的只有面板上的那几个。
+        """
+        old = self.game_widget
+        panel = self.game_panel
+        keep_series = keep_decade = None
+        keep_elapsed, keep_thinking = 0, False
+        if panel is not None:
+            keep_series = list(panel._series)
+            keep_decade = panel._decade
+            keep_elapsed = panel._elapsed
+            keep_thinking = panel._thinking
+        last = self.last_move
+        # 遮罩的延迟弹出必须掐掉：`_build_game_ui` 会把 `_stack` 整个换掉，
+        # 那个定时器醒来时看到的已经是新栈，会把遮罩重复叠一层。
+        self._game_over_timer.stop()
+        overlay_was_up = self.game_over_overlay is not None
+
+        self.game_widget = None
+        self._build_game_ui()          # 内部会 setCurrentWidget，随后统一回原页
+
+        if keep_series is not None:
+            p = self.game_panel
+            p._series = keep_series
+            p._decade = keep_decade
+            p._elapsed = keep_elapsed
+            m, s = divmod(keep_elapsed, 60)
+            p.time_row.set_value("%02d:%02d" % (m, s))
+            if keep_thinking:
+                p.show_thinking(True, 2 if self.gamemode == 0 else 1)
+        if last is not None:
+            r, c, stone = last
+            self.board_widget.set_last_move(r, c, stone)
+        if self.gamerule == 2 and self.winner:
+            self.board_widget.set_win_cells(win_line(self.board, self.winner),
+                                            self.winner)
+        if overlay_was_up:
+            self._show_game_over(record=False)
+
+        if old is not None:
+            self.central.removeWidget(old)
+            old.deleteLater()
+        return self.game_widget
 
     def _on_mode_selected(self, mode):
         """选择了对战模式：0=挑战AI（走原来的颜色/难度两步），1=本地对战。"""
@@ -1854,7 +2529,8 @@ class GomokuGame(QMainWindow):
         # （棋盘因此变成 750x750、k=1.033，不再是设计基准 1:1）。
         game_row = QWidget()
         row = QHBoxLayout(game_row)
-        row.setContentsMargins(GAP, GAP, GAP, GAP)
+        row.setContentsMargins(theme.SPACE_MD, theme.SPACE_MD,
+                               theme.SPACE_MD, theme.SPACE_MD)
         row.setSpacing(theme.SPACE_SM)
         row.addWidget(self.board_widget, 1)
         row.addWidget(self.game_panel, 0)
@@ -1863,11 +2539,12 @@ class GomokuGame(QMainWindow):
         # 那个数依赖字体度量（刻度文字、读数行的高度）与平台控件尺寸，
         # 只有 QApplication 起来之后才量得准。这里量出来比 MIN_H 高就抬上去 ——
         # 抬不上去的后果是面板被挤，图表压成一条缝，而它不会报错。
-        need_h = 2 * GAP + self.game_panel.minimumSizeHint().height()
-        # 上限取设计高度 WINDOW_H：窗口最小高度一旦超过设计尺寸，小屏上的
-        # `_initial_size()` 就压不下去（最小尺寸优先于它），窗口会连标题栏
-        # 一起顶出屏幕。宁可面板挤一点，也不能让窗口装不下。
-        need_h = min(need_h, WINDOW_H)
+        need_h = 2 * theme.SPACE_MD + self.game_panel.minimumSizeHint().height()
+        # 两道上限。第一道是档位/可用区（见 `_fit_cap_h`）；**第二道是初始尺寸**
+        # —— Qt 会把 `resize()` 静默夹回最小尺寸，所以最小高度只要超过
+        # `_initial_size()`，"启动尺寸按比例来"就作废了，窗口会直接长成最小尺寸
+        # 那么大，连标题栏一起冲出屏幕。宁可面板挤一点，这部分由滚动兜底接住。
+        need_h = min(need_h, self._fit_cap_h(), self._initial_size()[1])
         if need_h > self.minimumHeight():
             self.setMinimumHeight(need_h)
 
@@ -2208,6 +2885,10 @@ class GomokuGame(QMainWindow):
         # 说服力恰恰来自连续。`_is_optimal` 负责把走对的那些标出来（绿字 +
         # 「最优」），不是靠把它们删掉。
         self.review_records = list(records)
+        # 留着给"换档后重建这一页"用（`_rebuild_for_scale`）—— 它只认这两个
+        # 参数加 `review_records` 就能重排一份一模一样的结果页。
+        self.review_level = level
+        self.review_cancelled = cancelled
 
         self.review_list = ReviewScreen(self.review_records, level, cancelled)
         self.review_list.record_selected.connect(self._on_review_record_selected)
@@ -2230,6 +2911,8 @@ class GomokuGame(QMainWindow):
             self.central.removeWidget(self.review_board)
             self.review_board.deleteLater()
             self.review_board = None
+        # 记下"现在看的是第几手"：换档后要按同一手重建这张盘（`_rebuild_for_scale`）。
+        self._review_board_idx = idx
         rec = self.review_records[idx]
         self.review_board = ReviewBoardScreen(rec)
         self.review_board.back_clicked.connect(self._back_to_review_list)
@@ -2329,8 +3012,13 @@ class GomokuGame(QMainWindow):
         self._update_panel()
         self._game_over_timer.start(GAME_OVER_DELAY_MS)
 
-    def _show_game_over(self):
-        """显示游戏结束覆盖层"""
+    def _show_game_over(self, *, record=True):
+        """显示游戏结束覆盖层。
+
+        ``record=False`` 是"换档后重建"（`_rebuild_game_page`）用的：终局早在
+        第一次弹出时就记进日志了，重建只是把界面按新字号重新摆一遍，不该往
+        日志里再写一份结果。
+        """
         self._update_panel()
 
         local = (self.playmode == 1)
@@ -2363,7 +3051,7 @@ class GomokuGame(QMainWindow):
             winner_str = "draw"
 
         # 记录对局结果到日志
-        if self.logger:
+        if record and self.logger:
             self.logger.log_result(winner_str,
                 total_steps=self.move_count, move_count=self.move_count)
             # 记录终局完整棋盘
@@ -2373,6 +3061,8 @@ class GomokuGame(QMainWindow):
         overlay.restart_clicked.connect(self._on_restart)
         overlay.quit_clicked.connect(self._on_quit)
         overlay.review_clicked.connect(self._on_review_clicked)
+        # 遮罩压在棋盘上，但右上角那枚齿轮是主窗口的子控件，浮在它上面 ——
+        # 终局之后想改字号同样不必被迫退出。
 
         # 几何完全交给 QStackedLayout(StackAll)：遮罩与棋盘行共用同一块区域，
         # 尺寸随窗口走。**不要**再 setGeometry —— 那会和布局打架。

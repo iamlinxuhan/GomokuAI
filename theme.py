@@ -200,6 +200,12 @@ LAST_DARK  = "#4a2c0f"   # 最后一手：白子上的深棕环（11.45:1）
 # 棋子的径向渐变停靠点 (位置, 颜色)。光源固定在左上，所以 sprite 可以复用。
 # 放在这里而不是绘制模块里，是为了让"颜色只在 theme 里定义一次"这条规则
 # 没有例外 —— tests/test_no_literal_colors.py 会强制它。
+# 终局那条连五的红线。**刻意不随主题走** —— 棋盘（木色、网格、棋子）是跨主题
+# 固定的，画在棋盘上的东西也必须固定。取浅色档那支深红：木盘上 2.30–3.10:1，
+# 对白子 5.70:1。深色档的 ``DANGER`` 是一支亮粉，落在橙金木盘上亮度对比只有
+# 1.06:1，整条线等同于没画。
+WIN_LINE = _PALETTES["light"]["DANGER"]
+
 STONE_B_GRAD = ((0.00, "#5c6169"), (0.55, "#23262b"), (1.00, "#0d0f12"))
 STONE_W_GRAD = ((0.00, "#fffdf9"), (0.55, "#efece4"), (1.00, "#cdc6b8"))
 
@@ -248,6 +254,122 @@ CHART_PLOT_H = 32  # 面板图表绘图区的**地板值**。真正的下限由 
                    # （实测 28px 时三条刻度确实重叠）。这个常量只是不让极窄的
                    # 布局把绘图区压成一条线。
 
+# ==================== 字号档位（4 档预设）====================
+# 起因：1920×1080 的 Windows 机器开了 150% 显示缩放之后，Qt 拿到的**逻辑**
+# 分辨率只剩 1280×720（`AA_EnableHighDpiScaling`，见 `main.py` 的 `main()`），
+# 而界面是按固定像素画的 —— 于是字相对屏幕变大、图表被挤、窗口比屏幕还高。
+#
+# 与其让用户逐个数字去调，不如给四档预设：整组度量一起缩放，比例关系不变。
+_SCALE_STEPS = {
+    "small":  0.85,
+    "normal": 1.00,
+    "large":  1.15,
+    "xlarge": 1.30,
+}
+_SCALE_LABELS = {"small": "小", "normal": "标准", "large": "大", "xlarge": "特大"}
+_SCALE_ORDER = ("small", "normal", "large", "xlarge")
+_SETTINGS_SCALE_KEY = "ui_scale"
+
+_scale = "normal"
+_explicit_scale = False   # 本进程是否显式选过档位（见 set_scale / install）
+
+# 各度量的**基准值**（即 normal 档）。`_apply_scale()` 每次都从这里重算，
+# 所以来回切档不会累积取整误差。
+_BASE_METRICS = {
+    "SIZE_XS": SIZE_XS, "SIZE_SM": SIZE_SM, "SIZE_MD": SIZE_MD,
+    "SIZE_LG": SIZE_LG, "SIZE_XL": SIZE_XL,
+    "SPACE_XS": SPACE_XS, "SPACE_SM": SPACE_SM, "SPACE_MD": SPACE_MD,
+    "SPACE_LG": SPACE_LG, "SPACE_XL": SPACE_XL, "SPACE_XXL": SPACE_XXL,
+    "SPACE_XXXL": SPACE_XXXL,
+    "RADIUS_SM": RADIUS_SM, "RADIUS_MD": RADIUS_MD, "RADIUS_LG": RADIUS_LG,
+    "CONTROL_H": CONTROL_H, "CARD_PX": CARD_PX, "PANEL_W": PANEL_W,
+    "CHART_PLOT_H": CHART_PLOT_H,
+}
+
+
+def _apply_scale() -> None:
+    """按当前档位把度量**重新赋值成模块全局**。
+
+    这条能成立，是因为 ``_tokens()`` / ``_button_rules()`` / ``_card_rules()`` /
+    ``install()`` 全都在**调用时**才查这些全局名，而 ``board_render`` 走的是
+    ``theme.RADIUS_*`` 属性访问 —— 它们都看得到新值。
+
+    **相反地，``ui_kit`` / ``charts`` 是 ``from theme import SIZE_XS`` 那种
+    直接绑名，默认参数在 def 时就固化了** —— 它们看不到新值。``main.py`` 里
+    用本地包装（见 `_ui_button` 等）把要紧的几处补上，其余（页面外边距这类
+    纯留白）明知并接受。
+    """
+    k = _SCALE_STEPS[_scale]
+    g = globals()
+    for name, base in _BASE_METRICS.items():
+        g[name] = max(1, int(round(base * k)))
+
+
+def scale_factor() -> float:
+    """当前档位相对基准的倍数。"""
+    return _SCALE_STEPS[_scale]
+
+
+def current_scale() -> str:
+    return _scale
+
+
+def available_scales() -> tuple:
+    """档位名，自小到大。"""
+    return _SCALE_ORDER
+
+
+def scale_label(name: str) -> str:
+    """档位的中文名（设置页按钮文案）。"""
+    return _SCALE_LABELS[name]
+
+
+def saved_scale():
+    """落盘的档位名；**从没存过**则 None。
+
+    ``main.py`` 用它区分"用户自己选过"与"从没碰过" —— 只有后者才允许自动适配
+    替他做主。
+    """
+    v = QSettings(_SETTINGS_ORG, _SETTINGS_APP).value(_SETTINGS_SCALE_KEY, None)
+    return v if v in _SCALE_STEPS else None
+
+
+def _apply_app_font(app) -> None:
+    """把**当前**字号应用到应用默认字体。
+
+    与 QSS 的 ``font-family`` 必须同源（见 ``install()`` 的长注释），而且
+    ``setPixelSize`` 要用**当下的** ``SIZE_SM`` —— 换档时重跑一次才会变。
+    """
+    f = QFont()
+    f.setFamily(resolve_family().split(",")[0].strip().strip("'"))
+    f.setPixelSize(SIZE_SM)          # 与 QSS 同单位，避免 pt/px 混算
+    app.setFont(f)
+
+
+def set_scale(name: str, *, persist: bool = True) -> None:
+    """切换字号档位：重算度量 → 重装 QSS → 重设应用字体 → 持久化。
+
+    形状逐字仿 ``set_theme``（同一个 QSettings store，键换成 ``ui_scale``）。
+    ``persist=False`` 供测试使用（不污染用户配置）。
+
+    **调用方另需作废棋盘缓存**：``board_render`` 读的是 live 的
+    ``theme.RADIUS_*``，而 ``BoardWidget._static`` 的缓存键只含
+    ``(width, height, dpr)``，不含档位 —— 不清会画出旧圆角的木盘。
+    """
+    global _scale, _explicit_scale
+    if name not in _SCALE_STEPS:
+        raise ValueError(f"未知档位 {name!r}，可选：{available_scales()}")
+    _scale = name
+    _explicit_scale = True     # 见 install()：本进程内的显式选择优先于落盘的偏好
+    _apply_scale()
+    app = QApplication.instance()
+    if app is not None:
+        app.setStyleSheet(app_stylesheet())
+        _apply_app_font(app)
+    if persist:
+        QSettings(_SETTINGS_ORG, _SETTINGS_APP).setValue(_SETTINGS_SCALE_KEY, name)
+
+
 # ==================== 字体族 ====================
 _UI_STACK = ("Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑",   # Windows
              "PingFang SC", "Hiragino Sans GB",                     # macOS
@@ -284,8 +406,15 @@ def resolve_family(mono: bool = False) -> str:
     return _cached_families[key]
 
 
-def mono_font(size_px: int = SIZE_XS) -> QFont:
-    """QPainter 路径专用（QSS 是字符串，吃不到 QFont）。"""
+def mono_font(size_px: int | None = None) -> QFont:
+    """QPainter 路径专用（QSS 是字符串，吃不到 QFont）。
+
+    默认值**必须**在函数体里解析而不是写成 ``size_px: int = SIZE_XS``：默认参数
+    在 def 那一刻就固化了，换档之后仍然用旧值 —— 这正是 ``ui_kit`` / ``charts``
+    那一类"半缩放"割裂的来源，这里不要再造一个。
+    """
+    if size_px is None:
+        size_px = SIZE_XS
     f = QFont()
     fams = [f.strip("'") for f in resolve_family(mono=True).split(", ")]
     f.setFamily(fams[0])
@@ -355,6 +484,28 @@ QLabel[role="title"][tone="lose"]  { color: $danger; }
 
 QMainWindow                   { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                 stop:0 $bg_hi, stop:1 $bg); }
+
+/* 页面滚动兜底（窗口比内容矮时，底部按钮还能滚到）。
+
+   两层都刷成透明：QScrollArea 的 viewport 默认 autoFillBackground，底色取
+   QPalette::Window（Fusion 下是浅灰），深色主题里会拖出一条灰带。**必须写在
+   这里而不是控件级 setStyleSheet** —— 控件级样式表会传播给全部子控件，把
+   各页面的 QSS 底一起刷掉（见 main.py 里反复警告的那处陷阱）。
+   "> QWidget > QWidget" 命中的是 viewport 里那层容器。 */
+QScrollArea                   { background: transparent; border: none; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+QScrollBar:vertical           { background: transparent; width: ${sp_lg}px;
+                                margin: 0; }
+QScrollBar:horizontal         { background: transparent; height: ${sp_lg}px;
+                                margin: 0; }
+QScrollBar::handle:vertical,
+QScrollBar::handle:horizontal { background: $border; border-radius: ${r_sm}px;
+                                min-height: ${sp_lg}px; min-width: ${sp_lg}px; }
+QScrollBar::handle:vertical:hover,
+QScrollBar::handle:horizontal:hover { background: $text_faint; }
+QScrollBar::add-line, QScrollBar::sub-line,
+QScrollBar::add-page, QScrollBar::sub-page { background: none; border: none;
+                                height: 0; width: 0; }
 QWidget#screenRoot            { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
                                 stop:0 $bg_hi, stop:1 $bg); }
 QWidget#overlayRoot           { background: $overlay;
@@ -555,9 +706,23 @@ def _card_rules() -> str:
     return "".join(out)
 
 
+# 纯图标按钮（右上角那枚设置齿轮）。
+#
+# 变体 QSS 里的 ``padding: 0 ${SPACE_LG}px`` 是给**带文字**的按钮写的：32px
+# 见方的小按钮左右各留 20px，可绘制区就成了负值，齿轮被裁成残缺的一条 ——
+# 用户 2026-10-05 截图报的"设置显示残缺"正是这个。
+#
+# 必须排在 ``_button_rules()`` **之后**：QPushButton[variant=...] 与本规则
+# 特异性相同（都是"类 + 一个属性"），同特异性下靠后的胜。
+_ICON_BTN = """
+QPushButton[iconOnly="true"] { padding: 0; }
+"""
+
+
 def app_stylesheet() -> str:
     """完整样式表。必须在 ``QApplication`` 之后调用（要用 QFontDatabase）。"""
-    return _BASE.substitute(_tokens()) + _button_rules() + _card_rules()
+    return (_BASE.substitute(_tokens()) + _button_rules() + _card_rules()
+            + _ICON_BTN)
 
 
 # ==================== 安装 ====================
@@ -583,18 +748,22 @@ def install() -> None:
     DejaVu"的割裂。历史上 ``QFont("Microsoft YaHei", 10)`` 对每一个写了
     ``font-family`` 的控件都无效。
     """
-    global _current, _installed
+    global _current, _installed, _scale
     app = QApplication.instance()
     if app is None:
         raise RuntimeError("theme.install() 必须在 QApplication 之后调用")
     if not _installed and not _explicit:
         saved = QSettings(_SETTINGS_ORG, _SETTINGS_APP).value(_SETTINGS_KEY, "dark")
         _current = saved if saved in _PALETTES else "dark"
+    # 档位与主题同规矩：落盘的偏好先恢复，但**本进程里显式 set_scale 过就不再
+    # 恢复** —— 否则测试会取决于开发者机器上恰好存着哪一档。
+    if not _installed and not _explicit_scale:
+        saved_scale = QSettings(_SETTINGS_ORG, _SETTINGS_APP).value(
+            _SETTINGS_SCALE_KEY, "normal")
+        _scale = saved_scale if saved_scale in _SCALE_STEPS else "normal"
+        _apply_scale()
     app.setStyleSheet(app_stylesheet())
-    f = QFont()
-    f.setFamily(resolve_family().split(",")[0].strip().strip("'"))
-    f.setPixelSize(SIZE_SM)          # 与 QSS 同单位，避免 pt/px 混算
-    app.setFont(f)
+    _apply_app_font(app)
     _installed = True
 
 

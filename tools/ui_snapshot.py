@@ -25,6 +25,9 @@ import tempfile
 import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# 与 gui_smoke 同理：离屏平台报 800×600，自动适配会把窗口降档变小，而下面
+# 的探针是按设计尺寸量的。自动适配本身由 tests/test_ui_scale.py 测纯函数。
+os.environ.setdefault("GOMOKU_AI_UI_AUTOFIT", "0")
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
@@ -165,20 +168,65 @@ def probe_button_variants(w):
 
 
 def probe_panel_fits(w):
-    """窗口最小高度必须兜住面板的最小高度。
+    """窗口最小高度必须兜住面板的最小高度，**但不得超过初始尺寸**。
 
     面板里挂着两张图表卡。窗口最小高度一旦小于面板所需，图表会被压成一条缝，
     而且**不会报错** —— 布局只是把控件缩到比最小建议值更小。所以这条要显式钉。
-    上限取设计高度 ``WINDOW_H``：超过它，小屏上的窗口就压不下去了。
+
+    另一头同样是硬约束，而且更隐蔽：``Qt`` 会把 ``resize()`` 静默夹回最小尺寸，
+    所以最小高度一旦越过 ``_initial_size()``，"启动尺寸按比例算"就成了空话 ——
+    窗口会直接长成最小尺寸那么大，连标题栏一起冲出屏幕可用区。两端合起来就是
+    ``min(need, 初始高度) <= 最小高度 <= 初始高度``。
     """
     panel = getattr(w, "game_panel", None)
     if panel is None:
         return [("面板存在", False, "没有 game_panel")]
     need = 2 * M.GAP + panel.minimumSizeHint().height()
+    init_h = w._initial_size()[1]
     got = w.minimumHeight()
-    ok = got >= min(need, M.WINDOW_H)
-    return [("窗口最小高度兜住面板", ok,
-             f"需要 {need}，窗口最小 {got}，设计高度 {M.WINDOW_H}")]
+    ok = min(need, init_h) <= got <= init_h
+    return [("窗口最小高度兜住面板、又不越过初始尺寸", ok,
+             f"需要 {need}，窗口最小 {got}，初始 {init_h}")]
+
+
+def probe_min_le_initial(w):
+    """窗口最小尺寸任何时刻都不得超过**按屏幕比例算出来的初始尺寸**。
+
+    这条是"启动大小不再被锁死"的直接表述。锁死的机制是 ``Qt.resize()`` 被
+    ``setMinimumSize`` 静默夹回 —— 最小尺寸大于初始尺寸时，用户在 1920×1080
+    @150%（逻辑可用区约 1280×680）上就会看到一个连标题栏一起顶出屏幕的窗口。
+    """
+    iw, ih = w._initial_size()
+    mw, mh = w.minimumWidth(), w.minimumHeight()
+    ok = mw <= iw and mh <= ih
+    return [("窗口最小尺寸不越过初始尺寸（启动大小不被锁死）", ok,
+             f"最小 {mw}×{mh} / 初始 {iw}×{ih}")]
+
+
+def probe_window_scrollable(w):
+    """窗口装不下时，页面必须还能滚到 —— 这条钉的是滚动兜底**接没接上**。
+
+    用户报的那个 bug 的核心：1920×1080 开 150% 缩放后 Qt 看到的逻辑屏只有
+    1280×720，窗口再也摆不下，而当时既不能缩、也没有滚动兜底，底部的按钮直接
+    掉到可视区外。现在中央容器外面套了 ``QScrollArea``（见
+    ``GomokuGame.__init__``），且它的最小值被同步成"当前页需要的大小、封顶设计
+    尺寸"（``_sync_central_min``）。
+
+    **"此刻正在滚"这个状态在离屏平台上复现不出来** —— 那里窗口的最小尺寸本身
+    就够大，压不到触发滚动的程度。所以断言的是机制：允许被压到 ``floor``，
+    而当前视口不低于 ``floor``（于是默认窗口下不该平白多出一条滚动条）。
+    """
+    from PyQt5.QtWidgets import QScrollArea
+    outer = w.centralWidget()
+    if not isinstance(outer, QScrollArea):
+        return [("中央容器是滚动区", False, type(outer).__name__)]
+    inner = outer.widget()
+    natural = inner.minimumSizeHint().height()     # 一点不让压时的高度
+    floor = inner.minimumSize().height()           # 允许压到的高度（我们设的）
+    view = outer.viewport().height()
+    ok = bool(outer.widgetResizable()) and 0 < floor <= natural and view >= floor
+    return [("滚动兜底接上了（且默认窗口下不白白出滚动条）", ok,
+             f"自然最小 {natural}px / 允许压到 {floor}px / 视口 {view}px")]
 
 
 def probe_charts_painted(win_pm, panel, origin):
@@ -226,6 +274,9 @@ def main():
 
     M._fix_qt_plugin_path()
     app = QApplication(sys.argv[:1])
+    # 不继承开发者机器上存着的档位：探针按设计尺寸量，档位一变全飘。
+    # `_explicit_scale` 一旦置位，`theme.install()` 就不会再去读 QSettings。
+    theme.set_scale("normal", persist=False)
     app.setStyle("Fusion")
 
     # 截图不该在仓库根目录留 game_log_*.txt
@@ -279,6 +330,7 @@ def main():
         save(win_pm, args.out, "05_game.png")
         probes.extend(probe_button_variants(w))
         probes.extend(probe_panel_fits(w))
+        probes.extend(probe_min_le_initial(w))
 
         # ---- 5. 图表（面板下半部分）----
         print("[5/6] 面板图表")
@@ -288,6 +340,34 @@ def main():
             pg = panel.mapTo(w, QPoint(0, 0))
             probes.extend(probe_charts_painted(win_pm, panel,
                                                (pg.x(), pg.y())))
+
+        # ---- 5b. 最小窗口：布局被压得最紧的一档 ----
+        # 860×640 会被窗口自己的最小尺寸顶回 766×750（正是我们想要的下限行为），
+        # 于是拿到的就是"用户能把它拖到的最小样子"。这张图是给人眼看的：被压到
+        # 最紧时字有没有挤在一起、图表有没有被压成一条缝。
+        print("[5b/6] 最小窗口（请求 860×640）")
+        w.resize(860, 640)
+        pump(app, 200)
+        save(w.grab(), args.out, "08_small.png")
+        probes.extend(probe_window_scrollable(w))
+        w.resize(*M._design_size())
+        pump(app, 150)
+
+        # ---- 5c. 设置页 ----
+        # 从对局页的真实入口进去再原路回来：这张图既是给人看的（四个档位、
+        # 主题切换、返回各占一行），也顺带把"对局中也能改字号"这条路走通一遍。
+        print("[5c/6] 设置页")
+        w.settings_btn.click()
+        pump(app, 200)
+        save(w.grab(), args.out, "09_settings.png")
+        probes.append(("设置页记住了来路",
+                       w._settings_origin is w.game_widget,
+                       f"origin={type(w._settings_origin).__name__}"))
+        w.settings_screen.back_clicked.emit()
+        pump(app, 200)
+        probes.append(("从设置页返回对局页",
+                       w.central.currentWidget() is w.game_widget,
+                       type(w.central.currentWidget()).__name__))
 
         # ---- 6. 结算遮罩 ----
         print("[6/6] 结算遮罩")
