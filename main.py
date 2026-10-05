@@ -30,9 +30,10 @@ import charts
 import engine
 import theme
 from board_geometry import BoardGeometry
-from engine import (BOARD_SIZE, Board, ai_move, evaluate, is_mate,
+from engine import (BOARD_SIZE, Board, evaluate, is_mate,
                     new_game, opening_move)
 from gamelog import GameLogger
+from players import AIPlayer, PlayerSpec
 from session import Session
 from ui_kit import (BrandMark, InfoRow, Screen, StoneFace, TurnIndicator,
                     button, card_button, faint_label, hbox, separator,
@@ -108,14 +109,17 @@ class AIWorker(QThread):
     取消是**协作式**的：cancel() 置位 Event，引擎在搜索循环里轮询到之后
     主动退出。原版用的是 QThread.terminate()，它会在任意字节码处强杀线程；
     搜索正在做棋盘 make/unmake 时被强杀，会留下不一致的状态。
+
+    出招本身走 ``players.Player`` 抽象（M2 起）：进程内 AI 与以后的网络
+    Bot 对这条线程是同一件事。
     """
     finished = pyqtSignal(int, int, object)  # (row, col, info_dict)
 
-    def __init__(self, board, ai_player, depth):
+    def __init__(self, board, player, stone):
         super().__init__()
         self.board = board.copy()
-        self.ai_player = ai_player
-        self.depth = depth
+        self.player = player
+        self.stone = stone
         self._cancel = threading.Event()
 
     def cancel(self):
@@ -124,8 +128,8 @@ class AIWorker(QThread):
 
     def run(self):
         try:
-            r, c, info = ai_move(self.board, self.ai_player, self.depth,
-                                 cancel=self._cancel)
+            r, c, info = self.player.choose_move(self.board, self.stone,
+                                                 cancel=self._cancel)
         except Exception as exc:
             # 引擎异常不应让线程静默死掉、把 UI 永远卡在"思考中"
             self.finished.emit(-1, -1, {'reason': 'AI异常', 'best_val': 0.0,
@@ -1973,7 +1977,9 @@ class GomokuGame(QMainWindow):
 
         self._ai_generation += 1
         gen = self._ai_generation
-        self.ai_worker = AIWorker(self.board, ai_stone, self.gamekunnan)
+        # 档位 → 玩家对象；AIWorker 只负责线程与取消，出招在 Player 里。
+        player = AIPlayer(PlayerSpec("ai", level=self.gamekunnan))
+        self.ai_worker = AIWorker(self.board, player, ai_stone)
         self.ai_worker.finished.connect(
             lambda r, c, info, g=gen: self._on_ai_finished(r, c, info, g))
         self.ai_worker.start()
