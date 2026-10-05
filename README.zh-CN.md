@@ -120,9 +120,12 @@ Windows ARM 包** —— 界面用的 PyQt5 全系没有 `win_arm64` 轮子（Py
 ```bash
 git clone https://github.com/iamlinxuhan/GomokuAI.git
 cd GomokuAI
-pip install -r requirements.txt      # Python >= 3.11
-python main.py
+uv sync                              # Python >= 3.11；运行依赖只有 numpy 与 PyQt5
+uv run python main.py
 ```
+
+依赖由 **uv** 管理（`pyproject.toml` + 入库的 `uv.lock`），不再有
+`requirements.txt`；没有 uv 时，`pip install numpy PyQt5` 对从源码运行等价。
 
 ---
 
@@ -483,8 +486,8 @@ GomokuAI/
 │   └── legacy_engine.py  # 旧引擎逐字快照（不得修改，作为 A/B 对照组）
 ├── packaging/         # Linux 四架构共用的打包配方（容器内构建）
 ├── installer/         # Windows 安装包脚本（Inno Setup，UTF-8 带 BOM）
-├── requirements.txt      # 运行时依赖（numpy / PyQt5）
-└── requirements-dev.txt  # 开发与打包依赖（含 pytest / pyinstaller）
+├── pyproject.toml     # 依赖清单（uv 管理）：numpy / PyQt5，不锁版本
+└── uv.lock            # 各平台 / 各 Python 版本的锁定结果（入库）
 ```
 
 ---
@@ -492,9 +495,9 @@ GomokuAI/
 ## 🧪 测试
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest -q                     # 全套 359 条
-python -m pytest -q -m "not perf"       # 跳过机器速度相关的门槛（CI 用这条，338 条）
+uv sync                              # 运行 + 开发依赖（pytest / pyinstaller）
+uv run pytest -q                     # 全套 359 条
+uv run pytest -q -m "not perf"       # 跳过机器速度相关的门槛（CI 用这条，338 条）
 ```
 
 **关于 `perf` 标记**：少数门槛测的是"引擎有没有退化"，但读数是"每秒多少

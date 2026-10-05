@@ -164,9 +164,13 @@ wheels across the entire series (PyPI publishes Windows wheels only as
 ```bash
 git clone https://github.com/iamlinxuhan/GomokuAI.git
 cd GomokuAI
-pip install -r requirements.txt      # Python >= 3.11
-python main.py
+uv sync                              # Python >= 3.11; runtime deps are just numpy + PyQt5
+uv run python main.py
 ```
+
+Dependencies are managed with **uv** (`pyproject.toml` + a committed
+`uv.lock`). There is no `requirements.txt` anymore; without uv,
+`pip install numpy PyQt5` is exactly equivalent for running from source.
 
 ---
 
@@ -631,8 +635,8 @@ GomokuAI/
 │   └── legacy_engine.py  # verbatim snapshot of the old engine (must not be modified; the A/B control)
 ├── packaging/         # shared packaging recipe for the four Linux architectures (built in a container)
 ├── installer/         # Windows installer script (Inno Setup, UTF-8 with BOM)
-├── requirements.txt      # runtime dependencies (numpy / PyQt5)
-└── requirements-dev.txt  # development and packaging dependencies (incl. pytest / pyinstaller)
+├── pyproject.toml     # dependency manifest (uv): numpy / PyQt5, no version pins
+└── uv.lock            # locked versions per platform and Python (committed)
 ```
 
 ---
@@ -640,9 +644,9 @@ GomokuAI/
 ## 🧪 Tests
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest -q                     # full suite, 359 tests
-python -m pytest -q -m "not perf"       # skip machine-speed-dependent thresholds (what CI runs, 338 tests)
+uv sync                              # runtime + dev dependencies (pytest / pyinstaller)
+uv run pytest -q                     # full suite, 359 tests
+uv run pytest -q -m "not perf"       # skip machine-speed-dependent thresholds (what CI runs, 338 tests)
 ```
 
 **About the `perf` marker**: a handful of thresholds test "has the engine

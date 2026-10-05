@@ -54,8 +54,11 @@ def test_frozen_debug_falls_back_when_dir_readonly(monkeypatch, exe_dir):
     """debug 但目录不可写 → 退化成不写，而不是在开一局时崩掉。
 
     只读目录用 chmod 造；**root 能无视权限位**，那种环境下这条断言不成立，
-    所以显式跳过而不是让它变成一个偶发的假红。
+    所以显式跳过而不是让它变成一个偶发的假红。**Windows 也造不出来**：
+    它的目录权限不走 POSIX 权限位，chmod 之后照样写得进去。
     """
+    if not hasattr(os, "geteuid"):
+        pytest.skip("Windows 没有 POSIX 权限位，造不出只读目录")
     if os.geteuid() == 0:
         pytest.skip("root 无视文件权限位，造不出只读目录")
     _fake_frozen(monkeypatch, exe_dir / "GomokuAI_Linux_amd_x86_64_run_debug")

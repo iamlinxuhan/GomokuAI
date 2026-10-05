@@ -118,19 +118,23 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Setup uv
+        # 锁定结果在 uv.lock（已入库），下面各步一律用 --frozen，CI 不改写它。
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Install dependencies
-        # 依赖清单只有 requirements*.txt 一处，不再在这里重复列举 ——
-        # 早先四个 job 各写一行 pip install，加一个依赖要改四处，漏掉一处
-        # 就得到"本地过了 CI 挂"的假象。
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        # 依赖清单只有 pyproject.toml 一处、锁定结果只有 uv.lock 一处，不再在
+        # 这里重复列举 —— 早先四个 job 各写一行 pip install，加一个依赖要改
+        # 四处，漏掉一处就得到"本地过了 CI 挂"的假象。
+        run: uv sync --frozen --python ${{ matrix.python-version }}
 
       - name: Run test suite
         # -m "not perf"：跳过依赖机器速度的门槛（吞吐 nps / 到达深度）。
         # 那些门槛在开发机上是有效哨兵，在更慢的 runner 上只会变成随机红。
         # 正确性、增量一致性、时间合规、题库、VCF、棋型这些**全部保留**。
-        run: python -m pytest -q -m "not perf"
+        run: uv run --frozen pytest -q -m "not perf"
 
 
   # ============================================================
@@ -216,8 +220,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Resolve version
-        # 四个架构与 release job 都要这个号码，只算一次 —— 与 requirements
-        # 清单同一个理由：同一个事实写在多处，改一处漏一处就会得到版本号
+        # 四个架构与 release job 都要这个号码，只算一次 —— 与依赖清单
+        # 同一个理由：同一个事实写在多处，改一处漏一处就会得到版本号
         # 不一致的两份产物。
         run: |
           raw="${GITHUB_REF_NAME}"
@@ -308,10 +312,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Setup uv
+        # 与 test job 同一份 pyproject.toml / uv.lock，装出来的就是打包用的
+        # 那套依赖（含 pyinstaller）。
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+        run: uv sync --frozen --python 3.11
 
       - name: Build C++ engine
         # 与 Linux 侧同样的理由：不把引擎带进包，4/5 档就退回本地 Python
@@ -373,7 +382,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $flavorDir | Out-Null
           Set-Content -Path "$flavorDir\_build_flavor.py" `
             -Value 'FLAVOR = "play"' -Encoding ascii
-          pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
+          uv run --frozen pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
             --paths $flavorDir `
             --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
 
@@ -386,7 +395,7 @@ jobs:
             $exe = "GomokuAI_Windows_amd_x86_64_run_$f"
             Set-Content -Path "$flavorDir\_build_flavor.py" `
               -Value "FLAVOR = `"$f`"" -Encoding ascii
-            pyinstaller --onefile --windowed --icon="五子棋.ico" --name $exe `
+            uv run --frozen pyinstaller --onefile --windowed --icon="五子棋.ico" --name $exe `
               --paths $flavorDir `
               --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
             if (-not (Test-Path "dist\$exe.exe")) { throw "PyInstaller 没有产出 $exe.exe" }

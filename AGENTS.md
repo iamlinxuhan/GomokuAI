@@ -4,20 +4,21 @@ PyQt5 五子棋（19×19）。同一套算法有两份实现：`engine_local.py`
 
 ## 常用命令
 
-仓库不含虚拟环境（`.venv` 已被 gitignore）；先 `uv venv .venv` + `uv pip install -r requirements-dev.txt`（Python >= 3.11）再执行下列命令。
+依赖由 **uv** 管理：`pyproject.toml` 是清单，`uv.lock` 已入库且覆盖各平台 / Python 版本。先 `uv sync`（默认含 dev 组：pytest / pyinstaller）再执行下列命令。
 
 ```bash
-pip install -r requirements-dev.txt    # 运行时 + 测试/打包依赖
-python main.py                         # 从源码运行
+uv sync                                # 运行 + 开发依赖
+uv run python main.py                  # 从源码运行
 
-python -m pytest -q                    # 全量；含真实搜索，较慢
-python -m pytest -q -m "not perf"      # CI 口径：跳过机器速度相关门槛
-python -m pytest tests/test_vcf.py -q
-python -m pytest tests/test_vcf.py::test_name -q
+uv run pytest -q                       # 全量；含真实搜索，较慢
+uv run pytest -q -m "not perf"         # CI 口径：跳过机器速度相关门槛
+uv run pytest tests/test_vcf.py -q
+uv run pytest tests/test_vcf.py::test_name -q
 ```
 
 - `perf` 标记（定义见 `pytest.ini`）：阈值是 nps / 实际到达深度，慢机器上「回归」与「机器慢」无法区分，CI 不跑。正确性、增量一致性、时间合规、题库、VCF、棋型用例**不带**该标记。
-- **不要用 `uv add -r requirements.txt` 或 uv project 模式**：全平台解析会选中没有 Windows wheel 的 `PyQt5-Qt5` 而安装失败（原因见 `requirements.txt` 顶部注释）。用 `pip install -r` 或 `uv pip install -r`。
+- 依赖只改 `pyproject.toml`，改完 `uv lock` 并提交 `uv.lock`；CI 用 `--frozen`，锁与清单不一致会当场失败。**不要删 `[tool.uv]` 里的两条 `PyQt5-Qt5` 平台约束**：Windows 只有 5.15.2 有 wheel，删了 `uv sync` 在 Windows 上会装不上（原因见 `pyproject.toml` 文件头）。
+- 没有 uv 时运行依赖等价于 `pip install numpy PyQt5`；不要再手抄 requirements 文件。
 
 ## C++ 计算核心
 
@@ -50,7 +51,7 @@ cmake --build cpp/build -j
 
 ## CI 与发布
 
-- `.github/workflows/build.yml` 只在 tag `v*`、PR、手动 dispatch 时触发；`test` job 跑 `pytest -m "not perf"`，是 `release` 的 `needs`。
+- `.github/workflows/build.yml` 只在 tag `v*`、PR、手动 dispatch 时触发；`test` job（`uv sync --frozen` + `uv run --frozen pytest -m "not perf"`）是 `release` 的 `needs`。
 - 发布固定 15 个资产（Linux 四架构 + Windows，各 1 安装包 + run_debug + run_play），release job 会逐个比对文件名与数量。
-- Linux 四架构共用 `packaging/build_in_container.sh`，在目标架构的 Debian bookworm 容器里构建（PyInstaller 不能交叉编译）；Windows 用该 workflow 的 PyInstaller + Inno Setup 步骤。
+- Linux 四架构共用 `packaging/build_in_container.sh`，在目标架构的 Debian bookworm 容器里构建（PyInstaller 不能交叉编译），**不读 `uv.lock`**（i386 / armhf 没有 PyPI 的 PyQt5 wheel，用 apt 提供）；Windows 打包走 uv（`uv sync --frozen --python 3.11` + `uv run --frozen pyinstaller`）。
 - debug/play 变体由构建期注入的 `_build_flavor.py` 决定，**不要按文件名倒推**；debug 写 `game_log_*.txt`，play 与安装包不写。

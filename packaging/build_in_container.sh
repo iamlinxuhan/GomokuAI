@@ -105,6 +105,11 @@ file cpp/build/gomoku_engine
 
 # ---------------------------------------------------------------------------
 # ③ Python 侧
+#
+# **这里不走 uv / uv.lock。** 开发环境的依赖清单（pyproject.toml + uv.lock）
+# 做全平台解析，而 i386 / armhf 上 PyPI 根本没有 PyQt5 wheel（原因见 ① 段），
+# `uv sync` 在这两个架构上必然失败。这里沿用 apt 的 python3-pyqt5 /
+# python3-numpy，pip 只补 pyinstaller 一件；Python 版本也固定是镜像的 3.11。
 # ---------------------------------------------------------------------------
 echo "---- 准备 venv ----"
 python3 -m venv --system-site-packages .venv-build

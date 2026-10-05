@@ -1,0 +1,63 @@
+# 五子棋 AI —— 依赖清单。
+#
+#     uv sync              # 运行 + 开发依赖（pytest / pyinstaller），日常开发用这个
+#     uv sync --no-dev     # 只装运行依赖
+#     uv lock              # 改完本文件后刷新 uv.lock（uv.lock 必须入库）
+#
+# **本文件不写版本约束**：这里说的是"需要什么"，uv.lock 才是"装的是哪一版、
+# 哪个平台用哪个版本"。不要手抄一份 requirements.txt —— CI、README 与开发
+# 环境都以这两份为准。
+#
+# ⚠️ Windows 上有一个与版本约束无关的坑，必须知道：
+#
+#   PyQt5 依赖 PyQt5-Qt5，而 PyQt5-Qt5 从 5.15.11 起**只发 Linux/macOS
+#   wheel** —— 最后一个带 Windows wheel 的是 5.15.2。
+#
+#     PyQt5-Qt5 5.15.2              ← 有 win_amd64
+#     PyQt5-Qt5 5.15.11 ~ 5.15.19   ← 只有 manylinux / macosx
+#
+#   uv 做全平台统一解析，若不加约束会先选中 5.15.19 并写进 uv.lock，再到
+#   Windows 上安装失败。下面 [tool.uv] 的两条约束按平台把这件事拆开：
+#   Windows 钉回 5.15.2（有轮子的最后一版），其余平台取 5.15.11 以上
+#   （反过来也成立：5.15.11 起这些平台才只有 wheel，更老的版本没有）。
+#   **两条缺一不可**：删掉 Windows 那条，Windows 装不上；删掉非 Windows
+#   那条，Linux/macOS 会被一起拖回 5.15.2。
+#
+# **Linux 打包不走 uv**（packaging/build_in_container.sh）：i386 / armhf 上
+# PyPI 没有 PyQt5 wheel，那份配方用 apt 的 python3-pyqt5，再只装 pyinstaller，
+# 因此 uv.lock 不参与打包。详细理由见该脚本 ① 段。
+
+[project]
+name = "gomoku-ai"
+# 版本号与 README 徽章（version-3.0.8）、git tag 保持一致，发布时一起改。
+# 不能用 dynamic = ["version"]：那会让 uv 调 setuptools 构建元数据，而本仓库
+# 顶层有 cpp/installer/packaging 多个目录，setuptools 的 flat-layout 自动发现
+# 会直接报错。没有代码读这个字段；打包的 APP_VERSION 由 CI 从 tag 解析。
+version = "3.0.8"
+description = "A human-vs-AI Gomoku (five-in-a-row) program with a bitboard C++17 search core"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "PyQt5",
+]
+
+[dependency-groups]
+# 开发与打包依赖。默认 `uv sync` 就会装（dev 组）。
+#
+# pytest 的标记定义与告警过滤在 pytest.ini；CI 跑 `-m "not perf"`，本地跑全量。
+# pyinstaller 用于 Windows 与 Linux AMD 打包；Linux ARM/i386 的配方用 apt 的
+# PyQt5，那份 job 只额外装 pyinstaller（见 packaging/build_in_container.sh）。
+dev = [
+    "pytest",
+    "pyinstaller",
+]
+
+[tool.uv]
+# 纯应用，项目自身没有要安装的包；只管理依赖。
+package = false
+# 见文件头「Windows 上有一个与版本约束无关的坑」。
+constraint-dependencies = [
+    "PyQt5-Qt5==5.15.2; sys_platform == 'win32'",
+    "PyQt5-Qt5>=5.15.11; sys_platform != 'win32'",
+]
