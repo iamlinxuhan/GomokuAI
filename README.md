@@ -24,6 +24,7 @@ reference for A/B comparisons.
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
 ![Version](https://img.shields.io/badge/version-3.0.8-brightgreen)
+![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
 ---
 
@@ -691,6 +692,31 @@ games** (2 / 4 / 6 / 8). The same table incidentally confirms the book is hit at
 every level (`0 ms`), and that **the Entry level's book reading is `dep=9`** —
 what the book stores is the true depth at build time, reported as-is, which is
 deliberately preserved behaviour.
+
+---
+
+## 📄 License
+
+Released under the **GNU General Public License, version 3 or later**; SPDX
+identifier `GPL-3.0-or-later`. Full text in [LICENSE](LICENSE).
+
+```
+Copyright (C) 2026 Lin Xuhan <2276677131@qq.com>
+Copyright (C) 2026 YFY0109 <yfy0109@qq.com>
+```
+
+### Why GPLv3
+
+The UI is built on **PyQt5**, which is itself released under **GPLv3** (Riverbank
+offers only GPLv3 or a commercial licence). A binary that links it is therefore
+already covered by GPLv3 as a whole, so the source licence has to agree with it —
+the GPL-2.0 text this repository previously carried had no "or later" clause,
+reading as GPL-2.0-only, which is **incompatible with a GPLv3 PyQt5**. Both
+copyright holders agreed to move to GPL-3.0-or-later.
+
+If a permissive licence (MIT, say) is ever wanted, the real path is swapping
+PyQt5 for **PySide6** (LGPL), which an MIT project may call at runtime; that
+needs an API migration (`pyqtSignal` → `Signal`, `pyqtSlot` → `Slot`, and so on).
 
 ---
 

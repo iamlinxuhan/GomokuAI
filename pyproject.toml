@@ -36,6 +36,12 @@ name = "gomoku-ai"
 version = "3.0.8"
 description = "A human-vs-AI Gomoku (five-in-a-row) program with a bitboard C++17 search core"
 readme = "README.md"
+# SPDX 标识符（PEP 639）。界面用的 PyQt5 本身以 GPLv3 发布，链接它的二进制整体
+# 受 GPLv3 约束，源码许可必须与之一致才成立 —— 此前那份 GPL-2.0 文本没有
+# "or later" 字样，按 GPL-2.0-only 解释，与 GPLv3 的 PyQt5 不兼容。理由详见
+# README 的「许可证」一节。
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "numpy",

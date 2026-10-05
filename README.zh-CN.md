@@ -16,6 +16,7 @@
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
 ![Version](https://img.shields.io/badge/version-3.0.8-brightgreen)
+![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
 ---
 
@@ -531,6 +532,29 @@ uv run pytest -q -m "not perf"       # 跳过机器速度相关的门槛（CI �
 **这正是要拉开的那条梯度，在真实对局里量出来了**（2 / 4 / 6 / 8）。同一张表
 还顺带证实了开局库在每一档都命中（`0 ms`），而**入门档的开局库读数是 `dep=9`**
 —— 库里存的是建库时的真实深度，原样上报，这是刻意保留的行为。
+
+---
+
+## 📄 许可证
+
+本项目以 **GNU 通用公共许可证第 3 版（或更新版本）** 发布，SPDX 标识符
+`GPL-3.0-or-later`。全文见 [LICENSE](LICENSE)。
+
+```
+Copyright (C) 2026 Lin Xuhan <2276677131@qq.com>
+Copyright (C) 2026 YFY0109 <yfy0109@qq.com>
+```
+
+### 为什么是 GPLv3
+
+界面基于 **PyQt5**，而 PyQt5 本身以 **GPLv3** 发布（Riverbank 只提供 GPLv3 与
+商业授权两条路）。链接它的二进制整体上本来就受 GPLv3 约束，源码许可必须与之一致
+才成立 —— 此前仓库里那份 GPL-2.0 文本没有 "or later" 字样，按 GPL-2.0-only 解释，
+**与 GPLv3 的 PyQt5 不兼容**。本项目的两位版权人一致同意改为 GPL-3.0-or-later。
+
+若将来希望改用宽松许可（如 MIT），可行的正路是把 PyQt5 换成 **PySide6**（LGPL）
+—— LGPL 允许 MIT 项目在运行时调用它；代价是一次 API 迁移
+（`pyqtSignal` → `Signal`、`pyqtSlot` → `Slot` 等）。
 
 ---
 
