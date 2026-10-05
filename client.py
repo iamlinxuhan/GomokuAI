@@ -24,8 +24,11 @@ from wire import PROTO_VERSION, WireConnection, WireError
 class LocalRoom:
     """应用内房间：``RoomServer(127.0.0.1:0)`` + 一个房间。
 
-    ``port`` 是内核分配的真实端口 —— “对局域网开放”时把这个服务端绑到
+    ``port`` 是内核分配的真实端口 —— "对局域网开放"时把这个服务端绑到
     0.0.0.0 并公布端口即可（M4c）。
+
+    ``auto_consent=True``：同进程内的对手（本地双人的另一条连接）悔棋无需
+    协商，沿用单机旧行为。专用服务器不受影响（``Room`` 默认 False）。
     """
 
     def __init__(self, black: SeatSpec, white: SeatSpec, name: str = "local",
@@ -33,7 +36,7 @@ class LocalRoom:
         self.host = host
         self.name = name
         self.server = RoomServer(host)
-        self.room = Room(name, black, white)
+        self.room = Room(name, black, white, auto_consent=True)
         self.server.add_room(self.room)
         self.port = self.server.start(0)
 

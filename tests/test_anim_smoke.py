@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import os
+import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -26,6 +27,26 @@ def qapp():
     app = QApplication.instance() or QApplication([])
     yield app
     theme.set_theme("dark", persist=False)
+
+
+class _FixedAI:
+    """房间 AI 席位替身：按行序走最近空点（冒烟不关心棋力）。
+
+    M4c 起 AI 由房间的 ``AIPlayer`` 驱动；给它一个同步的替身，对局节奏
+    才完全由测试的点击决定（与旧版 monkeypatch ``_ai_turn`` 为 no-op 的
+    目的相同）。着法刻意选在 (0,0) 起步，不会挡到玩家在 9 行的连五。
+    """
+
+    def __init__(self, spec):
+        self.spec = spec
+
+    def choose_move(self, board, stone, cancel=None):
+        for r in range(19):
+            for c in range(19):
+                if board[r][c] == 0:
+                    return r, c, {"reason": "冒烟替身", "best_val": 0.0,
+                                  "depth": 1}
+        raise RuntimeError("满盘，没有可下的位置")
 
 
 # ==================== anim 工具 ====================
@@ -98,18 +119,20 @@ def _click(board_widget, r, c):
     return _FakeClick(pt.x(), pt.y())
 
 
-def _build_game(monkeypatch, qapp, no_ai=True):
+def _build_game(monkeypatch, qapp):
+    """建一局玩家执黑 vs 脚本 AI，等开局这批房间事件处理完。"""
     import main as M
+    import room as room_module
     monkeypatch.setattr(M, "GameLogger", _DummyLogger)
+    # AI 由房间驱动：换成同步替身，对局节奏完全由测试点击决定。
+    monkeypatch.setattr(room_module, "AIPlayer", _FixedAI)
     win = M.GomokuGame()
-    if no_ai:
-        # AI 回合 no-op：对局节奏完全由测试点击决定
-        monkeypatch.setattr(win, "_ai_turn", lambda ai_stone: None)
     win.show()
     win._show_color_selection()
     win._on_color_selected(0)        # 玩家执黑
     win._on_difficulty_selected(1)
-    qapp.processEvents()
+    assert _wait(qapp, lambda: win.game_panel is not None
+                 and not win._move_in_flight), "开局事件未处理完"
     return win
 
 
@@ -119,6 +142,25 @@ def _drain(qapp, ms=300):
     t.start()
     while not t.hasExpired(ms):
         qapp.processEvents()
+
+
+def _wait(qapp, pred, timeout=3.0):
+    """轮询等待房间事件回显（M4c 起落子不再在点击调用栈里同步完成）。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        qapp.processEvents()
+        if pred():
+            return True
+        time.sleep(0.003)
+    qapp.processEvents()
+    return False
+
+
+def _click_human(qapp, win, r, c):
+    """轮到人类时点击一格（AI 思考中 / 有在途着法时先等）。"""
+    assert _wait(qapp, lambda: not win.ai_thinking
+                 and not win._move_in_flight), "等回合超时"
+    win._on_board_click(_click(win.board_widget, r, c))
 
 
 def test_game_smoke_theme_toggle(monkeypatch, qapp):
@@ -154,18 +196,17 @@ def test_game_smoke_stone_anim_and_undo(monkeypatch, qapp):
     win = _build_game(monkeypatch, qapp)
     try:
         bw = win.board_widget
-        win._on_board_click(_click(bw, 9, 9))
-        qapp.processEvents()
+        _click_human(qapp, win, 9, 9)
+        assert _wait(qapp, lambda: bw.board[9][9] == 1), "玩家落子未回显"
         assert bw._anim is not None, "落子应启动覆盖式动画"
-        assert bw.board[9][9] == 1
 
         # 悔棋：set_last_move(None) 应取消在途动画（stop 不发 finished，
         # 收尾由 _cancel_stone_anim 手动完成）
         win._on_undo()
-        qapp.processEvents()
+        assert _wait(qapp, lambda: win.move_count == 0
+                     and bw.board[9][9] == 0), "悔棋未回退"
         assert bw._anim is None
         assert bw._anim_cell is None
-        assert bw.board[9][9] == 0
         _drain(qapp)
     finally:
         win._on_quit()
@@ -179,8 +220,14 @@ def test_game_smoke_win_line_highlight(monkeypatch, qapp):
     try:
         bw = win.board_widget
         for c in range(4, 9):          # 玩家在 (9,4..8) 连成五
-            win._on_board_click(_click(bw, 9, c))
-            qapp.processEvents()
+            _click_human(qapp, win, 9, c)
+            if c < 8:
+                n = 2 * (c - 3)        # 玩家 + AI 应答
+                assert _wait(qapp, lambda n=n: win.move_count >= n), \
+                    "第 %d 回合未完成" % (c - 3)
+            else:
+                assert _wait(qapp, lambda: win.game_over and bw.win_cells), \
+                    "五连未判胜/未高亮"
         assert win.game_over
         cells = win_line(win.board, 1)
         assert len(cells) >= 5

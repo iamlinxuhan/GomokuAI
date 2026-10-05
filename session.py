@@ -40,7 +40,9 @@ class MoveResult:
 @dataclass
 class UndoResult:
     removed: int
-    #: AI 先手只走了天元：撤掉后需要立刻重下（由 UI 调 ``_ai_first_move``）。
+    #: AI 先手只走了天元：撤掉后需要立刻重下。这是旧 UI 政策（``undo()``）
+    #: 的产物；M4c 起主流程走房间，重下由 ``room.py`` 的 ``_recheck`` 触发，
+    #: 本字段只留给 ``Session.undo()`` 的调用方（测试）。
     replay_opening: bool = False
 
 

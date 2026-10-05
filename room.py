@@ -41,7 +41,8 @@ class SeatSpec:
 
 
 class Room:
-    def __init__(self, name: str, black: SeatSpec, white: SeatSpec):
+    def __init__(self, name: str, black: SeatSpec, white: SeatSpec,
+                 *, auto_consent: bool = False):
         self.name = name
         self.specs = {1: black, 2: white}
         self.session = Session()
@@ -50,6 +51,10 @@ class Room:
         self.result = None              # {"winner","reason","moves"}
         self.started = False
         self.done = threading.Event()
+        #: 远程对手的悔棋是否自动同意。应用内房间（``LocalRoom``）为 True：
+        #: 两个客户端都在同一进程里，沿用单机"悔棋直接生效"的旧行为；
+        #: 专用服务器的远程对手保持 False，走 M4d 的协商流程。
+        self.auto_consent = bool(auto_consent)
         self._conns = {1: None, 2: None}     # stone -> WireConnection
         self._members = []                   # [(conn, stone), ...]
         self._queues = {1: queue.Queue(), 2: queue.Queue()}
@@ -131,8 +136,10 @@ class Room:
     def submit_undo_request(self, stone: int) -> None:
         """悔棋申请。
 
-        对手是服务端 AI → **立即同意**（单机内置房间走这条）；
-        对手是远程玩家 → 协商尚未实现（M4d），明确回错而不是静默忽略。
+        对手是服务端 AI → **立即同意**（单机内置房间走这条）；对手是同一
+        进程内的本地房间成员（``auto_consent``）→ 同样立即同意（本地双人
+        沿用单机旧行为）；其余远程对手 → 协商尚未实现（M4d），明确回错而
+        不是静默忽略。
         """
         if stone not in self.specs:
             raise WireError("bad_seat", "未知席位")
@@ -141,7 +148,7 @@ class Room:
                 raise WireError("undo_unavailable", "对局已结束")
             if not self.session.can_undo():
                 raise WireError("undo_unavailable", "没有可悔的棋")
-            if self.specs[3 - stone].kind != "ai":
+            if self.specs[3 - stone].kind != "ai" and not self.auto_consent:
                 raise WireError("undo_needs_consent",
                                 "远程对手的悔棋协商尚未实现")
             plan = self._undo_plan(stone)
@@ -160,11 +167,17 @@ class Room:
         * 最后一手是请求方自己的 → 撤 1；
         * 否则（对手刚落子）：请求方已经下过 → 撤 2（自己那手 + 对手回应）；
         * 请求方一手未下（对手先手）→ 撤 1，让对手重下。
+
+        最后一手的颜色由 **move_count 奇偶**推出（黑先交替），不读
+        ``session.last_move`` —— 后者在 ``rewind`` 之后会被清空（那是给 UI
+        清最后一手环用的），用它判断会让"悔棋后立刻再悔一次"被误判成
+        "没有可悔的棋"（M4c 的连续悔棋用例正好走到这条路径）。
         """
         count = self.session.move_count
-        if count == 0 or self.session.last_move is None:
+        if count == 0:
             return None
-        if self.session.last_move[2] == stone:
+        last_stone = 1 if count % 2 == 1 else 2
+        if last_stone == stone:
             return 1
         mine = (count + 1) // 2 if stone == 1 else count // 2
         return 1 if mine == 0 else 2
@@ -243,7 +256,11 @@ class Room:
         if spec.kind == "ai":
             board = self.session.board.copy()
             player = AIPlayer(PlayerSpec("ai", level=spec.level))
-            r, c, info = player.choose_move(board, stone)
+            # 把房间的中止信号作为**协作取消**传下去（与旧 AIWorker 同一条
+            # 协议）：重开/退出时连接断开 → detach → `_stop` 置位 → 搜索在
+            # 下一次节点轮询就退出，而不是跑满时间预算后还占着进程内的 AI
+            # 互斥锁，让同进程的下一局 reset_engine 一直等它。
+            r, c, info = player.choose_move(board, stone, cancel=self._stop)
             with self._game_lock:
                 if self._recheck:
                     return _RECHECK

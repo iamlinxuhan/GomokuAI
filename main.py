@@ -16,8 +16,8 @@ from PyQt5.QtWidgets import (
     QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea
 )
 from PyQt5.QtCore import (
-    Qt, QTimer, QThread, pyqtSignal, QRect, QPoint, QPointF,
-    QElapsedTimer, QEasingCurve, QVariantAnimation
+    Qt, QTimer, QThread, QObject, QAbstractAnimation, pyqtSignal, QRect,
+    QPoint, QPointF, QElapsedTimer, QEasingCurve, QVariantAnimation
 )
 from PyQt5.QtGui import (
     QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent, QIcon
@@ -30,10 +30,11 @@ import charts
 import engine
 import theme
 from board_geometry import BoardGeometry
+from client import LocalRoom, RoomClient
 from engine import (BOARD_SIZE, Board, evaluate, is_mate,
-                    new_game, opening_move)
+                    new_game, win_line)
 from gamelog import GameLogger
-from players import AIPlayer, PlayerSpec
+from room import SeatSpec
 from session import Session
 from ui_kit import (BrandMark, InfoRow, Screen, StoneFace, TurnIndicator,
                     button, card_button, faint_label, hbox, separator,
@@ -136,6 +137,22 @@ class AIWorker(QThread):
                                         'detail': f'{type(exc).__name__}: {exc}'})
             return
         self.finished.emit(r, c, info)
+
+
+# ==================== 房间事件桥 ====================
+class _RoomBridge(QObject):
+    """房间事件 → Qt 主线程的跨线程投递桥（M4c）。
+
+    ``RoomClient`` 在读取线程上调用 ``on_event``；``pyqtSignal.emit`` 的默认
+    ``AutoConnection`` 会在发射线程与接收对象所属线程不同时自动排队
+    （queued），所以 ``GomokuGame._on_room_event`` 总在 Qt 主线程执行 —— UI
+    可以在槽里安全地碰控件，不必自己写 ``QMetaObject.invokeMethod``。
+
+    每次开局新建一座桥（见 ``_close_room``）：连接断开时把它整座拆掉，
+    迟到的 emit 只会静默落在无人监听的信号上，不会碰到已销毁的对局 UI。
+    """
+
+    event = pyqtSignal(object)
 
 
 # ==================== 复盘 Worker 线程 ====================
@@ -1455,6 +1472,19 @@ class GameOverOverlay(Screen):
         self.add_content(hbox(*btns, spacing=theme.SPACE_LG))
 
 
+def _stop_animations(root) -> None:
+    """停掉控件树里所有在跑的 ``QAbstractAnimation``。
+
+    删除页面/窗口前**必须**先停动画：动画的 target（``QGraphicsOpacityEffect``
+    等）与动画对象都是页面的子对象，而 Qt 删除子对象的顺序不保证动画先于
+    target 析构 —— 动画若在 target 被删之后还跑一拍或析构，就会碰到悬空的
+    target，在本机表现为原生崩溃（0xC0000005）。``anim.fade_in`` 是
+    ``DeleteWhenStopped`` 且调用方不留引用，所以只能从控件树里找出来停。
+    """
+    for child in root.findChildren(QAbstractAnimation):
+        child.stop()
+
+
 # ==================== 主窗口 ====================
 class GomokuGame(QMainWindow):
     """主游戏窗口"""
@@ -1530,14 +1560,27 @@ class GomokuGame(QMainWindow):
         self.ai_thinking = False
 
         # AI Worker
-        self.ai_worker = None
-        self._ai_generation = 0     # 每次发起搜索递增，用于丢弃陈旧结果
+        self.ai_worker = None       # M4c 起主流程不再启动；保留字段兼容冒烟脚本
+
+        # ---- 单机房间（M4c）----
+        # UI 不再是规则真源，只通过 RoomClient 接入应用内的 LocalRoom：人机局
+        # 一个客户端（人类席位），本地双人局两个客户端（黑/白各一条）。事件
+        # 由 _RoomBridge 排队投递回主线程，见 _on_room_event / _close_room。
+        self._room = None           # LocalRoom 或 None
+        self._room_bridge = None    # _RoomBridge 或 None
+        self._room_clients = {}     # stone -> RoomClient（本 UI 持有的席位）
+        self._room_finished = False  # game_over 只收尾一次（双客户端会收到两份）
+        self._last_undo = None      # (by, move_no)，undo_applied 去重
+        self._move_in_flight = False  # 已发着法、等回显，防止连点重复提交
+        # 人类回合开始时（turn 事件）的棋盘快照：复盘 human_moves 的
+        # ``before`` 就取它，语义是"落子前"，与旧版逐字一致。
+        self._pending_snapshot = None
 
         # 复盘 Worker（与 AI Worker 同一套收尾方式，见 ``_cancel_review``）
         self.review_worker = None
-        # 复盘代数：只在"拆页面"时递增，用来丢弃迟到的 ``completed``。与
-        # ``_ai_generation`` 同一个用途 —— 等待有超时上限，超时后线程仍会把
-        # 结果投递回来，而那一刻页面可能已经不存在了。
+        # 复盘代数：只在"拆页面"时递增，用来丢弃迟到的 ``completed`` ——
+        # 等待有超时上限，超时后线程仍会把结果投递回来，而那一刻页面可能
+        # 已经不存在了（与房间事件用"断开信号 + 页面判空"是同一个目的）。
         self._review_generation = 0
 
         # 复盘得到的结果列表（``ReviewWorker.completed`` 的入参），供结果页读取
@@ -1691,7 +1734,7 @@ class GomokuGame(QMainWindow):
         抛 ``RuntimeError: wrapped C/C++ object has been deleted``，而它通常
         发生在 Qt 槽里 —— 直接崩。
 
-        调用方必须**先** ``_cancel_ai()``：AI 线程的结果回调会碰棋盘状态，
+        调用方必须**先** ``_close_room()``：房间事件的回调会碰棋盘状态，
         在已删除的 widget 上写日志会抛 ValueError。
         """
         # 先掐掉在途的终局遮罩。延迟这一秒里玩家完全可能已经点了"重新开始"，
@@ -1704,6 +1747,9 @@ class GomokuGame(QMainWindow):
                      "review_board"):
             page = getattr(self, attr, None)
             if page is not None:
+                # 先停页面树里的在途动画（fade_in / 落子 / 脉动）再删 ——
+                # 快速重开时 180ms 的淡入往往没跑完，见 _stop_animations。
+                _stop_animations(page)
                 self.central.removeWidget(page)
                 page.deleteLater()
         # board_widget / game_panel / overlay 是 game_widget 的子控件，
@@ -1779,7 +1825,11 @@ class GomokuGame(QMainWindow):
         self._start_game()
 
     def _start_game(self):
-        """初始化游戏"""
+        """初始化游戏：先拆旧房间，再建本局的 LocalRoom + RoomClient。"""
+        # 上一局的房间必须整只拆掉：它可能还有在跑的 AI 搜索、在途事件与
+        # 日志写入。先拆再建，保证本局收到的每个事件都来自新房间。
+        self._close_room()
+
         # 关闭上局日志
         if self.logger:
             self.logger.close()
@@ -1796,24 +1846,34 @@ class GomokuGame(QMainWindow):
         self.logger.f.write(f"  引擎: {engine.binary_path() or 'C++ 不可用，将用本地 Python 引擎'}\n\n")
         self.logger.f.flush()
 
-        # 配置本局会话（模式 + 石色），再清空状态。playmode/gamemode 只是
-        # UI 侧的选择，进入会话后翻译成 mode 与 human_stone，下游不再各算各的。
+        # 配置本局会话（模式 + 石色）与两个席位。这里的 session 是 UI 侧的
+        # **镜像**：规则真源在房间的 Session 里，本会话只保存由事件回放出来的
+        # 状态，供渲染与复盘读取（字段级兼容垫片也指向它）。
         if self.playmode == 1:
             self.session.configure("pvp")
+            black_spec = SeatSpec("remote")
+            white_spec = SeatSpec("remote")
         else:
             human = 1 if self.gamemode == 0 else 2
             self.session.configure("ai", human_stone=human, ai_stone=3 - human)
+            if self.gamemode == 0:
+                black_spec, white_spec = SeatSpec("remote"), \
+                    SeatSpec("ai", level=self.gamekunnan)
+            else:
+                black_spec, white_spec = SeatSpec("ai", level=self.gamekunnan), \
+                    SeatSpec("remote")
         self.session.reset()
         self.ai_thinking = False
         self.review_records = []
+        self._room_finished = False
+        self._last_undo = None
+        self._move_in_flight = False
+        self._pending_snapshot = None
 
-        # 清空引擎的跨局面状态（置换表 / history / killer）。
-        # 原版在这里重建 main.py 的模块级全局；引擎改为提供显式入口，
-        # 状态不再散落在模块级别。
+        # 清空引擎的跨局面状态（置换表 / history / killer）。房间的对局线程
+        # 启动时也会 reset_engine()；这里保留是为了让"新局"的语义在 UI 侧也
+        # 成立（本地 Python 降级路径共享同一份全局状态）。
         new_game()
-        # 代数只增不减：重置回 0 反而危险 —— 上一局某个"迟到"的结果可能正好
-        # 持有重置后才会出现的编号，于是被当成当前局的合法结果放行。
-        self._ai_generation += 1     # 新局作废上一局的一切在途结果
 
         # 构建游戏界面
         self._build_game_ui()
@@ -1822,6 +1882,35 @@ class GomokuGame(QMainWindow):
         # AI，这一行不写（标题保持默认）。
         if self.playmode == 0:
             self.game_panel.set_ai_player(2 if self.gamemode == 0 else 1)
+
+        # 建房间并接入。**必须排在 `_build_game_ui` 之后**：`connect` 会同步
+        # 触发 welcome 事件，处理它时棋盘与面板必须已经在。
+        #
+        # 人机局只有一个客户端（人类席位），AI 席位由房间自己算；本地双人局
+        # 两个席位都是 remote，于是两条 RoomClient 从同一进程接入 —— 恰好也
+        # 走一遍"两个客户端坐进一个房间"的联机路径。
+        try:
+            self._room = LocalRoom(black_spec, white_spec)
+            self._room_bridge = _RoomBridge()
+            self._room_bridge.event.connect(self._on_room_event)
+            if self.playmode == 1:
+                for seat, stone in (("black", 1), ("white", 2)):
+                    client = RoomClient(on_event=self._room_bridge.event.emit)
+                    client.connect(self._room.host, self._room.port,
+                                   self._room.name, seat)
+                    self._room_clients[stone] = client
+            else:
+                seat = "black" if self.session.human_stone == 1 else "white"
+                client = RoomClient(on_event=self._room_bridge.event.emit)
+                client.connect(self._room.host, self._room.port,
+                               self._room.name, seat)
+                self._room_clients[self.session.human_stone] = client
+        except Exception as exc:                    # noqa: BLE001
+            # 本机 loopback 理论上不会失败；真失败时给出可见的错误并退回模式
+            # 选择页，而不是留在"看着能下、点了没反应"的假对局页上。
+            print(f"[房间] 启动失败: {type(exc).__name__}: {exc}")
+            self._close_room()
+            self._show_mode_selection()
 
     def _build_game_ui(self):
         """构建游戏主界面。
@@ -1892,10 +1981,6 @@ class GomokuGame(QMainWindow):
 
         self._update_panel()
 
-        # AI先手（本地对战没有 AI，永远黑先、由玩家点第一手）
-        if self.playmode == 0 and self.gamemode == 1:
-            self._ai_first_move()
-
     def _on_toggle_theme(self):
         """面板上的主题切换：换调色板 → QSS 重装 → 按钮图标翻转。
 
@@ -1905,30 +1990,13 @@ class GomokuGame(QMainWindow):
         theme.toggle_theme()
         self.game_panel.update_theme_button()
 
-    def _ai_first_move(self):
-        """AI先手的第一着，由 engine.opening_move 决定（确定性，无随机）。"""
-        if not self.session.opening_done:
-            # 这一手不经过 engine.ai_move（所以指示器不会自动更新），但面板上
-            # 该显示的仍然是「开局库」：它是查表得来的天元，既不是 C++ 也不是
-            # 降级后的 Python。不记的话这一行的初始值会一直是「—」。
-            engine.note_book()
-            mv = opening_move(self.board, 1)
-            if mv is None:                      # 理论上不会发生
-                mv = (BOARD_SIZE // 2, BOARD_SIZE // 2)
-            r, c = mv
-            self.session.apply_opening_move(r, c)
-            self.board_widget.set_board(self.board)
-            self.board_widget.set_last_move(r, c, 1)
-            self._record_score(None)
-            if self.logger:
-                self.logger.log_ai(self.move_count, 1, r, c,
-                    {'reason': 'AI先手-开局着法',
-                     'detail': GameLogger.coord_to_sgf(r, c)})
-            self._update_panel()
-
     def _on_board_click(self, event: QMouseEvent):
-        """处理棋盘点击"""
-        if self.game_over or self.ai_thinking:
+        """处理棋盘点击：只做前置检查，然后把着法交给对应的人类客户端。
+
+        M4c 起 UI 不再自己落子/判胜 —— 规则与调度全在房间，本地提交后等
+        ``move``/``state`` 事件回显（``_move_in_flight`` 拦住回显前的连点）。
+        """
+        if self.game_over or self.ai_thinking or self._move_in_flight:
             return
 
         pos = self.board_widget.get_grid_pos(event.x(), event.y())
@@ -1938,104 +2006,205 @@ class GomokuGame(QMainWindow):
         if self.board[r][c] != 0:
             return
 
-        # 落子、快照、判胜/判和全部在 Session 里（唯一规则真源）。
-        res = self.session.apply_human_move(r, c)
-        if res is None:
-            return
-        player_stone = res.stone
+        if self.playmode == 1:
+            # 本地双人：黑先交替，按手数奇偶决定这一手属于哪条连接。
+            stone = 1 if self.move_count % 2 == 0 else 2
+            client = self._room_clients.get(stone)
+        else:
+            client = self._room_clients.get(self.session.human_stone)
+        if client is None:
+            return                  # 房间没起来：别在假对局上继续操作
+
+        # 先置在途标记再发送：回显到达前连点会被开头那个检查拦住，不会把
+        # 同一手重复提交给房间。
+        self._move_in_flight = True
+        try:
+            client.move(r, c)
+        except RuntimeError:
+            # 连接已断（重开/退出路径）：恢复交互，让用户可以重试或离开。
+            self._move_in_flight = False
+
+    # ------------------------------------------------------------------
+    # 房间事件（M4c）
+    #
+    # UI 不再自己落子/判胜/悔棋，只把房间事件镜像到 Session 与控件上。
+    # 槽都在 Qt 主线程执行（跨线程投递见 ``_RoomBridge``）。
+    # ------------------------------------------------------------------
+
+    def _on_room_event(self, ev):
+        """房间事件的唯一入口（分派）。"""
+        t = ev.get("type")
+        if t in ("welcome", "state"):
+            self._on_room_state(ev)
+        elif t == "move":
+            self._on_room_move(ev)
+        elif t == "turn":
+            self._on_room_turn(ev)
+        elif t == "game_over":
+            self._on_room_game_over(ev)
+        elif t == "undo_applied":
+            self._on_room_undo_applied(ev)
+        elif t == "error":
+            # 服务器权威拒绝（非法着法 / 悔棋不可用 / 协议错）。UI 从未改过
+            # 状态，只需恢复可交互并把原因打出来；房间每次拒绝都带明确 code。
+            self._move_in_flight = False
+            print(f"[房间] {ev.get('code')}: {ev.get('message')}")
+
+    def _on_room_state(self, ev):
+        """welcome / state：全量同步（入座、开局、每次落子后、悔棋后）。"""
+        if self.board_widget is None or self.game_panel is None:
+            return                  # 页面已拆：丢掉迟到的排队事件
+
+        move_no = int(ev.get("move_no", 0))
+        result = int(ev.get("result", 3))
+
+        if move_no < self.move_count:
+            # 悔棋后的回退：历史与复盘快照都剪到这一步，最后一手环清掉。
+            del self.move_history[move_no:]
+            self.human_moves = [m for m in self.human_moves
+                                if m["seq"] <= move_no]
+            self.session.last_move = None
+            self.board_widget.set_last_move(None, None, None)
+        elif move_no > self.move_count:
+            # 理论上 state 不会领先 move 事件；真出现时用当前盘面补齐历史，
+            # 保住"图表序列与 move_history 严格同长"这条不变量。
+            self.move_history.extend(
+                [self.board.copy()] * (move_no - self.move_count))
+
+        self.session.board = np.array(ev["board"], dtype=int)
+        self.session.move_count = move_no
+        self.session.winner = int(ev.get("winner", 0))
+        if result == 3:
+            self.session.gamerule = 3
+            self.session.game_over = False
+        elif result == 0:
+            # 平局：与旧 UI 的判和口径一致（winner=0）。
+            self.session.gamerule = 0
+            self.session.winner = 0
+            self.session.game_over = True
+        else:
+            # 有人赢：房间的 Session 是 pvp（result 只到 2），"谁赢了"看
+            # winner 与 UI 侧 playmode/石色的关系，重放成人机/本地对战的
+            # 既有口径（AI 赢 = 1、人赢 = 2、本地对战都是 2）。
+            self.session.game_over = True
+            if self.playmode == 1:
+                self.session.gamerule = 2
+            elif self.session.winner == self.session.ai_stone:
+                self.session.gamerule = 1
+            else:
+                self.session.gamerule = 2
 
         self.board_widget.set_board(self.board)
-        self.board_widget.set_last_move(r, c, player_stone)
-        self._record_score(None)
-        if self.logger:
-            self.logger.log_human(self.move_count, player_stone, r, c)
-            # 每隔约5步记录一次完整棋盘状态
-            if self.move_count % 5 == 1 or self.move_count <= 3:
-                self.logger.log_board_state(self.move_count, self.board)
+        self._move_in_flight = False
         self._update_panel()
 
-        # 检查落子方是否获胜
-        if res.outcome == "win":
-            self.board_widget.set_win_cells(res.line, player_stone)
-            self._finish_win_or_lose()
+    def _on_room_move(self, ev):
+        """move：镜像一手（棋盘 / 最后一手 / 历史 / 日志 / 追分）。"""
+        if self.board_widget is None or self.game_panel is None:
             return
-
-        # 检查平局
-        if res.outcome == "draw":
-            self._show_game_over()
+        move_no = int(ev.get("move_no", self.move_count + 1))
+        if move_no <= self.move_count:
+            # 本地双人局 UI 持有两条连接，同一手会收到两份 —— 只认第一份。
             return
+        r, c, stone = int(ev["r"]), int(ev["c"]), int(ev["stone"])
+        self.board[r][c] = stone
+        self.session.move_count = move_no
+        self.session.last_move = (r, c, stone)
+        self.move_history.append(self.board.copy())
+        self._move_in_flight = False
 
-        # AI回合（本地对战没有这一回合，等对手点下一手）
+        self.board_widget.set_board(self.board)
+        self.board_widget.set_last_move(r, c, stone)
+
+        if self.playmode == 1 or stone == self.session.human_stone:
+            # 人类着法（本地双人局两边都是人类）。
+            if self.logger:
+                self.logger.log_human(move_no, stone, r, c)
+                # 每隔约5步记录一次完整棋盘状态
+                if move_no % 5 == 1 or move_no <= 3:
+                    self.logger.log_board_state(move_no, self.board)
+            if self.playmode == 0:
+                # 复盘快照：before 是**这一手落子前**的局面，来自人类回合的
+                # turn 事件；seq 就是这一手的 move_no（与旧版逐字一致）。
+                before = self._pending_snapshot
+                if before is not None:
+                    self.human_moves.append({
+                        "seq": move_no, "r": r, "c": c, "before": before,
+                    })
+                self._pending_snapshot = None
+        else:
+            # AI 着法。f.closed 是纵深防御：房间关闭与事件投递之间的窗口里
+            # 往已关闭文件写会抛 ValueError —— 在 Qt 槽里传播就是直接崩。
+            info = ev.get("info")
+            if self.logger and not self.logger.f.closed:
+                if info is None:
+                    info = {'reason': '未知'}
+                self.logger.log_ai(move_no, stone, r, c, info)
+                # 每隔约5步记录棋盘状态（与人类步数错开）
+                if move_no % 5 == 0 or info.get('reason') in ('威胁检测', '搜索-发现必胜'):
+                    self.logger.log_board_state(move_no, self.board,
+                        f"AI={info.get('reason','')}")
+
+        self._record_score(ev.get("info"))
+        self._update_panel()
+
+    def _on_room_turn(self, ev):
+        """turn：轮到谁。人机局借此维护"思考中"与复盘快照；双人局恒空闲。"""
+        if self.game_panel is None:
+            return
+        stone = int(ev["stone"])
         if self.playmode == 0:
-            self._ai_turn(self.session.ai_stone)
-
-    def _ai_turn(self, ai_stone):
-        """AI回合"""
-        self.ai_thinking = True
-        self.game_panel.show_thinking(True, ai_stone)
-        self.game_panel.undo_btn.setEnabled(False)
-
-        self._ai_generation += 1
-        gen = self._ai_generation
-        # 档位 → 玩家对象；AIWorker 只负责线程与取消，出招在 Player 里。
-        player = AIPlayer(PlayerSpec("ai", level=self.gamekunnan))
-        self.ai_worker = AIWorker(self.board, player, ai_stone)
-        self.ai_worker.finished.connect(
-            lambda r, c, info, g=gen: self._on_ai_finished(r, c, info, g))
-        self.ai_worker.start()
-
-    def _on_ai_finished(self, r, c, info=None, generation=None):
-        """AI落子完成。
-
-        generation 校验：重开局或悔棋会让上一局的 worker 结果"迟到"到达，
-        不丢弃的话就会把旧局的棋子落到新棋盘上。
-        """
-        if generation is not None and generation != self._ai_generation:
-            return          # 陈旧结果，丢弃
-        if r < 0 or c < 0:
-            # 引擎返回了错误哨兵
+            is_ai = (stone == self.session.ai_stone)
+            self.ai_thinking = is_ai
+            self.game_panel.show_thinking(is_ai, stone)
+            self.game_panel.undo_btn.setEnabled(not is_ai)
+            if not is_ai:
+                # 人类落子前的局面：move 事件记录 human_moves 时取它。
+                self._pending_snapshot = self.board.copy()
+        else:
             self.ai_thinking = False
             self.game_panel.show_thinking(False)
-            self.game_panel.undo_btn.setEnabled(True)
-            print(f"[AI异常] {(info or {}).get('detail', '')}")
-            return
-        self.ai_thinking = False
-        self.game_panel.show_thinking(False)
-        self.game_panel.undo_btn.setEnabled(True)
-
-        res = self.session.apply_ai_move(r, c)
-        if res is None:
-            return
-        ai_stone = res.stone
-
-        self.board_widget.set_board(self.board)
-        self.board_widget.set_last_move(r, c, ai_stone)
-        self._record_score(info)
-
-        # 记录AI决策日志。
-        # 额外判一次 f.closed 是纵深防御：代数校验已经保证陈旧结果到不了这里，
-        # 但真到了的话，往已关闭文件写会抛 ValueError —— 异常在 Qt 槽里传播
-        # 会直接让整个程序崩溃。宁可少写一行日志，也不能崩掉用户的对局。
-        if self.logger and not self.logger.f.closed:
-            if info is None:
-                info = {'reason': '未知'}
-            self.logger.log_ai(self.move_count, ai_stone, r, c, info)
-            # 每隔约5步记录棋盘状态（与人类步数错开）
-            if self.move_count % 5 == 0 or info.get('reason') in ('威胁检测', '搜索-发现必胜'):
-                self.logger.log_board_state(self.move_count, self.board,
-                    f"AI={info.get('reason','')}")
-
+        # 指示卡文案与悬停预览由 _update_panel 刷新：AI 回合结束、人类回合
+        # 开始时必须跑一次，否则面板会停在"AI 行动中"。
         self._update_panel()
 
-        # 检查AI是否获胜
-        if res.outcome == "win":
-            self.board_widget.set_win_cells(res.line, ai_stone)
-            self._finish_win_or_lose()
+    def _on_room_game_over(self, ev):
+        """game_over：终局收尾。两条连接可能各收到一份，只处理一次。"""
+        if self._room_finished or self.board_widget is None:
             return
+        self._room_finished = True
+        winner = int(ev.get("winner", 0))
+        self.session.winner = winner
+        self.session.game_over = True
+        if winner == 0:
+            self.session.gamerule = 0
+        elif self.playmode == 1:
+            self.session.gamerule = 2
+        elif winner == self.session.ai_stone:
+            self.session.gamerule = 1
+        else:
+            self.session.gamerule = 2
 
-        # 检查平局
-        if res.outcome == "draw":
+        if winner:
+            # 连五高亮 + 延迟遮罩（面板立刻停表，见 _finish_win_or_lose）。
+            cells = win_line(self.board, winner)
+            self.board_widget.set_win_cells(cells, winner)
+            self._finish_win_or_lose()
+        else:
+            # 平局没有连五可看，不套 GAME_OVER_DELAY_MS（与旧行为一致）。
             self._show_game_over()
+
+    def _on_room_undo_applied(self, ev):
+        """undo_applied：图表立即回退；棋盘等紧随其后的 state 全量同步。"""
+        key = (ev.get("by"), ev.get("move_no"))
+        if key == self._last_undo:
+            return                  # 本地双人两条连接收到的同一份，去重
+        self._last_undo = key
+        # UI 不再自己管悔棋政策，但面板要报"还剩几次"：房间成功悔棋一次，
+        # 双方共同消耗一次预算（与 Session 的 output 计数同源）。
+        self.session.output = max(0, self.output - 1)
+        if self.game_panel is not None:
+            self.game_panel.truncate_series(int(ev["move_no"]))
 
     def _record_score(self, info=None):
         """把一个分值挂进面板的两张图。**三个 `move_history.append` 各调一次。**
@@ -2072,42 +2241,31 @@ class GomokuGame(QMainWindow):
             self.game_panel.set_readout("")
 
     def _on_undo(self):
-        """悔棋：撤几步、上限、AI 先手的特例，全部由 Session 的政策决定。"""
-        if self.game_over or self.ai_thinking:
-            return
-        undo = self.session.undo()
-        if undo is None:
-            return
+        """悔棋：把申请交给对应的人类客户端，撤几步由房间政策决定。
 
-        # 图表序列与 move_history 严格同长（唯一截断点）。
-        self.game_panel.truncate_series(len(self.move_history))
-
-        if undo.replay_opening:
-            # AI 先手只走了天元：撤掉后立刻重下。_ai_first_move 自己会
-            # _record_score(None) / 落盘 / 刷新面板，所以这里不补。
-            self._ai_first_move()
-            self.board_widget.set_board(self.board)
-            self._update_panel()
+        * 人机局 → 人类席位那条连接；房间对 AI 对手立即同意（撤到请求方
+          上一次落子之前，见 ``room.py``），AI 先手被撤会重下天元；
+        * 本地双人 → 最后一手所属的连接（黑先交替，看 move_count 奇偶）。
+        """
+        if self.game_over or self.ai_thinking or self._move_in_flight:
             return
-
-        self.board_widget.set_board(self.board)
-        self.board_widget.set_last_move(None, None, None)
-        self._update_panel()
+        # 上限由房间兜底，但 UI 先拦一道：额度用尽的悔棋静默无动作，与旧版
+        # 一致，也不会向房间白白请示一次。
+        if self.output <= 0:
+            return
+        if self.playmode == 1:
+            stone = 1 if self.move_count % 2 == 1 else 2   # 最后一手是谁下的
+            client = self._room_clients.get(stone)
+        else:
+            client = self._room_clients.get(self.session.human_stone)
+        if client is not None:
+            client.undo_request()
 
     def _cancel_ai(self):
-        """协作式取消正在运行的 AI 搜索并等待其退出。
-
-        不用 QThread.terminate()：那会在任意字节码处强杀线程，搜索正在做
-        make/unmake 时被杀死会留下不一致状态。配合引擎的取消轮询，
-        正常应在一次节点轮询之内退出，这里给 3 秒余量。
-
-        **先递增代数再等待**，这一步不能省：等待有超时上限，而引擎此刻未必
-        实现了取消轮询（Phase 1 就是如此）。超时后线程仍在跑，它的结果稍后
-        会作为信号投递回来 —— 那个时刻对局可能已经被重开、日志文件已经关闭，
-        于是写日志直接抛 ValueError（在 Qt 槽里会一路冒泡成崩溃）。
-        递增代数让这份迟到的结果在 `_on_ai_finished` 入口就被丢弃。
+        """兼容垫片（M4c）：AIWorker 已退出主流程，房间搜索由 ``_close_room``
+        收尾。保留这个方法只因为 ``tools/gui_smoke.py`` 仍会调用它；这里不再
+        启动任何线程，正常情况下 ``ai_worker`` 恒为 None。
         """
-        self._ai_generation += 1     # 立刻作废所有在途结果，早于下面可能超时的等待
         w = self.ai_worker
         if w is not None and w.isRunning():
             w.cancel()
@@ -2116,13 +2274,44 @@ class GomokuGame(QMainWindow):
         self.ai_worker = None
         self.ai_thinking = False
 
+    def _close_room(self):
+        """拆掉当前房间：关连接 → 断桥 → 停服务端。
+
+        顺序是刻意的：
+
+        1. 先关 ``RoomClient``（reader 线程 join，最多 1s）。读取线程就此
+           停止发射；随后再断开 Qt 信号，避免"disconnect 与 emit 并发"这个
+           PyQt 的跨线程竞态窗口。连接断开后 server 的处理线程会 ``detach``，
+           房间对局线程随之退出（daemon，即使还在搜索也不挡住退出）；
+        2. 断开桥并置空：迟到的排队事件在槽里遇到已置空的页面会直接返回；
+        3. 最后停监听并复位本局状态，下一次 ``_start_game`` 从零新建。
+        """
+        for client in self._room_clients.values():
+            client.close()
+        self._room_clients = {}
+        bridge, self._room_bridge = self._room_bridge, None
+        if bridge is not None:
+            try:
+                bridge.event.disconnect()
+            except TypeError:
+                pass                # 本来就没有连接
+        room, self._room = self._room, None
+        if room is not None:
+            room.stop()
+        self.ai_worker = None
+        self.ai_thinking = False
+        self._move_in_flight = False
+        self._pending_snapshot = None
+        self._room_finished = False
+        self._last_undo = None
+
     def _on_restart(self):
         """重新开始：回到**模式选择**，与新开局的第一步一致。
 
         旧版直接回颜色页，等于把"跟谁下"这个问题跳过去 —— 上一局是本地对战
         的话，重开一局会莫名其妙地变成人机对战。
         """
-        self._cancel_ai()
+        self._close_room()
         self._cancel_review(discard=True)
         if self.logger:
             # 打包版不写日志，`filepath` 是 None —— 别报一个"已保存:None"。
@@ -2159,8 +2348,8 @@ class GomokuGame(QMainWindow):
             self.review_worker = None
 
     def _on_review_clicked(self):
-        """从终局遮罩进入复盘：先彻底拆掉对局 UI，再问强度。"""
-        self._cancel_ai()
+        """从终局遮罩进入复盘：先彻底拆掉对局 UI（含房间），再问强度。"""
+        self._close_room()
         self._cancel_review(discard=True)
         if self.logger:
             if self.logger.filepath:
@@ -2254,7 +2443,7 @@ class GomokuGame(QMainWindow):
 
     def _on_quit(self):
         """退出"""
-        self._cancel_ai()
+        self._close_room()
         self._cancel_review(discard=True)
         if self.logger:
             try:
@@ -2264,15 +2453,17 @@ class GomokuGame(QMainWindow):
         self.close()
 
     def closeEvent(self, event):
-        """关窗前收掉两个后台线程。
+        """关窗前收掉房间与复盘线程，并停在途动画。
 
         ``QThread`` 在跑而它所属的对象被销毁时，Qt 会抛
         ``QThread: Destroyed while thread is still running`` 并可能直接崩。
-        复盘线程比 AI 线程活得久（十几手 × 每手数秒），窗口管理器上的叉号
-        完全可能落在它运行中间。
+        复盘线程比房间对局线程活得久（十几手 × 每手数秒），窗口管理器上的
+        叉号完全可能落在它运行中间；房间的识别线程也一样要 join。
+        动画同理由此收掉：窗口可能带着没跑完的淡入/落子动画被销毁。
         """
-        self._cancel_ai()
+        self._close_room()
         self._cancel_review(discard=True)
+        _stop_animations(self)
         super().closeEvent(event)
 
     def _update_panel(self):

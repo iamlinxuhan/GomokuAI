@@ -497,9 +497,12 @@ def do_local_battle(app):
            ((9, 18), 1)]
     ok = True
     for i, ((r, c), stone) in enumerate(seq[:8]):
+        # M4c 起落子经房间回显，点击后不能再立即断言 —— 等目标格出现该色。
+        wait_until(lambda: not w._move_in_flight, 3, app)
         click_cell(w, r, c)
-        pump(20, app)
-        if not check(int(w.board[r][c]) == stone,
+        landed, _ = wait_until(
+            lambda r=r, c=c, s=stone: int(w.board[r][c]) == s, 3, app)
+        if not check(landed,
                      f"本地第 {i+1} 手落在 ({r},{c}) 且为{'黑' if stone == 1 else '白'}子"):
             ok = False
             break
@@ -509,7 +512,8 @@ def do_local_battle(app):
     # 悔棋：本地局一次退**一步**（人机局是退两步：玩家 + AI 回应）。必须
     # 在连五之前验 —— 终局后 `_on_undo` 直接返回（对局已结束）。
     w._on_undo()
-    pump(30, app)
+    wait_until(lambda: w.move_count == 7, 3, app)
+    pump(20, app)
     check(w.move_count == 7 and int(np.count_nonzero(w.board)) == 7,
           "本地对战悔棋退一步",
           f"move_count={w.move_count}")
@@ -518,14 +522,17 @@ def do_local_battle(app):
     check(w.game_panel.turn_indicator.label.text().startswith("白棋"),
           "悔棋后轮到白方",
           w.game_panel.turn_indicator.label.text())
-    click_cell(w, *seq[7][0])
-    pump(20, app)
-    check(int(w.board[seq[7][0][0]][seq[7][0][1]]) == 2,
+    r, c = seq[7][0]
+    wait_until(lambda: not w._move_in_flight, 3, app)
+    click_cell(w, r, c)
+    wait_until(lambda r=r, c=c: int(w.board[r][c]) == 2, 3, app)
+    check(int(w.board[r][c]) == 2,
           "悔棋后重下仍落在同一个点上且为白子")
 
     r, c = seq[8][0]
+    wait_until(lambda: not w._move_in_flight, 3, app)
     click_cell(w, r, c)
-    pump(20, app)
+    wait_until(lambda r=r, c=c: int(w.board[r][c]) == 1, 3, app)
     if not check(int(w.board[r][c]) == 1, "本地第 9 手为黑子"):
         return
 
@@ -650,14 +657,17 @@ def do_review(app):
 
     # 下 4 手，攒出复盘素材
     for i in range(4):
-        got_idle, _ = wait_until(lambda: not w.ai_thinking, 30, app)
+        got_idle, _ = wait_until(lambda: not w.ai_thinking
+                                 and not w._move_in_flight, 30, app)
         if not got_idle or w.game_over:
             break
         cell = pick_empty_near_center(w.board)
         if cell is None:
             break
         click_cell(w, *cell)
-        pump(20, app)
+        # 等这一手回显（human_moves 在 move 事件里记录）再下下一手。
+        wait_until(lambda n=i + 1: len(w.human_moves) >= n or w.game_over,
+                   5, app)
     check(len(w.human_moves) >= 3, "对局中记下了玩家的每一步快照",
           f"{len(w.human_moves)} 手")
     for m in w.human_moves:
@@ -687,10 +697,11 @@ def do_review(app):
           "1 档输棋后可以选初级复盘", str(_card_texts(w.review_strength)))
 
     w._on_review_level_selected(1)
-    pump(60, app)
+    # **不要 pump 再查 isRunning**：1 档复盘只要几十毫秒就可能算完，等
+    # 60ms 再查会把"已结束"误报成"没启动"。start() 返回后立刻读状态。
+    running = w.review_worker is not None and w.review_worker.isRunning()
     check(w.review_progress is not None, "进入复盘进度页")
-    check(w.review_worker is not None and w.review_worker.isRunning(),
-          "复盘线程已启动")
+    check(running, "复盘线程已启动")
 
     got, _ = wait_until(lambda: w.review_worker is None, 180, app)
     if not check(got, "复盘在时限内算完"):
@@ -845,12 +856,13 @@ def do_review_finish(app):
     w._on_difficulty_selected(1)
     pump(120, app)
 
-    got, _ = wait_until(lambda: not w.ai_thinking, 30, app)
+    got, _ = wait_until(lambda: not w.ai_thinking
+                        and not w._move_in_flight, 30, app)
     if not got or w.game_over:
         check(False, "结束复盘用例：先把局面走到能复盘")
         return
     click_cell(w, *pick_empty_near_center(w.board))
-    pump(20, app)
+    wait_until(lambda: len(w.human_moves) >= 1 or w.game_over, 5, app)
 
     w.gamerule = 1
     w.winner = 2
@@ -894,15 +906,17 @@ def do_review_cancel(app):
     w._on_difficulty_selected(1)
     pump(120, app)
 
-    for _ in range(2):
-        got_idle, _ = wait_until(lambda: not w.ai_thinking, 30, app)
+    for i in range(2):
+        got_idle, _ = wait_until(lambda: not w.ai_thinking
+                                 and not w._move_in_flight, 30, app)
         if not got_idle or w.game_over:
             break
         cell = pick_empty_near_center(w.board)
         if cell is None:
             break
         click_cell(w, *cell)
-        pump(20, app)
+        wait_until(lambda n=i + 1: len(w.human_moves) >= n or w.game_over,
+                   5, app)
     if not check(len(w.human_moves) >= 2, "取消用例：攒到了复盘素材",
                  f"{len(w.human_moves)} 手"):
         return

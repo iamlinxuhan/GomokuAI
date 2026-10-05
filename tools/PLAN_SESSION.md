@@ -83,19 +83,31 @@
 | C3 | `human_moves` 仅人机模式记录；`before` 是**落子前**快照；`seq = move_count+1` | `_on_board_click` | `test_human_moves_only_...` |
 | C4 | 落子后 `move_count` / `move_history` / `last_move` / `board_widget` 同步 | `_on_board_click` / `_on_ai_finished` | 各测试均有断言 |
 | C5 | 判胜：玩家五连 → `gamerule=2, winner=玩家子色`；AI 五连 → `gamerule=1, winner=AI 子色`；均触发 `win_line` 高亮与终局 | 两处 `check_win` 分支 | `test_player_win_and_ai_win_...` |
-| C6 | 判和：`move_count >= 361` → `gamerule=0, winner=0`（棋盘放满，无五连） | 两处平局分支 | `test_draw_when_board_is_full` |
-| C7 | AI 调度：`_ai_turn` 置思考态并禁用悔棋，经 `AIWorker` 异步返回 | `_ai_turn` | （`gui_smoke` 覆盖）|
-| C8 | 代数作废：`_on_ai_finished` 丢弃 `generation != _ai_generation` 的迟到结果 | `_on_ai_finished` | `test_stale_ai_generation_...` |
-| C9 | 悔棋：人机一次撤两步；本地对战一次撤一步；上限 3 次（`output`）；`human_moves` 按 `seq <= move_count` 修剪 | `_on_undo` / `_trim_human_moves` | `test_undo_*` 三则 |
-| C10 | AI 先手：`_ai_first_move` 走 `opening_move`（天元）+ `note_book`，不经过 `ai_move`，不重入 | `_build_game_ui` / `_ai_first_move` | `test_ai_first_move_*` 两则 |
-| C11 | **现状（疑似缺陷）**：AI 先手局已走完"天元+玩家一手"后悔棋，撤两手且**不重下天元**，下一手由玩家先走 | `_on_undo` 的 `move_count >= 2` 分支 | `test_ai_first_move_pair_undo_...` |
+| C6 | 判和：`move_count >= 361` → `gamerule=0, winner=0`（棋盘放满，无五连） | 两处平局分支 | `tests/test_session.py::test_draw_at_full_board`（M4c 起：UI 不再伪造残局）|
+| C7 | AI 调度：`_ai_turn` 置思考态并禁用悔棋，经 `AIWorker` 异步返回 | `_ai_turn` | （`gui_smoke` 覆盖；M4c 起由房间 `turn` 事件驱动）|
+| C8 | 代数作废：`_on_ai_finished` 丢弃 `generation != _ai_generation` 的迟到结果 | `_on_ai_finished` | （M4c 起不再适用：调度在房间，无陈旧 worker 结果）|
+| C9 | 悔棋：人机一次撤两步；本地对战一次撤一步；上限 3 次（`output`）；`human_moves` 按 `seq <= move_count` 修剪 | `_on_undo` / `_trim_human_moves` | `test_undo_*` 三则（M4c 起经房间政策，语义不变）|
+| C10 | AI 先手：对空盘走 `engine.ai_move` 的本地开局路由（天元），被悔棋撤掉后由房间重下 | M4c 起：`room.py` 的 AI 席位 | `test_ai_first_move_*` 两则 |
+| C11 | **M4c 修正**：悔棋撤到请求方上一次落子之前；天元被撤后房间重新判断轮次，**AI 重下天元**（不再是"撤两手后白先走在空盘上"）| `room.py` 悔棋政策 + `_recheck` | `test_ai_first_move_pair_undo_replays_tengen` |
 | C12 | 复盘入口只在"输给 AI"时出现；`human_moves` 是唯一输入 | `_show_game_over` | （`gui_smoke` 覆盖）|
 | C13 | 重开：取消 AI/复盘、关日志、回到**模式选择页** | `_on_restart` | `test_restart_returns_...` |
 | C14 | 图表：每次落子记一个点；AI 结果带 depth 用搜索分，否则用静态估值；悔棋按序列长度截断 | `_record_score` / `_rewind` | （本阶段不钉，M2 事件化）|
 | C15 | 终局节奏：面板**立刻**停表，遮罩延迟 1s；平局不走延迟 | `_finish_win_or_lose` | （`ui_e2e` 覆盖）|
 | C16 | 日志：人/AI 各自格式、每约 5 手与开局 3 手记录棋盘状态、格式是题库来源 | `gamelog` 调用点 | （`test_gamelog_flavor` 覆盖文件策略）|
 
-C11 是**现状**，不是设计目标：M1 逐字保留，修不修由后续里程碑单独决定并更新测试。
+C11 曾按**现状**逐字保留（M1），**M4c 决定修正**：单机改走房间后，悔棋政策
+归 `room.py`（撤到请求方上一次落子之前），被撤掉的 AI 先手由房间主循环重新
+计算 —— 撤掉天元就重下天元，而不是把白棋推上先手位。
+
+M4c 对 UI 级覆盖的调整（理由详见 `tests/test_game_flow.py` 模块 docstring）：
+
+* C6 判和不再有 UI 用例 —— 棋盘由房间权威维护，UI 不能也不该伪造残局，
+  判和规则由 Session 单测覆盖；
+* C8 代数作废用例删除 —— 事件按连接顺序投递、开新局前旧客户端整体关闭，
+  "迟到的 worker 结果"这条路径不存在了；
+* C11 用例改为断言"AI 重下天元"；
+* C3 的 `human_moves` 改由客户端记录（人类回合的 `turn` 记快照，`move` 事件
+  落账），`before`/`seq` 语义与旧版一致。
 
 ## 5. 协议草案 v1（M3 细化）
 
@@ -244,3 +256,41 @@ C11 是**现状**，不是设计目标：M1 逐字保留，修不修由后续里
 
 验证：session / room / client / wire / match 共 62 条相关测试全绿；两个
 真实 Bot 进程过 loopback 复验通过（主循环重构无回归）。
+
+## 12. M4c 完成记录（2026-10-05）
+
+把 `main.py` 的单机对局从"UI 直接持有 Session、自己跑 `AIWorker`"改成
+**应用内房间（`LocalRoom`）+ `RoomClient` 事件驱动**。单机与联机从此走
+同一条协议路径（MC 的单人=内置服务端）。
+
+* `main.py`：
+  * `_start_game` 先 `_close_room()` 再建房间：人机一个人类席位（remote）
+    + 房间 AI 席位；本地双人两条 `RoomClient`（black/white）从同一进程
+    接入。
+  * 新增 `_RoomBridge`（`pyqtSignal(object)`）把读取线程的事件排队投递回
+    Qt 主线程；`_on_room_event` 分派 `welcome/state/move/turn/game_over/
+    undo_applied/error`，UI 只做镜像（board / move_count / winner /
+    gamerule / `move_history` / `human_moves`）与渲染。
+  * 点击只提交意图（`_move_in_flight` 防连点）；悔棋把人机交给人类客户端、
+    本地双人交给最后一手所属客户端。删除 `_ai_first_move` / `_ai_turn` /
+    `_on_ai_finished` / `_ai_generation`；`AIWorker` 类保留（
+    `tests/test_ai_worker.py` 在用），主流程不再引用。
+  * `_stop_animations`：删除页面 / 关窗前停掉在途动画（fade_in 的
+    target 与动画同为子对象，快速重开时曾在 Windows 上触发原生崩溃
+    0xC0000005，这次一并修掉）。
+* `room.py`：
+  * AI 席位把房间的 `_stop` 作为**协作取消**传给 `AIPlayer.choose_move` ——
+    思考中重开会中断搜索，不再占着进程级 AI 互斥锁拖慢同进程下一局。
+  * `_undo_plan` 不再读 `session.last_move`（`rewind` 会清空它，用于 UI
+    清最后一手环），改由 move_count 奇偶推最后一手颜色 —— 修复"悔棋后
+    立刻再悔一次"被误判成无棋可悔。
+* `client.py`：`LocalRoom` 的房间 `auto_consent=True` —— 同进程对手的
+  悔棋沿用单机"直接生效"的旧行为（本地双人 C9）；专用服务器默认仍回
+  `undo_needs_consent`（协商留 M4d）。
+* 测试：`test_game_flow.py` 改为房间驱动（脚本 AI 替身 + 轮询等待）；
+  C6/C8 的 UI 级用例按上文说明移除，C11 改期望，`test_anim_smoke.py`
+  改为等落子/悔棋事件，`gui_smoke.py` 只做最小等待改动。
+
+验证：`pytest -q -m "not perf"` 全绿（399 passed / 1 skipped）；
+`tools/ui_e2e.py --levels 1` 全部通过；`tools/gui_smoke.py` 141 通过 /
+0 警告 / 0 失败。
