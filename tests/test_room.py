@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
@@ -91,8 +92,24 @@ class _ColAI:
         col = 0 if stone == 1 else 18
         for r in range(19):
             if board[r][col] == 0:
-                return r, col, {}
+                return r, col, {"reason": "stub", "depth": 1, "best_val": 0.0}
         raise RuntimeError("没有可下的位置")
+
+
+def _drain_until(wire, pred, timeout=5.0):
+    """从 socket 里读报文直到 ``pred`` 命中；返回 (命中报文, 见过的报文)。"""
+    from wire import WireError
+    t0 = time.time()
+    seen = []
+    while time.time() - t0 < timeout:
+        try:
+            msg = wire.recv(timeout=0.5)
+        except WireError:
+            continue
+        seen.append(msg)
+        if pred(msg):
+            return msg, seen
+    raise AssertionError("未等到期望报文；收到：%r" % (seen,))
 
 
 # ==================== 完整对局 ====================
@@ -136,6 +153,13 @@ def test_server_side_ai_seat(monkeypatch):
         assert room.done.wait(10)
         white.join(5)
         assert white.error is None
+        # AI 席位的着法要带上 info（图表/读数用）；远程席位为 null
+        ai_moves = [e for e in white.events
+                    if e.get("type") == "move" and e["stone"] == 1]
+        remote_moves = [e for e in white.events
+                        if e.get("type") == "move" and e["stone"] == 2]
+        assert ai_moves and ai_moves[0]["info"]["depth"] == 1
+        assert remote_moves and remote_moves[0]["info"] is None
         assert room.result == {"winner": 1, "reason": "five", "moves": 9}
     finally:
         srv.stop()
@@ -218,3 +242,82 @@ def test_unknown_type_and_ping(server):
         assert wire.recv(timeout=3)["type"] == "pong"
     finally:
         wire.close()
+
+
+# ==================== 悔棋（M4b） ====================
+
+def test_undo_auto_accepted_when_opponent_is_ai(monkeypatch):
+    monkeypatch.setattr(room_module, "AIPlayer", _ColAI)
+    srv = RoomServer("127.0.0.1")
+    room = Room("solo", SeatSpec("ai", level=1), SeatSpec("remote"))
+    srv.add_room(room)
+    port = srv.start(0)
+    wire = None
+    try:
+        wire, rep = _hello_join(port, room="solo", seat="white")
+        assert rep["type"] == "welcome"
+        # 等 AI 的天元（第 1 手）
+        _drain_until(wire, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+        assert room.session.board[0][0] == 1
+
+        # 白方一手未下就悔棋：撤对手的开局，AI 重下
+        wire.send({"type": "undo_request"})
+        applied, _ = _drain_until(wire, lambda m: m.get("type") == "undo_applied")
+        assert applied["by"] == 2 and applied["move_no"] == 0
+        _drain_until(wire, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+
+        assert room.session.output == 2
+        assert room.session.move_count == 1
+        assert room.session.board[0][0] == 1
+    finally:
+        if wire is not None:
+            wire.close()
+        srv.stop()
+
+
+def test_undo_after_reply_pops_two(monkeypatch):
+    monkeypatch.setattr(room_module, "AIPlayer", _ColAI)
+    srv = RoomServer("127.0.0.1")
+    room = Room("solo", SeatSpec("ai", level=1), SeatSpec("remote"))
+    srv.add_room(room)
+    port = srv.start(0)
+    wire = None
+    try:
+        wire, rep = _hello_join(port, room="solo", seat="white")
+        assert rep["type"] == "welcome"
+        _drain_until(wire, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+        wire.send({"type": "move", "r": 18, "c": 0})       # 白
+        _drain_until(wire, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 3)            # AI 第二手
+
+        wire.send({"type": "undo_request"})                # 撤白 + AI 回应
+        applied, _ = _drain_until(wire, lambda m: m.get("type") == "undo_applied")
+        assert applied["move_no"] == 1
+        assert room.session.move_count == 1
+        assert room.session.board[0][0] == 1
+        assert room.session.board[18][0] == 0
+        assert room.session.output == 2
+    finally:
+        if wire is not None:
+            wire.close()
+        srv.stop()
+
+
+def test_undo_remote_opponent_requires_consent(server):
+    _srv, _room, port = server
+    b, rb = _hello_join(port, seat="black")
+    w, rw = _hello_join(port, seat="white")
+    try:
+        assert rb["type"] == "welcome" and rw["type"] == "welcome"
+        b.send({"type": "move", "r": 9, "c": 9})
+        _drain_until(b, lambda m: m.get("type") == "state"
+                     and m.get("move_no") == 1)
+        b.send({"type": "undo_request"})
+        err, _ = _drain_until(b, lambda m: m.get("type") == "error")
+        assert err["code"] == "undo_needs_consent"
+    finally:
+        b.close()
+        w.close()

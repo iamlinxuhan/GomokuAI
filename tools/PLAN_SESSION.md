@@ -225,3 +225,22 @@ C11 是**现状**，不是设计目标：M1 逐字保留，修不修由后续里
 
 尚未做（M4）：内置形态（应用内开房间）、UI 作为 RoomClient 客户端、
 加入/开房界面、悔棋/复盘/图表的 `RoomConfig`。
+
+## 11. M4b 完成记录（2026-10-05）
+
+协议与房间补齐"单机改走房间"所必需的能力：
+
+* `session.rewind(n)`：通用回退（棋盘/历史/复盘记录），**不涉及政策与
+  预算**；`undo()` 的 UI 政策与 `room.py` 的房间政策都经过它。
+* 房间悔棋：`submit_undo_request`。对手是服务端 AI 时**立即同意**，远程
+  对手明确回 `undo_needs_consent`（协商留 M4d）。政策 = 撤到请求方上一次
+  落子之前（自己刚落子撤 1；对手刚回应撤 2；自己一手未下撤 1、让对手
+  重下）。`_recheck` 哨兵让主循环在悔棋后重新判断轮次——AI 先手被撤会
+  重下天元。
+* `move` 事件携带 `info`（AI 席位有 depth/best_val，远程席位为 null）。
+* 房间主循环改为"**锁外等待、锁内落子**"：AI 在棋盘快照上搜索，悔棋与
+  落子通过 `_game_lock` 串行，互不读取半路状态。
+* `RoomClient.undo_request()`；`undo_response` 明确 `not_supported`。
+
+验证：session / room / client / wire / match 共 62 条相关测试全绿；两个
+真实 Bot 进程过 loopback 复验通过（主循环重构无回归）。

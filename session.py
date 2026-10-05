@@ -157,8 +157,20 @@ class Session:
     def can_undo(self) -> bool:
         return (not self.game_over) and self.output > 0 and self.move_count > 0
 
+    def rewind(self, n: int) -> UndoResult:
+        """通用回退：弹 ``n`` 步（棋盘 / 历史 / 复盘记录），**不涉及政策与预算**。
+
+        UI 的悔棋政策（撤几步、AI 先手特例）在 ``undo()`` 里；房间的政策在
+        ``room.py`` 里 —— 两边都必须经过这里，规则只有一份。
+        """
+        result = UndoResult(self._pop(n))
+        self.human_moves = [m for m in self.human_moves
+                            if m["seq"] <= self.move_count]
+        self.last_move = None
+        return result
+
     def undo(self):
-        """按现有政策悔棋，返回 ``UndoResult``；不可悔时返回 ``None``。
+        """按现有 UI 政策悔棋，返回 ``UndoResult``；不可悔时返回 ``None``。
 
         政策（与 ``main.py`` 逐字对应）：
 
@@ -172,22 +184,16 @@ class Session:
         self.output -= 1
 
         if self.mode == "pvp":
-            result = UndoResult(self._pop(1))
-        elif self.move_count >= 2:
-            result = UndoResult(self._pop(2))
-        elif self.mode == "ai" and self.ai_stone == 1 and self.move_count == 1:
+            return self.rewind(1)
+        if self.move_count >= 2:
+            return self.rewind(2)
+        if self.mode == "ai" and self.ai_stone == 1:
+            # AI 先手、盘上只有它这一手：撤掉后要求重下天元。
             self.opening_done = False
-            result = UndoResult(self._pop(1), replay_opening=True)
-        else:
-            result = UndoResult(self._pop(1))
-
-        # 不变量：human_moves 里只留**还在盘上**的落子 —— 复盘不能把玩家
-        # 已经收回的坏棋也列出来（那些手根本不存在于这局棋里）。
-        self.human_moves = [m for m in self.human_moves
-                            if m["seq"] <= self.move_count]
-        if not result.replay_opening:
-            self.last_move = None
-        return result
+            result = self.rewind(1)
+            result.replay_opening = True
+            return result
+        return self.rewind(1)
 
     def _pop(self, n: int) -> int:
         removed = 0

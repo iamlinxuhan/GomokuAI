@@ -122,6 +122,15 @@ class RoomServer:
                     except WireError as exc:
                         wire.send({"type": "error", "code": exc.code,
                                    "message": exc.message})
+                elif t == "undo_request":
+                    try:
+                        room.submit_undo_request(stone)
+                    except WireError as exc:
+                        wire.send({"type": "error", "code": exc.code,
+                                   "message": exc.message})
+                elif t == "undo_response":
+                    wire.send({"type": "error", "code": "not_supported",
+                               "message": "悔棋协商将在后续版本提供"})
                 elif t == "ping":
                     wire.send({"type": "pong"})
                 else:

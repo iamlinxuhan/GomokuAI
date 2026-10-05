@@ -21,6 +21,10 @@ from players import AIPlayer, PlayerSpec, reset_engine
 from session import Session
 from wire import WireError
 
+#: 内部哨兵：状态被悔棋改变（回主循环重新判断轮次）/ 中止。
+_RECHECK = object()
+_ABORT = object()
+
 
 class SeatSpec:
     __slots__ = ("kind", "level", "name")
@@ -50,6 +54,10 @@ class Room:
         self._members = []                   # [(conn, stone), ...]
         self._queues = {1: queue.Queue(), 2: queue.Queue()}
         self._cv = threading.Condition()
+        #: 保护"落子 + 广播"与"悔棋"这两件会改 Session 的事；搜索在快照上跑，
+        #: 不持有它。远程席位等待着法时也不持有（见 ``_await_move``）。
+        self._game_lock = threading.RLock()
+        self._recheck = False
         self._stop = threading.Event()
         self._thread = None
 
@@ -118,6 +126,49 @@ class Room:
         except (TypeError, ValueError):
             raise WireError("bad_move", "着法坐标不是整数：%r, %r" % (r, c))
 
+    # ------------------------------------------------------------ 悔棋
+
+    def submit_undo_request(self, stone: int) -> None:
+        """悔棋申请。
+
+        对手是服务端 AI → **立即同意**（单机内置房间走这条）；
+        对手是远程玩家 → 协商尚未实现（M4d），明确回错而不是静默忽略。
+        """
+        if stone not in self.specs:
+            raise WireError("bad_seat", "未知席位")
+        with self._game_lock:
+            if self.session.game_over:
+                raise WireError("undo_unavailable", "对局已结束")
+            if not self.session.can_undo():
+                raise WireError("undo_unavailable", "没有可悔的棋")
+            if self.specs[3 - stone].kind != "ai":
+                raise WireError("undo_needs_consent",
+                                "远程对手的悔棋协商尚未实现")
+            plan = self._undo_plan(stone)
+            if plan is None:
+                raise WireError("undo_unavailable", "没有可悔的棋")
+            self.session.output -= 1
+            self.session.rewind(plan)
+            self._recheck = True
+            self.broadcast({"type": "undo_applied", "by": stone,
+                            "move_no": self.session.move_count})
+            self.broadcast({"type": "state", **self.state_payload()})
+
+    def _undo_plan(self, stone: int):
+        """本房间的悔棋政策：撤到请求方上一次落子**之前**。
+
+        * 最后一手是请求方自己的 → 撤 1；
+        * 否则（对手刚落子）：请求方已经下过 → 撤 2（自己那手 + 对手回应）；
+        * 请求方一手未下（对手先手）→ 撤 1，让对手重下。
+        """
+        count = self.session.move_count
+        if count == 0 or self.session.last_move is None:
+            return None
+        if self.session.last_move[2] == stone:
+            return 1
+        mine = (count + 1) // 2 if stone == 1 else count // 2
+        return 1 if mine == 0 else 2
+
     # ------------------------------------------------------------ 对局
 
     def start(self) -> None:
@@ -148,20 +199,34 @@ class Room:
         while (not self.session.game_over) and (not self._stop.is_set()):
             stone = 1 if self.session.move_count % 2 == 0 else 2
             self.broadcast({"type": "turn", "stone": stone})
-            move = self._next_move(stone)
-            if move is None:
+            got = self._await_move(stone)
+            if got is _ABORT:
                 self._finish_aborted()
                 return
-            r, c = move
-            if self.session.apply_stone(r, c, stone) is None:
-                # 非法着法不打翻整局：明确回错，等这一席重发（房主/人类
-                # 客户端的一次误点不该终结对局）。
-                self.send_to(stone, {"type": "error", "code": "illegal_move",
-                                     "message": "非法走法 (%d,%d)" % (r, c)})
+            if got is _RECHECK:
                 continue
-            self.broadcast({"type": "move", "r": r, "c": c, "stone": stone,
-                            "move_no": self.session.move_count})
-            self.broadcast({"type": "state", **self.state_payload()})
+            r, c, info = got
+            with self._game_lock:
+                if self._recheck:
+                    self._recheck = False
+                    continue
+                if self.session.game_over or self._stop.is_set():
+                    break
+                current = 1 if self.session.move_count % 2 == 0 else 2
+                if current != stone:
+                    continue        # 悔棋改掉了轮次：这一手作废
+                if self.session.apply_stone(r, c, stone) is None:
+                    # 非法着法不打翻整局：明确回错，等这一席重发（人类
+                    # 客户端的一次误点不该终结对局）。
+                    self.send_to(stone, {"type": "error",
+                                         "code": "illegal_move",
+                                         "message": "非法走法 (%d,%d)" % (r, c)})
+                    continue
+                self.broadcast({"type": "move", "r": r, "c": c,
+                                "stone": stone,
+                                "move_no": self.session.move_count,
+                                "info": info})
+                self.broadcast({"type": "state", **self.state_payload()})
 
         if self.session.game_over:
             reason = "draw" if self.session.gamerule == 0 else "five"
@@ -171,18 +236,43 @@ class Room:
                             "reason": reason, "moves": self.session.move_count})
         self.done.set()
 
-    def _next_move(self, stone: int):
+    def _await_move(self, stone: int):
+        """等待/计算当前席位的着法。返回 ``(r, c, info)``、``_RECHECK`` 或
+        ``_ABORT``。远程席位等待着法时不持锁；AI 在棋盘快照上搜索。"""
         spec = self.specs[stone]
         if spec.kind == "ai":
+            board = self.session.board.copy()
             player = AIPlayer(PlayerSpec("ai", level=spec.level))
-            r, c, _info = player.choose_move(self.session.board, stone)
-            return int(r), int(c)
+            r, c, info = player.choose_move(board, stone)
+            with self._game_lock:
+                if self._recheck:
+                    return _RECHECK
+                if self._stop.is_set():
+                    return _ABORT
+                if self.session.game_over:
+                    return _ABORT
+                current = 1 if self.session.move_count % 2 == 0 else 2
+                if current != stone:
+                    return _RECHECK
+                return int(r), int(c), info
+
         while not self._stop.is_set():
+            if self._recheck:
+                self._recheck = False
+                return _RECHECK
             try:
-                return self._queues[stone].get(timeout=0.2)
+                r, c = self._queues[stone].get(timeout=0.1)
             except queue.Empty:
                 continue
-        return None
+            with self._game_lock:
+                if self._recheck:
+                    self._recheck = False
+                    return _RECHECK
+                current = 1 if self.session.move_count % 2 == 0 else 2
+                if current != stone:
+                    return _RECHECK
+                return int(r), int(c), None
+        return _ABORT
 
     def _finish_aborted(self) -> None:
         if not self.done.is_set():

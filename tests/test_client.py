@@ -100,3 +100,40 @@ def test_close_stops_reader_and_rejects_sends():
             c.move(9, 9)
     finally:
         local.stop()
+
+
+class _ColAI:
+    """服务端 AI 替身：黑填第 0 列，白填第 18 列。"""
+
+    def __init__(self, spec):
+        pass
+
+    def choose_move(self, board, stone, cancel=None):
+        col = 0 if stone == 1 else 18
+        for r in range(19):
+            if board[r][col] == 0:
+                return r, col, {"reason": "stub", "depth": 1, "best_val": 0.0}
+        raise RuntimeError("没有可下的位置")
+
+
+def test_client_undo_with_ai_opponent(monkeypatch):
+    import room as room_module
+    monkeypatch.setattr(room_module, "AIPlayer", _ColAI)
+
+    local = LocalRoom(SeatSpec("ai", level=1), SeatSpec("remote"))
+    events = []
+    c = RoomClient(events.append)
+    try:
+        c.connect(local.host, local.port, local.name, "white")
+        assert _wait(lambda: any(e.get("type") == "state"
+                                 and e.get("move_no") == 1 for e in events))
+        c.undo_request()
+        assert _wait(lambda: any(e.get("type") == "undo_applied"
+                                 for e in events), 5)
+        # AI 重下需要一点时间：等第 1 手重新出现再断言
+        assert _wait(lambda: local.room.session.move_count == 1, 5)
+        assert local.room.result is None            # 悔棋后对局继续
+        assert local.room.session.output == 2
+    finally:
+        c.close()
+        local.stop()

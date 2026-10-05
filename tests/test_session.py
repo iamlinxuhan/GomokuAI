@@ -182,6 +182,17 @@ def test_undo_after_game_over_is_noop():
     assert s.move_count == 5
 
 
+def test_rewind_is_policy_free():
+    """rewind 不碰预算、不判 AI 先手特例 —— 那是 undo() 与房间政策的事。"""
+    s = _ai_session(1)
+    s.apply_human_move(9, 9)
+    s.apply_ai_move(8, 8)
+    res = s.rewind(2)
+    assert res.removed == 2 and not res.replay_opening
+    assert s.move_count == 0 and not s.board.any()
+    assert s.output == UNDO_LIMIT
+
+
 def test_ai_first_single_move_undo_requests_replay():
     s = _ai_session(human_stone=2)              # AI 执黑
     s.apply_opening_move(9, 9)

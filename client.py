@@ -92,6 +92,9 @@ class RoomClient:
     def ping(self) -> None:
         self._send({"type": "ping"})
 
+    def undo_request(self) -> None:
+        self._send({"type": "undo_request"})
+
     def _send(self, obj) -> None:
         wire = self._wire
         if wire is None:
