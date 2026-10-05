@@ -38,13 +38,16 @@ import traceback
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# 自动适配会按离屏平台的 800×600 把窗口降到 722×552、字号降到 small，把下面
+# 那些按设计尺寸写的断言全搅乱 —— 而那些断言测的不是"自动适配"这件事。
+os.environ.setdefault("GOMOKU_AI_UI_AUTOFIT", "0")
 
 import numpy as np  # noqa: E402
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
-from PyQt5.QtCore import QPoint, Qt  # noqa: E402
+from PyQt5.QtCore import QPoint, QSettings, Qt  # noqa: E402
 from PyQt5.QtTest import QTest  # noqa: E402
 from PyQt5.QtWidgets import (QApplication, QLabel, QPushButton,  # noqa: E402
                              QScrollArea)
@@ -616,6 +619,60 @@ def _first_scroll_area(widget):
     return areas[0] if areas else None
 
 
+def _settings_btn(win):
+    """窗口右上角那枚「设置」齿轮。
+
+    **全局只有一个**，是主窗口自己的子控件、不在任何页面里 —— 页面怎么换它都
+    钉在同一个位置。曾经是每页各挂一个（页面底部脚注 + 面板标题行），三种长相
+    三种位置；现在按 tooltip 从窗口上认它，与 ``main.settings_button`` 同一个
+    约定。
+    """
+    b = getattr(win, "settings_btn", None)
+    if b is not None and b.toolTip() == "字号 / 主题":
+        return b
+    return None
+
+
+def _gear_rect(w):
+    """齿轮相对窗口的位置。"""
+    b = _settings_btn(w)
+    if b is None:
+        return None
+    return (b.x(), b.y(), b.width(), b.height())
+
+
+def _title_rect(w):
+    """当前页主标题在窗口坐标下的 (控件, 文字左端 x, 文字右端 x, 竖直中心)。"""
+    import main as M
+    page = w.central.currentWidget()
+    if page is None:
+        return None
+    lbl = M._page_title_label(page)
+    if lbl is None:
+        return None
+    tl = lbl.mapTo(w, QPoint(0, 0))
+    tw = lbl.fontMetrics().horizontalAdvance(lbl.text())
+    left = tl.x() + (lbl.width() - tw) // 2
+    return (lbl.text(), left, left + tw, tl.y() + lbl.height() // 2)
+
+
+def _gear_is_right_of_title(win):
+    """齿轮就贴在主标题文字的右边，且与文字同一行。
+
+    这是用户 2026-10-05 定下的位置：不钉窗口角（那里会压住面板边框、"遮挡
+    GUI"），而是每页都紧挨着那页的主标题。
+    """
+    b = _settings_btn(win)
+    t = _title_rect(win)
+    if b is None or t is None:
+        return False
+    _, _, text_right, text_cy = t
+    gap = b.x() - text_right
+    if not (0 <= gap <= 24):
+        return False
+    return abs((b.y() + b.height() // 2) - text_cy) <= 8
+
+
 def _card_texts(screen):
     """读出 ``SelectionScreen`` 每张卡片的主文案。"""
     out = []
@@ -711,6 +768,30 @@ def do_review(app):
           f"{len(w.review_records)} 条")
     check(w.game_panel is None, "复盘期间没有残留对局面板")
 
+    # 复盘结果页同样要有设置入口，且从这儿进去、原路回来 —— 不换档，纯验证
+    # "来回一趟不会把结果页顶掉"（换档重建那条由 do_settings 覆盖）。
+    rgear = _settings_btn(w)
+    if check(rgear is not None and rgear.isVisible(),
+             "复盘结果页上齿轮可见"):
+        rgear.click()
+        pump(60, app)
+        check(w.central.currentWidget() is w.settings_screen,
+              "从复盘结果页进得了设置页")
+        check(w._settings_origin is w.review_list,
+              "设置页记住了来路是复盘结果页")
+        w.settings_screen.back_clicked.emit()
+        pump(60, app)
+        check(w.central.currentWidget() is w.review_list,
+              "返回回到复盘结果页")
+        # 再来一趟：设置页是复用的，**第二趟不该再往栈里塞一页**。
+        n_pages = w.central.count()
+        rgear.click()
+        pump(60, app)
+        w.settings_screen.back_clicked.emit()
+        pump(60, app)
+        check(w.central.count() == n_pages,
+              "来回两趟没有在栈里堆页面", f"{w.central.count()} 页")
+
     for rec in w.review_records:
         b, p = rec['best'], rec['played']
         if not check(rec['before'][p[0]][p[1]] == 0,
@@ -791,6 +872,12 @@ def do_review(app):
                   f"{np.count_nonzero(bw.board)} 子")
             check(bw.board[rec['played'][0]][rec['played'][1]] == 0,
                   "玩家那一手是幽灵子，没有真的落到盘上")
+            # 回归：复盘棋盘曾经 setFixedSize(726,726)，窗口矮一点就被顶出
+            # 屏幕，底部的「返回复盘」用户够不着、也滚不到。现在它按可见区域
+            # 现算边长（见 `ReviewBoardScreen._fit_board_side`）。
+            check(bw.height() <= w.height(),
+                  "复盘棋盘放得进窗口（不再被顶出屏幕）",
+                  f"棋盘 {bw.height()}px / 窗口 {w.height()}px")
             # 只读：基类的 mousePressEvent 什么都不做，点击不该改棋盘
             before = bw.board.copy()
             QTest.mouseClick(bw, Qt.LeftButton,
@@ -950,6 +1037,151 @@ def do_review_cancel(app):
     w._cancel_review(discard=True)
 
 
+def do_settings(app):
+    """设置：**每一页都有入口**、从哪儿进就回哪儿、换档不丢局面。
+
+    只在关掉自动适配（``GOMOKU_AI_UI_AUTOFIT=0``，本文件开头已设）的前提下
+    跑 —— 否则离屏的 800×600 会让档位初始值取决于平台，断言不稳定。
+    """
+    s = QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP)
+    saved_scale = s.value(theme._SETTINGS_SCALE_KEY, None)
+    small_name = theme.available_scales()[0]
+
+    w = M.GomokuGame()
+    w.show()
+    pump(120, app)
+    # ---- 0. 加载页：**没有**设置入口 ----
+    # 用户 2026-10-05：「他妈的加载界面你放个设置干啥」。这条必须在
+    # `_on_loading_finished()` 之前断言 —— 那之后加载页就下线了。
+    check(_settings_btn(w) is not None and not _settings_btn(w).isVisible(),
+          "加载页上没有设置入口")
+    w._on_loading_finished()
+    pump(40, app)
+    if not check(w.selection_mode is not None, "设置用例：进入模式选择页"):
+        return
+
+    # ---- 1. 选择页：右上角齿轮 ----
+    gear = _settings_btn(w)
+    if not check(gear is not None and gear.isVisible(),
+                 "模式选择页上齿轮可见"):
+        return
+    check(_gear_is_right_of_title(w),
+          "齿轮紧贴在当前页主标题文字的右边",
+          f"{_gear_rect(w)} / 标题 {_title_rect(w)}")
+    gear.click()
+    pump(60, app)
+    scr = w.settings_screen
+    if not check(scr is not None, "「⚙ 设置」进入设置页"):
+        return
+    check(w.central.currentWidget() is scr, "当前页就是设置页")
+
+    texts = _button_texts(scr)
+    labels = [theme.scale_label(n) for n in theme.available_scales()]
+    check(all(t in texts for t in labels),
+          "设置页列出全部字号档位", str([t for t in texts if t in labels]))
+
+    checked = [b.text() for b in scr.findChildren(QPushButton) if b.isChecked()]
+    check(checked == [theme.scale_label(theme.current_scale())],
+          "当前档位是唯一被勾选的那个", str(checked))
+
+    # 点「小」：字号变、QSettings 落盘、本页重建
+    before_md = theme.SIZE_MD
+    scr.scale_selected.emit(small_name)
+    pump(60, app)
+    check(theme.current_scale() == small_name,
+          "点档位后 theme 的档位变了", theme.current_scale())
+    check(theme.SIZE_MD != before_md,
+          "点档位后字号真的变了", f"{before_md} → {theme.SIZE_MD}")
+    check(s.value(theme._SETTINGS_SCALE_KEY) == small_name,
+          "档位写穿到 QSettings（下次打开还是这一档）",
+          str(s.value(theme._SETTINGS_SCALE_KEY)))
+    check(w.settings_screen is not scr,
+          "换档后设置页重建了（旧页的布局已经不适用）")
+    check(w.central.currentWidget() is w.settings_screen,
+          "重建后当前页仍是设置页")
+
+    # 返回：**回进来时那一页**。设置页是借道的，走的时候要把它从栈里摘掉，
+    # 否则来回进几次就会让栈一直带着这一页。
+    n_before = w.central.count()          # 含这一趟的设置页
+    w.settings_screen.back_clicked.emit()
+    pump(60, app)
+    check(w.central.currentWidget() is w.selection_mode,
+          "「← 返回」回到进来时的那一页（模式选择页）")
+    check(w.central.count() == n_before - 1,
+          "离开设置页后它没有赖在栈里", f"{w.central.count()} 页")
+
+    # ---- 2. 对局页：面板标题行的紧凑入口，换档后局面/用时都不丢 ----
+    theme.set_scale("normal", persist=False)
+    w.selection_mode.mode_selected.emit(0)          # 挑战 AI
+    pump(40, app)
+    w.selection_color.color_selected.emit(0)        # 执黑
+    pump(40, app)
+    if not check(w.selection_difficulty is not None, "设置用例：进入难度页"):
+        return
+    check(_settings_btn(w) is not None and _settings_btn(w).isVisible(),
+          "难度页上齿轮可见")
+    check(_gear_is_right_of_title(w),
+          "难度页上齿轮同样贴在标题文字右边",
+          f"{_gear_rect(w)} / 标题 {_title_rect(w)}")
+    w.selection_difficulty.difficulty_selected.emit(1)
+    pump(150, app)
+    if not check(w.game_widget is not None, "设置用例：进入对局页"):
+        return
+
+    do_player_moves(app, w, 2)
+    pump(80, app)
+    stones_before = int((w.board != 0).sum())
+    moves_before = w.move_count
+    # 把用时**摆到一个非零值**再换档：真实对局里它几乎不可能是 0，而 0 会让
+    # "用时没被清零"这条断言恒真 —— 那样就测不到 `_build_game_ui` 里
+    # `reset_timer()` 把表打回 00:00 这件事。
+    w.game_panel._elapsed = 137
+    w.game_panel.time_row.set_value("02:17")
+    elapsed_before = w.game_panel._elapsed
+    check(w.settings_btn.isVisible(), "对局页上齿轮可见")
+    check(_gear_is_right_of_title(w),
+          "对局页上齿轮贴在「五子棋 AI」右边",
+          f"{_gear_rect(w)} / 标题 {_title_rect(w)}")
+
+    game_before = w.game_widget
+    w.settings_btn.click()
+    pump(60, app)
+    check(w.central.currentWidget() is w.settings_screen,
+          "对局中点「⚙」进入了设置页")
+    w.settings_screen.scale_selected.emit(small_name)
+    pump(60, app)
+    w.settings_screen.back_clicked.emit()
+    pump(120, app)
+    check(w.central.currentWidget() is w.game_widget,
+          "从对局页进设置，返回还在对局页（没有被踢回首页）")
+    check(w.game_widget is not game_before,
+          "换档后对局页按新档位重建了（面板宽度等常量不会自己变）")
+    check(int((w.board != 0).sum()) == stones_before,
+          "换档重建后盘上子数不变",
+          f"{stones_before} → {int((w.board != 0).sum())}")
+    check(w.move_count == moves_before, "换档重建后手数不变", str(w.move_count))
+    check(w.game_panel._elapsed >= elapsed_before,
+          "换档重建后用时没有被清零",
+          f"{elapsed_before}s → {w.game_panel._elapsed}s")
+    txt = w.game_panel.time_row._value.text()
+    check(txt == "%02d:%02d" % divmod(w.game_panel._elapsed, 60),
+          "换档重建后面板的计时读数跟着走",
+          f"{txt} vs {elapsed_before}s 之前")
+
+    # 复原：别的用例还要按正常档位量尺寸，用户的配置也不该被冒烟测试改掉
+    # （上面那条 persist=True 是**故意**的 —— 要验证它真的写穿了）。
+    theme.set_scale("normal", persist=False)
+    if saved_scale is None:
+        s.remove(theme._SETTINGS_SCALE_KEY)
+    else:
+        s.setValue(theme._SETTINGS_SCALE_KEY, saved_scale)
+    w._cancel_ai()
+    w.settings_screen = None
+    w.close()
+    w.deleteLater()
+    pump(30, app)
+
+
 def do_chinese_path(app):
     """B22 回归：路径含非 ASCII 字符时 Qt 插件目录仍能被推导出来。"""
     saved = os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
@@ -972,6 +1204,9 @@ def main():
 
     M._fix_qt_plugin_path()
     app = QApplication(sys.argv[:1])
+    # 不继承开发者机器上存着的档位：下面的断言全按设计尺寸写。设置页那条用例
+    # 自己会换档，换完也会复原。
+    theme.set_scale("normal", persist=False)
     app.setStyle("Fusion")
 
     log_dir = tempfile.mkdtemp(prefix="gomoku_smoke_")
@@ -999,6 +1234,7 @@ def main():
         do_restart_during_think(app, w)
         do_quit_during_think(app, w)
         do_local_battle(app)
+        do_settings(app)
         do_review(app)
         do_review_finish(app)
         do_review_cancel(app)

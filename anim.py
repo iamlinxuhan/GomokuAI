@@ -19,7 +19,7 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QEasingCurve, QPropertyAnimation
+from PyQt5.QtCore import QAbstractAnimation, QEasingCurve, QPropertyAnimation
 from PyQt5.QtWidgets import QGraphicsOpacityEffect, QWidget
 
 # ---- 时长（毫秒）----
@@ -35,12 +35,42 @@ STONE_DROP_PX = 8.0
 STONE_FADE_FROM = 0.5
 
 
+#: 在途淡入动画的**强引用**。见 ``fade_in`` —— 少了它会在切页时随机段错误。
+_flying = set()
+
+
+def _sweep() -> None:
+    """把已经停下、或随控件一起销毁的动画从强引用表里清掉。
+
+    ``fade_in`` 每次都调一遍，所以这张表不会有意义地增长。控件先塌的那种
+    情况（页面在淡入途中被 ``deleteLater``）拿不到 ``finished``，只能在这里
+    靠"包装对象已失效"认出来 —— 访问它的任何方法都会 ``RuntimeError``。
+    """
+    for a in list(_flying):
+        try:
+            if a.state() == QAbstractAnimation.Stopped:
+                _flying.discard(a)
+        except RuntimeError:            # C++ 对象已随控件销毁
+            _flying.discard(a)
+
+
 def fade_in(widget: QWidget, ms: int = FADE_MS) -> QPropertyAnimation:
     """控件从 0 → 1 淡入（OutCubic）。结束后自动摘掉透明度效果。
 
     可作用于任何 widget（页面、卡片、覆盖层）。重复调用时旧的 effect
     会被替换，不会叠加。
+
+    **必须自己拿住返回的动画**（``_flying``）。动画的父对象是控件，C++ 侧
+    活得好好的；但它的 Python 包装对象出了这个函数就没主了 —— 一旦被 GC，
+    PyQt 为 ``finished`` 建的那个槽代理跟着失效，而动画还在跑。跑完时
+    ``QUnifiedTimer`` 会往一个已经释放的槽上投递，栈里只留下一个 ``<lambda>``
+    帧，进程直接段错误（2026-10-05：连开几次切页淡入必崩，且崩在哪一次
+    取决于 GC 的时机）。
+
+    ``DeleteWhenStopped`` 删的是 C++ 对象，不是这个引用 —— 表里的死条目由
+    ``_sweep`` 收。
     """
+    _sweep()
     effect = QGraphicsOpacityEffect(widget)
     widget.setGraphicsEffect(effect)
     anim = QPropertyAnimation(effect, b"opacity", widget)
@@ -48,7 +78,13 @@ def fade_in(widget: QWidget, ms: int = FADE_MS) -> QPropertyAnimation:
     anim.setStartValue(0.0)
     anim.setEndValue(1.0)
     anim.setEasingCurve(QEasingCurve.OutCubic)
-    anim.finished.connect(lambda: widget.setGraphicsEffect(None))
+
+    def _retire():
+        _flying.discard(anim)
+        widget.setGraphicsEffect(None)
+
+    anim.finished.connect(_retire)
+    _flying.add(anim)
     anim.start(QPropertyAnimation.DeleteWhenStopped)
     return anim
 

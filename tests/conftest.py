@@ -10,6 +10,11 @@ import sys
 # 项目路径含非 ASCII（"桌面"）时 Qt 会丢掉插件目录（main._fix_qt_plugin_path
 # 修的正是同一个问题）；这里在 conftest 导入期就把离屏平台与插件路径备好。
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# **关掉界面自动适配。** 离屏平台报的可用区是 800×600，比设计尺寸 1022×750
+# 还小；自动适配一旦生效，会去把窗口降到 722×552、字号降到 small，于是所有
+# 既有的尺寸/截图断言全部失守 —— 而它们测的并不是"自动适配"这件事。
+# 自动适配本身由 `tests/test_ui_scale.py` 直接测纯函数 `_autofit_scale`。
+os.environ.setdefault("GOMOKU_AI_UI_AUTOFIT", "0")
 if not os.environ.get("QT_QPA_PLATFORM_PLUGIN_PATH"):
     try:
         import PyQt5
@@ -47,6 +52,19 @@ def board_factory():
             m[r][c] = WHITE
         return m
     return make
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _neutral_ui_scale():
+    """测试进程不继承开发者机器上存着的字号档位。
+
+    ``theme.install()`` 现在会从 QSettings 读 ``ui_scale``。开发者只要在设置页
+    点过一次"特大"，全套 GUI 的尺寸断言就会在**他那台机器上**红，而失败点与
+    他改的代码毫无关系 —— 与 ``install()`` 里主题那条注释是同一个道理。这里在
+    任何 ``QApplication`` 之前（session 级、autouse）把它钉回 normal。
+    """
+    import theme
+    theme.set_scale("normal", persist=False)
 
 
 @pytest.fixture(scope="session")
