@@ -29,9 +29,8 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import engine  # noqa: E402
 from match import Match  # noqa: E402
-from players import AIPlayer, PlayerSpec  # noqa: E402
+from players import AIPlayer, PlayerSpec, reset_engine  # noqa: E402
 from tools.selfplay import OPENING_SECOND_MOVES  # noqa: E402
 
 CENTER = (9, 9)
@@ -106,7 +105,7 @@ def main():
     for i, (a_side, second, swapped) in enumerate(pairs):
         # 每局重置引擎的跨局状态（置换表/history/killer），否则上一局的
         # 热表会改变这一局的走法 —— 那测的就不是"档位差异"了。
-        engine.new_game()
+        reset_engine()
         if a_side == "black":
             black, white = AIPlayer(a_spec), AIPlayer(b_spec)
         else:

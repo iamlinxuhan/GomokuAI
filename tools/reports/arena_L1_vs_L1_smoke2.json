@@ -1,0 +1,40 @@
+{
+ "a_level": 1,
+ "b_level": 1,
+ "seed": 20260919,
+ "games": 2,
+ "results": [
+  {
+   "index": 0,
+   "swapped": false,
+   "a_side": "black",
+   "winner": "black",
+   "moves": 19,
+   "wall_ms": 1078.0,
+   "error": ""
+  },
+  {
+   "index": 1,
+   "swapped": true,
+   "a_side": "white",
+   "winner": "black",
+   "moves": 19,
+   "wall_ms": 16.0,
+   "error": ""
+  }
+ ],
+ "summary": {
+  "a_level": 1,
+  "b_level": 1,
+  "a_wins": 1,
+  "a_losses": 1,
+  "draws": 0,
+  "win_rate": 0.5,
+  "illegal": 0,
+  "errors": 0,
+  "total_wall_s": 1.1,
+  "games_done": 2,
+  "games_planned": 2,
+  "partial": false
+ }
+}

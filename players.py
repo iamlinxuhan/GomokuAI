@@ -13,9 +13,24 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 
 import engine
+
+#: 进程内 AI 互斥（见 tools/PLAN_SESSION.md 第 6 节）。
+#:
+#: ``engine`` 的客户端与 ``engine_local`` 的单例（置换表 / history / killer）
+#: 都不是线程安全的，也不是按实例隔离的；多房间若同时搜索会串包、互相污染。
+#: M3 的约定是"一个进程内 AI 搜索串行化"，并行基准仍旧靠多进程
+#: （与 tools/ab_enhance.py 的做法一致）。
+_AI_MUTEX = threading.RLock()
+
+
+def reset_engine() -> None:
+    """清空引擎的跨局状态。与 AI 出招共用同一把锁，二者不能交叠。"""
+    with _AI_MUTEX:
+        engine.new_game()
 
 
 @dataclass(frozen=True)
@@ -51,7 +66,8 @@ class AIPlayer:
         self.name = spec.name or f"AI-{spec.level}"
 
     def choose_move(self, board, stone, cancel=None):
-        return engine.ai_move(board, stone, self.spec.level, cancel=cancel)
+        with _AI_MUTEX:
+            return engine.ai_move(board, stone, self.spec.level, cancel=cancel)
 
 
 class ScriptedPlayer:
