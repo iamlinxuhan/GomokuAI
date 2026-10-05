@@ -200,3 +200,28 @@ C11 是**现状**，不是设计目标：M1 逐字保留，修不修由后续里
 
 尚未做（按计划留给 M3/M4）：人类席位在网络/房间里的传输、观战、
 `RoomConfig`、Session 席位从 `mode/human_stone` 升级为 `PlayerSpec`。
+
+## 10. M3 完成记录（2026-10-05）
+
+已落地（**专用形态先行**；内置形态留给 M4）：
+
+* `wire.py`：JSON 行线格式 + `WireError`（bad_json / timeout / closed…），
+  协议版本 `PROTO_VERSION = 1`，双向 `hello` 校验 —— 与 `engine.py` 同一套
+  教训（"连得上"不等于"是同类程序"）。
+* `room.py`：单房间。席位 `SeatSpec("ai" | "remote")`：`ai` 由服务端算
+  （AIPlayer），`remote` 由接入连接驱动；非法着法回错重问、不终止对局；
+  局中掉线终止本局（重连/续弈留 M5）。
+* `server.py`：`RoomServer`（监听 / 房间注册表 / 连接生命周期
+  hello→join→welcome→move·ping）。默认端口 **48900**，与引擎端口池
+  （49001–49093）错开。CLI 支持一房间与 `--port 0`。
+* `tools/bot_client.py`：网络 Bot 客户端 —— 本机算棋、只发送着法，两个
+  不同档位（甚至不同机器）的 AI 可以坐进同一桌。
+* `players.reset_engine()` + `_AI_MUTEX`：第 6 节的约定落地——**一个进程内
+  AI 搜索串行化**；arena 改用同一入口。
+
+验证：新增 wire 5 条 + room 7 条 socket 级测试；完整套件全绿；真实冒烟
+（服务端 + 两个独立 Bot 进程，黑 2 档 / 白 1 档）过 loopback 下满 25 手，
+三方结局面一致（winner=1 / five / 25 手），退出码 0。
+
+尚未做（M4）：内置形态（应用内开房间）、UI 作为 RoomClient 客户端、
+加入/开房界面、悔棋/复盘/图表的 `RoomConfig`。
