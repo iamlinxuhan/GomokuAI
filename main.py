@@ -30,9 +30,10 @@ import charts
 import engine
 import theme
 from board_geometry import BoardGeometry
-from engine import (BOARD_SIZE, Board, ai_move, check_win, evaluate, is_mate,
-                    new_game, opening_move, win_line)
+from engine import (BOARD_SIZE, Board, ai_move, evaluate, is_mate,
+                    new_game, opening_move)
 from gamelog import GameLogger
+from session import Session
 from ui_kit import (BrandMark, InfoRow, Screen, StoneFace, TurnIndicator,
                     button, card_button, faint_label, hbox, separator,
                     subtitle_label, title_label)
@@ -1513,28 +1514,16 @@ class GomokuGame(QMainWindow):
         # 背景色会把进度条的槽、面板底色一起刷掉（实测槽色直接消失）。
         # 窗口底色由 theme 的 QMainWindow 规则统一给。
 
-        # 游戏状态变量
-        self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-        self.move_history = []  # 每步落子后保存棋盘快照
+        # ---- 对局状态：全部归 Session（唯一规则真源，零 Qt）----
+        # 棋盘、走子历史、判胜/判和、悔棋政策、复盘快照都住在 session.py；
+        # 本类只保留 UI 与线程侧状态。字段级兼容访问见下面那组 property。
+        self.session = Session()
+
+        # UI / 线程侧状态
         self.gamemode = 0  # 0=先手(黑), 1=后手(白)
-        self.gameplayer = 1
         self.gamekunnan = 1
         self.playmode = 0  # 0=挑战AI, 1=本地双人对战
-        self.winner = 0    # 本地对战的胜方：1=黑, 2=白, 0=平/未结束
-        #: 玩家（执黑或执白的那一方）每一步落子**之前**的局面快照，
-        #: ``[{'seq', 'r', 'c', 'before'}, ...]``。战后复盘只分析这些局面。
-        #:
-        #: ``before`` 是**落子前**的拷贝，正是复盘要分析的那个局面；这样复盘页
-        #: 完全不依赖 ``game_widget``（进复盘时整棵对局 UI 会被销毁），也不依赖
-        #: ``move_history`` 的既有语义（那是"每步落子**后**的快照"，差一步）。
-        self.human_moves = []
-        self.gamerule = 3  # 1=输, 2=赢, 3=进行中
-        self.output = 3  # 悔棋次数
-        self.move_count = 0
-        self.game_over = False
         self.ai_thinking = False
-        self.ai_first_move_done = False
-        self.last_move = None
 
         # AI Worker
         self.ai_worker = None
@@ -1581,6 +1570,93 @@ class GomokuGame(QMainWindow):
         self.review_board = None
 
         self._init_loading()
+
+    # ------------------------------------------------------------------
+    # 会话状态兼容垫片（M1 过渡期）
+    #
+    # Session 是唯一状态源；这些 property 让既有测试与 tools/gui_smoke.py、
+    # tools/ui_e2e.py 继续按字段名读写（其中少数会直接赋值，于是 setter 也
+    # 保留）。新代码一律用 self.session；M4 客户端化时整块移除。
+    # ------------------------------------------------------------------
+    @property
+    def board(self):
+        return self.session.board
+
+    @board.setter
+    def board(self, value):
+        self.session.board = value
+
+    @property
+    def move_history(self):
+        return self.session.move_history
+
+    @move_history.setter
+    def move_history(self, value):
+        self.session.move_history = value
+
+    @property
+    def move_count(self):
+        return self.session.move_count
+
+    @move_count.setter
+    def move_count(self, value):
+        self.session.move_count = value
+
+    @property
+    def game_over(self):
+        return self.session.game_over
+
+    @game_over.setter
+    def game_over(self, value):
+        self.session.game_over = value
+
+    @property
+    def gamerule(self):
+        return self.session.gamerule
+
+    @gamerule.setter
+    def gamerule(self, value):
+        self.session.gamerule = value
+
+    @property
+    def winner(self):
+        return self.session.winner
+
+    @winner.setter
+    def winner(self, value):
+        self.session.winner = value
+
+    @property
+    def output(self):
+        return self.session.output
+
+    @output.setter
+    def output(self, value):
+        self.session.output = value
+
+    @property
+    def human_moves(self):
+        return self.session.human_moves
+
+    @human_moves.setter
+    def human_moves(self, value):
+        self.session.human_moves = value
+
+    @property
+    def last_move(self):
+        return self.session.last_move
+
+    @last_move.setter
+    def last_move(self, value):
+        self.session.last_move = value
+
+    @property
+    def ai_first_move_done(self):
+        return self.session.opening_done
+
+    @ai_first_move_done.setter
+    def ai_first_move_done(self, value):
+        self.session.opening_done = value
 
     def _init_loading(self):
         """初始化加载界面"""
@@ -1716,18 +1792,15 @@ class GomokuGame(QMainWindow):
         self.logger.f.write(f"  引擎: {engine.binary_path() or 'C++ 不可用，将用本地 Python 引擎'}\n\n")
         self.logger.f.flush()
 
-        self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-        self.move_history = []  # 每步落子后保存棋盘快照
-        self.human_moves = []
-        self.gameplayer = 1
-        self.gamerule = 3
-        self.winner = 0
-        self.output = 3
-        self.move_count = 0
-        self.game_over = False
+        # 配置本局会话（模式 + 石色），再清空状态。playmode/gamemode 只是
+        # UI 侧的选择，进入会话后翻译成 mode 与 human_stone，下游不再各算各的。
+        if self.playmode == 1:
+            self.session.configure("pvp")
+        else:
+            human = 1 if self.gamemode == 0 else 2
+            self.session.configure("ai", human_stone=human, ai_stone=3 - human)
+        self.session.reset()
         self.ai_thinking = False
-        self.ai_first_move_done = False
-        self.last_move = None
         self.review_records = []
 
         # 清空引擎的跨局面状态（置换表 / history / killer）。
@@ -1830,8 +1903,7 @@ class GomokuGame(QMainWindow):
 
     def _ai_first_move(self):
         """AI先手的第一着，由 engine.opening_move 决定（确定性，无随机）。"""
-        if not self.ai_first_move_done:
-            self.ai_first_move_done = True
+        if not self.session.opening_done:
             # 这一手不经过 engine.ai_move（所以指示器不会自动更新），但面板上
             # 该显示的仍然是「开局库」：它是查表得来的天元，既不是 C++ 也不是
             # 降级后的 Python。不记的话这一行的初始值会一直是「—」。
@@ -1840,12 +1912,9 @@ class GomokuGame(QMainWindow):
             if mv is None:                      # 理论上不会发生
                 mv = (BOARD_SIZE // 2, BOARD_SIZE // 2)
             r, c = mv
-            self.board[r][c] = 1
-            self.last_move = (r, c, 1)
+            self.session.apply_opening_move(r, c)
             self.board_widget.set_board(self.board)
             self.board_widget.set_last_move(r, c, 1)
-            self.move_count += 1
-            self.move_history.append(self.board.copy())
             self._record_score(None)
             if self.logger:
                 self.logger.log_ai(self.move_count, 1, r, c,
@@ -1865,28 +1934,14 @@ class GomokuGame(QMainWindow):
         if self.board[r][c] != 0:
             return
 
-        # 复盘用的局面快照。**必须在落子之前取** —— 复盘要分析的是"你面对这个
-        # 局面时选了哪一手"，不是"下完之后长什么样"。只记人机对战：本地对战
-        # 没有算法可复盘。
-        if self.playmode == 0:
-            self.human_moves.append({'seq': self.move_count + 1, 'r': r,
-                                     'c': c, 'before': self.board.copy()})
+        # 落子、快照、判胜/判和全部在 Session 里（唯一规则真源）。
+        res = self.session.apply_human_move(r, c)
+        if res is None:
+            return
+        player_stone = res.stone
 
-        # 落子方：本地对战由回合决定（黑先），人机对战由 gamemode 决定。
-        if self.playmode == 1:
-            player_stone = 1 if self.move_count % 2 == 0 else 2
-            ai_stone = 0            # 本地对战没有 AI 回合
-        elif self.gamemode == 0:
-            player_stone, ai_stone = 1, 2   # 玩家执黑
-        else:
-            player_stone, ai_stone = 2, 1   # 玩家执白
-        self.board[r][c] = player_stone
-
-        self.last_move = (r, c, player_stone)
         self.board_widget.set_board(self.board)
         self.board_widget.set_last_move(r, c, player_stone)
-        self.move_count += 1
-        self.move_history.append(self.board.copy())
         self._record_score(None)
         if self.logger:
             self.logger.log_human(self.move_count, player_stone, r, c)
@@ -1896,28 +1951,19 @@ class GomokuGame(QMainWindow):
         self._update_panel()
 
         # 检查落子方是否获胜
-        if check_win(self.board, player_stone):
-            # gamerule=2 在两种模式下都表示"有人赢了"，"是谁赢"由 `winner`
-            # 给出；人机对战的"你赢了/你输了"是把 `winner` 与玩家子色比出来的。
-            self.gamerule = 2
-            self.winner = player_stone
-            self.game_over = True
-            self.board_widget.set_win_cells(
-                win_line(self.board, player_stone), player_stone)
+        if res.outcome == "win":
+            self.board_widget.set_win_cells(res.line, player_stone)
             self._finish_win_or_lose()
             return
 
         # 检查平局
-        if self.move_count >= BOARD_SIZE * BOARD_SIZE:
-            self.gamerule = 0
-            self.winner = 0
-            self.game_over = True
+        if res.outcome == "draw":
             self._show_game_over()
             return
 
         # AI回合（本地对战没有这一回合，等对手点下一手）
         if self.playmode == 0:
-            self._ai_turn(ai_stone)
+            self._ai_turn(self.session.ai_stone)
 
     def _ai_turn(self, ai_stone):
         """AI回合"""
@@ -1951,17 +1997,13 @@ class GomokuGame(QMainWindow):
         self.game_panel.show_thinking(False)
         self.game_panel.undo_btn.setEnabled(True)
 
-        if self.gamemode == 0:
-            ai_stone = 2
-        else:
-            ai_stone = 1
+        res = self.session.apply_ai_move(r, c)
+        if res is None:
+            return
+        ai_stone = res.stone
 
-        self.board[r][c] = ai_stone
-        self.last_move = (r, c, ai_stone)
         self.board_widget.set_board(self.board)
         self.board_widget.set_last_move(r, c, ai_stone)
-        self.move_count += 1
-        self.move_history.append(self.board.copy())
         self._record_score(info)
 
         # 记录AI决策日志。
@@ -1980,19 +2022,13 @@ class GomokuGame(QMainWindow):
         self._update_panel()
 
         # 检查AI是否获胜
-        if check_win(self.board, ai_stone):
-            self.gamerule = 1
-            self.winner = ai_stone
-            self.game_over = True
-            self.board_widget.set_win_cells(
-                win_line(self.board, ai_stone), ai_stone)
+        if res.outcome == "win":
+            self.board_widget.set_win_cells(res.line, ai_stone)
             self._finish_win_or_lose()
             return
 
         # 检查平局
-        if self.move_count >= BOARD_SIZE * BOARD_SIZE:
-            self.gamerule = 0
-            self.game_over = True
+        if res.outcome == "draw":
             self._show_game_over()
 
     def _record_score(self, info=None):
@@ -2029,71 +2065,28 @@ class GomokuGame(QMainWindow):
             self.game_panel.push_score(static, charts.STATIC)
             self.game_panel.set_readout("")
 
-    def _rewind(self, n: int) -> None:
-        """弹出 ``n`` 步并让图表序列跟着退。
-
-        "序列与 ``move_history`` 严格同长"这条不变量**只在这里**定义一次 ——
-        三个悔棋分支各写一遍 `truncate_series` 迟早会漏掉一个。
-        """
-        for _ in range(n):
-            if self.move_history:
-                self.move_history.pop()
-        self.game_panel.truncate_series(len(self.move_history))
-
     def _on_undo(self):
-        """悔棋：撤回玩家最后一步及其后的AI回应（共2步）"""
+        """悔棋：撤几步、上限、AI 先手的特例，全部由 Session 的政策决定。"""
         if self.game_over or self.ai_thinking:
             return
-        if self.output <= 0:
+        undo = self.session.undo()
+        if undo is None:
             return
-        if self.move_count == 0:
-            return  # 棋局尚未开始，无法悔棋
 
-        self.output -= 1
+        # 图表序列与 move_history 严格同长（唯一截断点）。
+        self.game_panel.truncate_series(len(self.move_history))
 
-        if self.playmode == 1:
-            # 本地对战：一次悔一步。两个人的手都在这张盘上，"撤回两手"
-            # （玩家 + AI 回应）那条规则在这里没有对应物。
-            self._rewind(1)
-            self.board = (self.move_history[-1].copy() if self.move_history
-                          else np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int))
-            self.move_count -= 1
-        elif self.move_count >= 2:
-            # 弹出最后两步（玩家 + AI）
-            self._rewind(2)
-            self.board = self.move_history[-1].copy() if self.move_history else np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-            self.move_count -= 2
-        elif self.move_count == 1 and self.gamemode == 1:
-            # AI先手的情况，撤回AI第一步，重下天元
-            self._rewind(1)
-            self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-            self.move_count = 0
-            self.ai_first_move_done = False
-            # _ai_first_move 自己会 _record_score(None)，所以这里不用补
+        if undo.replay_opening:
+            # AI 先手只走了天元：撤掉后立刻重下。_ai_first_move 自己会
+            # _record_score(None) / 落盘 / 刷新面板，所以这里不补。
             self._ai_first_move()
             self.board_widget.set_board(self.board)
-            self._trim_human_moves()
             self._update_panel()
             return
-        elif self.move_count == 1:
-            self._rewind(1)
-            self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
-            self.move_count = 0
 
-        self.last_move = None
         self.board_widget.set_board(self.board)
         self.board_widget.set_last_move(None, None, None)
-        self._trim_human_moves()
         self._update_panel()
-
-    def _trim_human_moves(self):
-        """把悔掉的步子从复盘记录里去掉。
-
-        不变量：``human_moves`` 里只留**还在盘上**的那些落子。悔棋之后若不删，
-        复盘会把玩家已经收回去的坏棋也列出来 —— 那些手根本不存在于这局棋里。
-        """
-        self.human_moves = [m for m in self.human_moves
-                            if m['seq'] <= self.move_count]
 
     def _cancel_ai(self):
         """协作式取消正在运行的 AI 搜索并等待其退出。
