@@ -87,6 +87,16 @@ class Session:
 
     # ------------------------------------------------------------ 落子
 
+    def apply_stone(self, r: int, c: int, stone: int):
+        """通用落子入口：坐席与回合由调用方决定（无头对局 / 服务器用）。
+
+        校验只有两条：终局、已占格。返回 ``MoveResult``；非法返回 ``None``。
+        人类/AI 的既有政策入口在它上面实现，因此规则只有这一份。
+        """
+        if self.game_over or self.board[r][c] != 0 or not stone:
+            return None
+        return self._place(r, c, int(stone))
+
     def apply_human_move(self, r: int, c: int):
         """玩家落子。返回 ``MoveResult``；非法时返回 ``None``（防御性）。"""
         if self.game_over or self.board[r][c] != 0:
@@ -97,19 +107,19 @@ class Session:
         else:
             # 本地对战：黑先，按手数奇偶换色。
             stone = 1 if self.move_count % 2 == 0 else 2
-        return self._place(r, c, stone)
+        return self.apply_stone(r, c, stone)
 
     def apply_ai_move(self, r: int, c: int):
-        if self.game_over or self.board[r][c] != 0 or not self.ai_stone:
+        if not self.ai_stone:
             return None
-        return self._place(r, c, self.ai_stone)
+        return self.apply_stone(r, c, self.ai_stone)
 
     def apply_opening_move(self, r: int, c: int):
         """AI 先手的第一着（天元，由 ``engine.opening_move`` 决定）。"""
         if self.game_over or self.board[r][c] != 0:
             return None
         self.opening_done = True
-        return self._place(r, c, 1)
+        return self.apply_stone(r, c, 1)
 
     def _record_player_snapshot(self, r: int, c: int) -> None:
         self.human_moves.append({

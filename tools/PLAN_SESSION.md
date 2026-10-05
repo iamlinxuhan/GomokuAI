@@ -176,3 +176,27 @@ C11 是**现状**，不是设计目标：M1 逐字保留，修不修由后续里
 4. **观战与房间码**：协议已预留，是否进 M5 首版由使用需求决定。
 5. **AI 席位配置的粒度**：难度之外是否暴露增强开关（`enhanced/lmr/extend`）
    给 Bot 客户端做参数对比；倾向通过 `PlayerSpec.options` 透传。
+
+## 9. M2 完成记录（2026-10-05）
+
+已落地（**加法式**，不改既有 UI 行为）：
+
+* `players.py`：`PlayerSpec`（可序列化的席位描述）、`AIPlayer`（包装
+  `engine.ai_move`，书/降级/取消全部复用）、`ScriptedPlayer`（测试/复现）。
+* `session.py`：新增通用入口 `apply_stone(r, c, stone)`；人机 / AI / 开局的
+  既有政策入口全部改成它的薄封装 —— 规则仍然只有一份。
+* `match.py`：无头 `Match`（黑先交替、开局前缀、协作取消、非法/异常作废、
+  步数上限按平局记），零 Qt，M3 的 Room 会复用它。
+* `tools/arena.py`：档位 A-A 基准。每两局交换先后手、开局前缀从
+  `selfplay.OPENING_SECOND_MOVES` 轮换（引擎确定性，不换开局 N 局会走出
+  同一盘棋）；报告 `tools/reports/arena_*.json`，字段与 `selfplay` 对齐，
+  每局覆写、可中断观察。
+* `main.py` 的 `AIWorker` 改走 Player 抽象（构造从
+  `(board, stone, level)` 变为 `(board, player, stone)`），UI 的 AI 回合与
+  无头对局从此共用同一个玩家接口。
+
+验证：CI 口径套件全绿；`tools/arena.py --games 2` 产出报告（19 手终局、
+0 非法 0 异常）；`tools/ui_e2e.py --levels 1` 真实点击对局通过。
+
+尚未做（按计划留给 M3/M4）：人类席位在网络/房间里的传输、观战、
+`RoomConfig`、Session 席位从 `mode/human_stone` 升级为 `PlayerSpec`。

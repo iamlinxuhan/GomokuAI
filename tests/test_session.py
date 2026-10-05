@@ -65,6 +65,15 @@ def test_pvp_alternates_and_records_nothing():
     assert s.human_moves == []
 
 
+def test_apply_stone_generic_entry():
+    """通用入口：坐席/回合由调用方定；占用格与空石头被拒。"""
+    s = _pvp_session()
+    assert s.apply_stone(9, 9, 1).stone == 1
+    assert s.apply_stone(9, 9, 2) is None       # 已占
+    assert s.apply_stone(8, 8, 0) is None       # 无石头
+    assert s.apply_stone(8, 8, 2).stone == 2
+
+
 def test_occupied_cell_is_rejected():
     s = _ai_session(1)
     s.apply_human_move(9, 9)
