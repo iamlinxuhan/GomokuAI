@@ -210,7 +210,12 @@ def do_player_moves(app, w, n=3):
             record("PASS", f"第 {i+1} 手", "玩家直接连五，对局结束")
             break
 
-        got_ai, dt = wait_until(lambda: not w.ai_thinking, 30, app)
+        # 等"白子真的多了一颗"（或对局结束），**不要等 `not ai_thinking`**：
+        # 那个谓词在"AI 回合事件还没到"时也为真（上一回合结束后它就是 False），
+        # 于是会在 AI 落子之前直接返回，断言看到的是旧盘面。
+        got_ai, dt = wait_until(
+            lambda: w.game_over or int((w.board == 2).sum()) >= before_white + 1,
+            30, app)
         if not check(got_ai, f"第 {i+1} 手：AI 应答返回", f"{dt:.2f}s"):
             return
         now_white = int((w.board == 2).sum())
@@ -522,7 +527,11 @@ def do_local_battle(app):
           "本地对战悔棋退一步",
           f"move_count={w.move_count}")
     check(w.game_over is False, "悔棋之后对局回到进行中")
-    # 退掉的是白子那一手 → 下一手仍是白。
+    # 退掉的是白子那一手 → 下一手仍是白。轮次事件跟在 state 之后，等它到位
+    # 再读面板文案（否则会读到"黑棋"那一拍的旧文案）。
+    wait_until(
+        lambda: w.game_panel.turn_indicator.label.text().startswith("白棋"),
+        3, app)
     check(w.game_panel.turn_indicator.label.text().startswith("白棋"),
           "悔棋后轮到白方",
           w.game_panel.turn_indicator.label.text())
@@ -540,6 +549,11 @@ def do_local_battle(app):
     if not check(int(w.board[r][c]) == 1, "本地第 9 手为黑子"):
         return
 
+    # `game_over` 事件在落子事件之后才到（服务端先广播 move/state，主循环
+    # 收了尾才广播 game_over）—— 只等落子就断言，会读到还没判胜的中盘状态。
+    got_over, _ = wait_until(lambda: w.game_over, 5, app)
+    if not check(got_over, "本地对战五连后进入终局"):
+        return
     check(w.gamerule == 2 and w.winner == 1 and w.game_over,
           "本地对战五连后判黑方获胜",
           f"gamerule={w.gamerule} winner={w.winner}")
