@@ -24,8 +24,9 @@ def _restore_language():
     session 级的 —— 它只在会话开头跑一次。于是本文件里任何一个 ``set_language``
     都会顺流到**后面所有文件**的用例去，让它们在一门没预期的语言下断言中文文案。
     """
-    keep = (i18n.language(), i18n.resolved())
+    keep = (i18n.language(), i18n._system_locale)
     yield
+    i18n.set_system_locale(keep[1])
     i18n.set_language(keep[0] if keep[0] in i18n.CHOICES else i18n.SYSTEM)
     # ``enable_miss_log()`` 没有对应的关闭开关（实际用法是一次性命令行工具），
     # 开了就一直开着。用例之间必须自己掐掉，否则上一条记下的漏译会漏进下一条。
@@ -56,11 +57,21 @@ def test_the_four_per_language_maps_agree():
         assert set(table) == set(i18n.LANGUAGES)
 
 
-def test_language_name_of_the_system_choice_follows_the_interface():
-    """「跟随系统」不是一个语言，它的文案得跟着当前界面语言走。"""
-    i18n.set_language("ja")
+def test_language_name_of_the_system_choice_follows_the_system():
+    """「跟随系统」不是一个语言，它用**系统**语言书写，与应用内语言无关。
+
+    用户 2026-10-07 报的 bug：选了俄语之后这一项变成「Как в системе」——
+    它描述的明明是系统那边。这里把"应用内语言再改它也不动"钉死。
+    """
+    i18n.set_system_locale("ja_JP")
+    i18n.set_language("ru")
     assert i18n.language_name(i18n.SYSTEM) == "システムに従う"
     i18n.set_language("en")
+    assert i18n.language_name(i18n.SYSTEM) == "システムに従う"
+    i18n.set_system_locale("en_US")
+    assert i18n.language_name(i18n.SYSTEM) == "Use system language"
+    # 系统语言不在六种里（法语）→ 与界面本身的回退同一档：英语。
+    i18n.set_system_locale("fr_FR")
     assert i18n.language_name(i18n.SYSTEM) == "Use system language"
 
 

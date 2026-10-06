@@ -67,7 +67,11 @@ LANGUAGE_LABEL = {
     "ko": "언어",
 }
 
-#: 「跟随系统」这一选项的文案，同样跟随当前界面语言。
+#: 「跟随系统」这一选项的文案：**用系统语言书写**，不随应用内语言变。
+#: 它不是一个语言名，而是"切到系统那一档"的选择 —— 写成应用内语言，选了俄语
+#: 之后这一项就变成「Как в системе」，而它描述的明明是系统那边（2026-10-07
+#: 用户报的 bug）。系统语言不在六种内（如法语系统）时 ``_normalize`` 落到英语，
+#: 与界面本身的回退一致。
 FOLLOW_SYSTEM = {
     "zh-CN": "跟随系统",
     "zh-TW": "跟隨系統",
@@ -928,8 +932,13 @@ def language_label() -> str:
 
 
 def follow_system_label() -> str:
-    """「跟随系统」选项的文案，跟随当前界面语言。"""
-    return FOLLOW_SYSTEM.get(_lang, FOLLOW_SYSTEM[DEFAULT])
+    """「跟随系统」选项的文案：用**系统**语言书写，不随应用内语言变。
+
+    这一项不是语言名，而是"切到系统那一档"的选择；它描述的是系统那边，
+    就该永远和系统说同一种语言。用户 2026-10-07 报的 bug 正是反例：选了
+    俄语之后这一项变成了「Как в системе」。
+    """
+    return FOLLOW_SYSTEM.get(_normalize(_system_locale), FOLLOW_SYSTEM[DEFAULT])
 
 
 def language_hint() -> str:
@@ -937,7 +946,10 @@ def language_hint() -> str:
 
 
 def language_name(code: str) -> str:
-    """某个语言选项按钮上的文字（各语言的自名，不随界面语言变）。"""
+    """某个语言选项上的文字（各语言的自名，不随界面语言变）。
+
+    ``SYSTEM`` 是唯一例外：它写系统语言（见 ``follow_system_label``）。
+    """
     if code == SYSTEM:
         return follow_system_label()
     return LANGUAGE_NAME.get(code, code)
