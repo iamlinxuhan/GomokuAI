@@ -35,6 +35,7 @@ import sys
 import tempfile
 import time
 import traceback
+import weakref
 from unittest import mock
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -111,6 +112,49 @@ def wait_until(pred, timeout_s, app=None):
         app.processEvents()
         time.sleep(0.01)
     return False, time.monotonic() - t0
+
+
+# ------------------------------------------------------------------ 窗口收尾
+#
+# **不能靠用例自觉关窗。** 一批用例（本地对战、设置、自定义难度、复盘三件套）
+# 自建 ``GomokuGame`` 后把它留在局部变量里就返回：CPython 随即销毁这扇窗口，
+# 而 ``closeEvent`` —— 收房间、join 复盘线程、停动画 —— **不会执行**。这条
+# 路径在长流程里偶发 0xC0000005（Python 层看不到调用栈，堆被写坏后直到下一次
+# 绘制才崩；历史日志里那句"极少数原生崩溃"就是它）。构造器统一包一层登记，
+# 每个用例结束后统一走 ``close()``。
+
+#: 进程里所有 ``GomokuGame`` 的弱引用（含共享窗口，收尾时一起关）。
+_games = []
+
+
+def track_games():
+    """给 ``M.GomokuGame`` 的构造器加一层登记（幂等）。"""
+    real = M.GomokuGame
+    if getattr(real, "_smoke_tracked", False):
+        return
+
+    class _Tracked(real):
+        _smoke_tracked = True
+
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            _games.append(weakref.ref(self))
+
+    M.GomokuGame = _Tracked
+
+
+def close_case_windows(app, keep=None):
+    """关掉除 ``keep``（``do_startup`` 那扇贯穿全流程的共享窗口）外的对局窗口。"""
+    for ref in list(_games):
+        w = ref()
+        if w is None or w is keep:
+            continue
+        try:
+            if w.isVisible():
+                w.close()            # closeEvent → _close_room / _cancel_review
+        except RuntimeError:
+            pass                     # C++ 对象已销毁
+    pump(30, app)
 
 
 def board_is_legal(board, expect_stones=None):
@@ -1099,13 +1143,16 @@ def do_settings(app):
     check(all(t in texts for t in labels),
           "弹窗列出全部字号档位", str([t for t in texts if t in labels]))
 
-    # 「语言」那一排也是可勾选的按钮，但它归另一个组。这里问的是"字号档位里
-    # 只有一个被勾中"，所以先把语言按钮摘出去，否则勾中的语言会被算进来。
-    lang_btns = set(dlg.language_row.findChildren(QPushButton))
+    # 语言已是下拉框（不再往 QPushButton 里掺可勾选按钮），这里问的就是
+    # "字号档位里只有一个被勾中"。
     checked = [b.text() for b in dlg.findChildren(QPushButton)
-               if b.isChecked() and b not in lang_btns]
+               if b.isChecked()]
     check(checked == [theme.scale_label(theme.current_scale())],
           "当前档位是唯一被勾选的那个", str(checked))
+    combo = dlg.language_row.combo
+    check([combo.itemData(i) for i in range(combo.count())]
+          == list(i18n.CHOICES),
+          "语言下拉列出全部七个选项", f"{combo.count()} 项")
 
     # 点「小」：字号变、QSettings 落盘、**弹窗自己**重建
     before_md = theme.SIZE_MD
@@ -1374,6 +1421,7 @@ def main():
     print("-" * 72)
 
     w = None
+    track_games()
     try:
         w = do_startup(app)
         do_player_moves(app, w, 3)
@@ -1384,11 +1432,17 @@ def main():
         do_restart_during_think(app, w)
         do_quit_during_think(app, w)
         do_local_battle(app)
+        close_case_windows(app, keep=w)
         do_settings(app)
+        close_case_windows(app, keep=w)
         do_custom_difficulty(app)
+        close_case_windows(app, keep=w)
         do_review(app)
+        close_case_windows(app, keep=w)
         do_review_finish(app)
+        close_case_windows(app, keep=w)
         do_review_cancel(app)
+        close_case_windows(app, keep=w)
         do_chinese_path(app)
     except Exception:
         record("FAIL", "冒烟测试异常中止", traceback.format_exc().splitlines()[-1])
@@ -1401,6 +1455,8 @@ def main():
         except Exception:
             pass
         pump(80, app)
+        # 共享窗口也一起收：走 closeEvent 的正规收尾，别把线程留给进程退出。
+        close_case_windows(app)
 
     print("-" * 72)
     n_fail = sum(1 for r in _RESULTS if r[0] == "FAIL")
