@@ -43,7 +43,7 @@ from session import Session
 from ui_kit import (BrandMark, InfoRow, QuestionMark, Screen, StoneFace,
                     TurnIndicator,
                     button as _ui_button, card_button as _ui_card_button,
-                    faint_label, hbox as _ui_hbox, separator,
+                    card_fit_height, faint_label, hbox as _ui_hbox, separator,
                     subtitle_label, title_label)
 
 # ---- ui_kit 的"半缩放"补丁 ----------------------------------------------
@@ -56,9 +56,15 @@ from ui_kit import (BrandMark, InfoRow, QuestionMark, Screen, StoneFace,
 # 只补默认值，不覆盖显式传参 —— 调用方写死的 ``height=32`` 之类的字面量另有
 # `_px()` 处理（见下）。
 def button(text, variant="primary", *, height=None, width=None):
-    return _ui_button(text, variant,
-                      height=theme.CONTROL_H if height is None else height,
-                      width=width)
+    # ``width`` 是**宽度下限**而不是定宽：外文文案更长时按钮按 sizeHint 撑开，
+    # 中文下与从前逐字不差（sizeHint 不超过下限时实际宽度就是那个下限）。
+    # 定宽裁掉长译文是这一轮之前的通病（「✕ Отменить ожидание」要 336px）。
+    btn = _ui_button(text, variant,
+                     height=theme.CONTROL_H if height is None else height,
+                     width=None)
+    if width is not None:
+        btn.setMinimumWidth(width)
+    return btn
 
 
 def card_button(text, tone, *, face=None, sub="", index="", size=None):
@@ -144,6 +150,9 @@ def settings_button():
     padding 压回去。
     """
     b = button("⚙", "ghost", height=_px(32), width=_px(32))
+    # 齿轮是正圆图标位，不受"宽度下限"那条规则摆布 —— 它不在布局里，靠
+    # `_place_settings_button` 按 `width()` 定位，尺寸必须当场确定。
+    b.setFixedWidth(_px(32))
     b.setProperty("iconOnly", "true")
     b.setToolTip(i18n.t("字号 / 主题"))
     return b
@@ -163,14 +172,49 @@ def _page_title_label(page):
     return None
 
 
-def _design_size() -> tuple:
-    """按**当前档位**现算的设计窗口尺寸。
+#: 面板实际宽度缓存。键 = (当前语言, 字号档位) —— 面板宽度由当前语言的文案
+#: 度量与档位共同决定，两者之一变了就该重算（换语言/换档都会重建游戏页）。
+_PANEL_W_CACHE: dict = {}
 
-    ``WINDOW_W`` / ``WINDOW_H`` 是 normal 档的基准（tools 与测试上按模块常量
-    引用，不能变成会漂的值），这里是它在别的档位下的对应物。
+
+def _panel_active_w() -> int:
+    """当前语言与档位下右侧面板**实际需要**的宽度（``theme.PANEL_W`` 是下限）。
+
+    ``theme.PANEL_W`` 只是中文基准：俄语「✕ Выйти из игры」单行要 272px，比
+    264px 的面板内区还宽。若面板死守 264，长语言下要么裁按钮、要么默认窗口
+    装不下面板。所以窗口设计宽度、页面可用宽度都按**内容需要**算。
+
+    实现是构造一只探针面板量 ``minimumSizeHint()`` —— 按钮的 QSS padding、
+    图表卡边距这些都不是纯文本度量能复刻的，问控件最稳。每个（语言, 档位）
+    组合只算一次；探针用完即删，不进任何页面栈。
+    """
+    key = (i18n.resolved(), theme.current_scale())
+    cached = _PANEL_W_CACHE.get(key)
+    if cached is not None:
+        return cached
+    need = theme.PANEL_W
+    if QApplication.instance() is not None:
+        try:
+            probe = GamePanel()
+            probe.ensurePolished()
+            need = max(need, probe.minimumSizeHint().width())
+            probe.deleteLater()
+        except Exception:
+            # 量不出就退回基准 —— 面板顶多按旧宽度画，不该让窗口开不了。
+            pass
+    _PANEL_W_CACHE[key] = need
+    return need
+
+
+def _design_size() -> tuple:
+    """按**当前档位与语言**现算的设计窗口尺寸。
+
+    ``WINDOW_W`` / ``WINDOW_H`` 是 normal 档、中文下的基准（tools 与测试上按
+    模块常量引用，不能变成会漂的值），这里是它在别的档位/语言下的对应物：
+    宽度取面板的**实际需要**（见 ``_panel_active_w``），高度只跟档位走。
     """
     gap = theme.SPACE_MD
-    return (gap + BOARD_PX + theme.SPACE_SM + theme.PANEL_W + gap,
+    return (gap + BOARD_PX + theme.SPACE_SM + _panel_active_w() + gap,
             gap + BOARD_PX + gap)
 
 
@@ -544,6 +588,10 @@ class ReviewScreen(Screen):
             if _is_optimal(rec):
                 text.setProperty("tone", "win")
             show = button("棋局显示", "ghost", width=_px(110))
+            # 这一行没有 stretch，按钮会被布局拉伸/压缩 —— 锁成"内容宽度与
+            # 旧定宽 110 的较大者"：俄语「Отображение партии」要 320px，按
+            # sizeHint 排；中文 110px 不变。
+            show.setFixedWidth(max(_px(110), show.sizeHint().width()))
             show.clicked.connect(lambda _=False, idx=i:
                                  self.record_selected.emit(idx))
             col.addWidget(hbox(text, show, spacing=theme.SPACE_MD))
@@ -551,7 +599,13 @@ class ReviewScreen(Screen):
 
         area = QScrollArea()
         area.setWidgetResizable(True)
-        area.setFixedWidth(_px(REVIEW_ROW_W) + _px(24))
+        # 宽度 = 基准与**内容需求**取大者，但不超过页面可用宽度：
+        # 「棋局显示」/「Отображение партии」按钮与行文本都按自己的 sizeHint
+        # 渲染，列表被压窄时它们会被挤掉；内容超出可用宽度则交给视口横向滚动，
+        # 而不是把文字裁掉。中文行比基准窄，这里就是原来的 644px。
+        inner_need = inner.sizeHint().width() + 2 * theme.SPACE_SM
+        area.setFixedWidth(min(_page_content_w(),
+                               max(_px(REVIEW_ROW_W) + _px(24), inner_need)))
         area.setWidget(inner)
         # **高度按内容收缩，封顶 ``REVIEW_LIST_H``。** 定高的用意是兜住
         # "几十条记录"那种极端（否则整页撑得比窗口还高）；但只有两条记录
@@ -1274,9 +1328,16 @@ class LoadingScreen(Screen):
         self._tick.start()
 
         if not theme.has_cjk_font():
-            self.add_footer(faint_label(
-                "未找到简体中文字体，界面可能显示为方块；"
-                "Linux 请安装 fonts-noto-cjk"))
+            warn = faint_label("未找到简体中文字体，界面可能显示为方块；"
+                               "Linux 请安装 fonts-noto-cjk")
+            # 这句是整屏最长的文案，外文（俄语）比窗口还宽 —— 允许换行，
+            # 贴底显示完整。它只在"候选链一个中文字体都没命中"时出现。
+            # **拉满整行**（对齐只给垂直方向）：不拉满时 QLabel 会缩到"启发式
+            # 折行宽度"，俄语在启发宽度下要 3 行、容器却只按 sizeHint 给 2 行，
+            # 最后一行仍会被裁。拉满后宽度就是页面可用宽，折几行都放得下。
+            warn.setWordWrap(True)
+            warn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+            self.add_footer(warn, Qt.AlignVCenter)
 
     def _advance(self):
         """按 SPLASH_MS 线性推进进度条；走满即停表并交接。
@@ -1843,6 +1904,10 @@ class GamePanel(QFrame):
         self.theme_caption = subtitle_label(self._THEME_CAPTION)
         self.theme_caption.setAlignment(Qt.AlignCenter)
         self.theme_caption.setParent(self.theme_btn)
+        # 长语言里这句说明比面板内区还宽（俄语 532px）：开 wordWrap，宽度与
+        # 按钮高度一起在 ``_fit_theme_button`` 里按**最终定下的面板宽度**现算
+        # —— 面板宽度本身要先由其余元素的需求定出来。
+        self.theme_caption.setWordWrap(True)
         # 先 polish 再量尺寸 —— 14px 是 QSS 里定的，不 polish 量到的是按钮
         # 那一档 16px，算出来的按钮宽度就偏了（与 ``ui_kit.card_button``
         # 量左上角序号同一条教训）。
@@ -1851,20 +1916,8 @@ class GamePanel(QFrame):
         self.theme_caption.setAttribute(Qt.WA_TransparentForMouseEvents)
 
         self.theme_icon = ThemeIcon(_is_sun(), parent=self.theme_btn)
-        pad = theme.SPACE_SM
-        self.theme_btn.setFixedWidth(pad + self.theme_caption.width()
-                                     + theme.SPACE_XS
-                                     + self.theme_icon.width() + pad)
-        # 按钮尺寸从此不再变，所以一次定位就够（与 ``ui_kit.card_button``
-        # 里那个角标同理），不必接 resizeEvent。
-        self.theme_caption.move(pad, (self.theme_btn.height()
-                                      - self.theme_caption.height()) // 2)
-        self.theme_icon.move(self.theme_caption.x()
-                             + self.theme_caption.width() + theme.SPACE_XS,
-                             (self.theme_btn.height()
-                              - self.theme_icon.height()) // 2)
         # 按钮贴左会显得整条歪在一边（面板里其余控件都是满宽居中的），所以居中 ——
-        # 但**不拉满 216px**：按钮底色只包住内容，才像一个次要控件，而不是第四颗
+        # 但**不拉满内区**：按钮底色只包住内容，才像一个次要控件，而不是第四颗
         # 大按钮。居中的是这颗胶囊，热区仍覆盖"说明 + 图标"整条。
         layout.addWidget(self.theme_btn, 0, Qt.AlignHCenter)
 
@@ -1916,6 +1969,87 @@ class GamePanel(QFrame):
         self.quit_btn = button("✕ 退出游戏", "danger")
         for btn in (self.undo_btn, self.restart_btn, self.quit_btn):
             layout.addWidget(btn)
+
+        # 段 6（收尾）：面板宽度 —— 基准 `theme.PANEL_W` 与**当前语言的内容
+        # 需求**取大者。俄语的「✕ Выйти из игры」单行 272px、难度值
+        # 「Гроссмейстер」168px，都摆不进 264px 的内区；窗口设计宽度与页面
+        # 可用宽度经由 ``_panel_active_w()`` 跟着这里的长宽走。中文在此路径上
+        # 等于基准，视觉与从前逐字不差。
+        self.ensurePolished()
+        self.setFixedWidth(max(theme.PANEL_W, self._width_need()))
+        self._fit_theme_button()
+
+    #: 回合卡可能显示的状态文本（宽度预热用，见 ``_width_need``）。
+    #: 与 ``update_info`` / ``set_thinking`` 里实际 set 的文案一一对应。
+    _TURN_TEXTS = ("轮到你落子", "AI 思考中…",
+                   "黑方获胜", "白方获胜", "你赢了！", "你输了！",
+                   "平局", "平局！")
+
+    def _width_need(self) -> int:
+        """面板宽度需求：按**运行期值域**而不是构造初值推导。
+
+        构造时各信息行还写着 "—"、回合卡还写着 "准备开始"，直接量
+        ``minimumSizeHint`` 会漏掉运行期真实文本（难度名「Гроссмейстер」比
+        "—" 宽 168px），长语言下面板就会定窄、把值裁掉。这里把"值会变"的
+        两处 —— 难度行与回合卡 —— 挨个试穿值域里的每个文本再恢复。
+
+        记的是**增量**：面板基准值（含内边距与边框，由控件自己算）+ 该行
+        变宽出来的差值。构造期面板级的 ``minimumSizeHint`` 有缓存、子控件
+        改文本后不会及时刷新，而行级的最小尺寸是即时的 —— 用增量既绕开
+        缓存，也不必手工复刻内边距/边框那几个像素（它们已经含在基准里）。
+        """
+        panel0 = self.minimumSizeHint().width()
+        need = panel0
+        # 难度行：值会换成任何一档的名字（自定义档的名字最长）。
+        row = self.difficulty_row
+        row0 = row.minimumSizeHint().width()
+        orig = row._value.text()
+        for lv in list(engine.DIFFICULTY) + [engine.CUSTOM_LEVEL]:
+            row.set_value(i18n.t(engine.difficulty_name(lv)))
+            need = max(need, panel0 + row.minimumSizeHint().width() - row0)
+        row.set_value(orig)
+        # 回合卡：状态文案随对局走（「AI 思考中…」/「Вы победили!」…），
+        # 状态文本是整句、可以折行，需求由卡内布局算。
+        turn = self.turn_indicator
+        turn0 = turn.minimumSizeHint().width()
+        orig_turn = turn.label.text()
+        texts = list(self._TURN_TEXTS)
+        texts += [i18n.tf("%s 行动中", i18n.t(s))
+                  for s in ("黑棋 ●", "白棋 ○")]
+        for text in texts:
+            turn.label.setText(i18n.t(text))
+            need = max(need, panel0 + turn.minimumSizeHint().width() - turn0)
+        turn.label.setText(orig_turn)
+        return need
+
+    def _fit_theme_button(self) -> None:
+        """主题胶囊的宽度/高度：按**面板内区**与文案度量现算。
+
+        宽度 = min(单行完整宽, 内区可用)；放不下就换行（caption 已开 wrap），
+        按钮高度随行数抬。中文的说明单行短于内区，按钮尺寸与从前一致。
+        """
+        pad = theme.SPACE_SM
+        icon = self.theme_icon
+        inner = max(_px(40), self.width() - 2 * theme.SPACE_XL)
+        avail = max(_px(40), inner - 2 * pad - icon.width() - theme.SPACE_XS)
+        full = self.theme_caption.fontMetrics().horizontalAdvance(
+            self.theme_caption.text())
+        cap_w = min(full, avail)
+        self.theme_caption.setFixedWidth(cap_w)
+        cap_h = self.theme_caption.heightForWidth(cap_w)
+        if cap_h <= 0:
+            cap_h = self.theme_caption.sizeHint().height()
+        # 高度也要锁：说明文字不参与按钮布局（手动 move），不锁的话它会停在
+        # "启发式折行高度"上，比实际需要少一行、最后一行被裁。
+        self.theme_caption.setFixedHeight(cap_h)
+        btn_h = max(_px(32), cap_h + 2 * theme.SPACE_XS)
+        self.theme_btn.setFixedSize(
+            pad + cap_w + theme.SPACE_XS + icon.width() + pad, btn_h)
+        # 尺寸从此不再变，一次定位就够（与 ``ui_kit.card_button`` 里那个
+        # 角标同理），不必接 resizeEvent。
+        self.theme_caption.move(pad, (btn_h - cap_h) // 2)
+        icon.move(pad + cap_w + theme.SPACE_XS,
+                  (btn_h - icon.height()) // 2)
 
     def update_theme_button(self) -> None:
         # 图标画的是**当前**主题：浅色配太阳、深色配月亮（见 ``_is_sun``）。
@@ -2104,6 +2238,58 @@ def _custom_mark():
     return QuestionMark(StoneFace(1, 28).width())
 
 
+def _fit_card_row(cards, gap):
+    """把一组卡片按**当前语言的内容需求**排进选择页：放不下就折行。
+
+    宽度先取基准（``_card_fit_size``：中文下这一排刚好排满一行），再按每张卡
+    上"最长的不可断单元"放大 —— 一个单词宽于卡片就会被右缘裁掉，而换行救不了
+    它。放大后一行排不下就折成多行（俄语难度页 6 张卡分 3+3 两行），每行居中，
+    全部卡片统一宽高。
+
+    中文文案的最长单元都短于基准宽度，所以这条路径在中文下**恒等于原布局**
+    （一行、原尺寸）；它只在英语/俄语这类长文案下生效。
+    """
+    n = len(cards)
+    if n == 0:
+        return QWidget()
+    avail = _page_content_w()
+    unit_w = max(card.width() for card in cards)
+    for card in cards:
+        for lbl in card.findChildren(QLabel):
+            if lbl.property("role") in ("card-text", "card-sub"):
+                unit_w = max(unit_w,
+                             lbl.minimumSizeHint().width() + 2 * theme.SPACE_MD)
+    unit_w = min(unit_w, avail)          # 页面本身不许被一张卡撑破
+    per_row = n
+    if n * unit_w + (n - 1) * gap > avail:
+        per_row = max(1, (avail + gap) // (unit_w + gap))
+        rows = (n + per_row - 1) // per_row
+        per_row = (n + rows - 1) // rows      # 行间尽量均匀：6 张 = 3+3
+    # 宽度定了再算高度：卡片高度随换行行数走，统一取这一排的最大值。
+    for card in cards:
+        card.setFixedWidth(unit_w)
+    unit_h = max(max(card.height(), card_fit_height(card, unit_w))
+                 for card in cards)
+    for card in cards:
+        card.setFixedSize(unit_w, unit_h)
+
+    holder = QWidget()
+    col = QVBoxLayout(holder)
+    col.setContentsMargins(0, 0, 0, 0)
+    col.setSpacing(gap)
+    for start in range(0, n, per_row):
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(gap)
+        lay.addStretch(1)
+        for card in cards[start:start + per_row]:
+            lay.addWidget(card)
+        lay.addStretch(1)
+        col.addWidget(row)
+    return holder
+
+
 class SelectionScreen(Screen):
     """对战模式 / 执棋颜色 / AI难度 / 复盘强度 选择。
 
@@ -2257,8 +2443,9 @@ class SelectionScreen(Screen):
         # 5 张卡在 SPACE_XL(24) 下是 5×160+4×24 = 896px，仍塞得进 WINDOW_W=1022
         # —— 但只剩 126px 余量。降到 SPACE_LG(16) 得 864px，只调难度/复盘页：
         # 颜色页/mode 页只有 2–3 张卡，宽间距是那两张页面的节奏。
-        # 卡片边长已在上面的分支里按窗口宽度现算（`_card_fit_size`）。
-        self.add_content(hbox(*self._cards, spacing=gap))
+        # 卡片边长已在上面的分支里按窗口宽度现算（`_card_fit_size`）；
+        # `_fit_card_row` 再按当前语言的文本度量补齐/折行。
+        self.add_content(_fit_card_row(self._cards, gap))
 
         # 「设置」入口**不在这里挂**：它是主窗口右上角那枚固定的齿轮
         # （`GomokuGame.settings_btn`），页面怎么换都不动它。曾经每页各挂一个，
@@ -2284,7 +2471,7 @@ class LanMenuScreen(Screen):
             sig = self.create_clicked if i == 0 else self.join_clicked
             btn.clicked.connect(lambda _=False, s=sig: s.emit())
             self._cards.append(btn)
-        self.add_content(hbox(*self._cards, spacing=theme.SPACE_XL))
+        self.add_content(_fit_card_row(self._cards, theme.SPACE_XL))
 
         back = button("← 返回", "ghost", width=150)
         back.clicked.connect(self.back_clicked.emit)
@@ -2311,8 +2498,13 @@ class LanJoinScreen(Screen):
                          subtitle="输入房主等待页显示的地址，剩余席位会自动分配")
         form = QVBoxLayout()
         form.setSpacing(theme.SPACE_SM)
-        self.host_edit = self._field(form, "房主 IP", host, "例如 192.168.1.7")
-        self.port_edit = self._field(form, "端口", port, "例如 51234")
+        tags = []
+        self.host_edit = self._field(form, "房主 IP", host,
+                                     "例如 192.168.1.7", tags)
+        self.port_edit = self._field(form, "端口", port, "例如 51234", tags)
+        # 两行标签统一宽度，下限 72px：俄语「IP хоста」比 72px 宽，定死会把
+        # 它裁成「IP хос…」；中文两个标签都短于 72，宽度不变。
+        _even_width(tags, _px(72))
         self.add_content(self._as_widget(form))
 
         join_btn = button("加入房间", "primary", width=150)
@@ -2331,13 +2523,15 @@ class LanJoinScreen(Screen):
         self.add_footer(back)
 
     @staticmethod
-    def _field(form, label, text, placeholder):
+    def _field(form, label, text, placeholder, tags):
         row = QWidget()
         lay = QHBoxLayout(row)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(theme.SPACE_SM)
         tag = faint_label(label, align=Qt.AlignRight | Qt.AlignVCenter)
-        tag.setFixedWidth(72)
+        # 宽度等两行都建好后再统一（调用方 `_even_width`）—— 单行 72px 是
+        # 中文口径，长语言下要按 sizeHint 放宽，两行还得一样宽。
+        tags.append(tag)
         edit = QLineEdit(text)
         edit.setPlaceholderText(i18n.t(placeholder))
         edit.setFixedWidth(260)

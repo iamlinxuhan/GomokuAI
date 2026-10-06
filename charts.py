@@ -199,11 +199,17 @@ class ChartCard(QFrame):
         head.setSpacing(SPACE_SM)
         self._title = QLabel(t(title))
         self._title.setProperty("role", "chart-title")
-        head.addWidget(self._title)
-        head.addStretch(1)
+        # 标题允许换行并**吃掉行内剩余宽度**（原来靠一根 stretch 顶开，wrap 后
+        # 标题只拿 sizeHint 的启发值，本可一行摆下的俄语标题会被折成两行）。
+        # 中文标题远短于可用宽度，拉满与否在观感上没有差别。
+        self._title.setWordWrap(True)
+        head.addWidget(self._title, 1)
         if legend:
             self._legend = QLabel(t(legend))
             self._legend.setProperty("role", "chart-title")
+            # 图例同样多语言：俄语「● Поиск　○ Статика」比标题行剩余宽度还长，
+            # 折行显示完整（中文的「● 搜索　○ 静态」不触发）。
+            self._legend.setWordWrap(True)
             head.addWidget(self._legend)
         box.addLayout(head)
 
@@ -214,6 +220,12 @@ class ChartCard(QFrame):
         if readout:
             self._readout = QLabel(_READOUT_EMPTY)
             self._readout.setProperty("role", "chart-readout")
+            # 读数行是多段空格分隔的数据（``d7 12.3k 2.10M/s 340ms``），窄卡片
+            # 里允许在段间折行 —— 它是**数据不是句子**，折行不损可读性，
+            # 但被右缘裁掉一段就是数据缺失。高度不钉死：布局按
+            # ``heightForWidth`` 给几行就几行，宽卡片里它就是原来的一行。
+            self._readout.setWordWrap(True)
+            self._readout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             box.addWidget(self._readout)
 
         if tooltip:

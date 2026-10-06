@@ -187,6 +187,38 @@ def _set_role_buttons(btn: QPushButton, variant: str) -> QPushButton:
     return btn
 
 
+def card_fit_height(btn: QPushButton, width: int) -> int:
+    """卡片在 ``width`` 宽下所需的最小高度（换行按宽度**现算**）。
+
+    **为什么不用 ``sizeHint()``。** ``QPushButton`` 的 sizeHint 由样式决定，
+    内部再挂一个 layout 也不会变（实测仍返回内容为空时的那个尺寸）；
+    ``layout().sizeHint()`` 也不可靠 —— ``wordWrap`` 的 ``QLabel`` 的 sizeHint
+    高度是个启发值（常按两行封顶），比 ``heightForWidth(实际宽度)`` 少，
+    照着它设高度会把折了更多行的译文压在卡片边缘下。
+
+    所以逐项累加：内边距 + 图形高度 + 每个文本在 ``width`` 下的换行高度，
+    间距取 layout 自己的 spacing。``width`` 是卡片自身的宽度（内容区再扣
+    左右 ``SPACE_MD``）。
+    """
+    inner = max(1, width - 2 * SPACE_MD)
+    lay = btn.layout()
+    items = []
+    for i in range(lay.count()):
+        w = lay.itemAt(i).widget()
+        if w is not None:
+            items.append(w)
+    h = 2 * SPACE_MD
+    for i, w in enumerate(items):
+        if i:
+            h += lay.spacing()
+        if isinstance(w, QLabel):
+            wrap_h = w.heightForWidth(inner)
+            h += wrap_h if wrap_h > 0 else w.sizeHint().height()
+        else:
+            h += w.height()
+    return h
+
+
 def card_button(text: str, tone: str, *, face: QWidget | None = None,
                 sub: str = "", index: str = "",
                 size: int = CARD_PX) -> QPushButton:
@@ -201,11 +233,20 @@ def card_button(text: str, tone: str, *, face: QWidget | None = None,
 
     ``index``（如 ``"01"``）画在卡片左上角。它**不进布局**，而是按绝对坐标
     ``move()`` 上去：进了布局就会和上下两根 stretch 抢空间，把居中的那组
-    "图形 + 两行字"整体推偏。卡片是 ``setFixedSize`` 的，尺寸不会变，所以
-    一次定位就够，不需要接 ``resizeEvent``。
+    "图形 + 两行字"整体推偏。卡片宽度在构造后不会再变，所以一次定位就够，
+    不需要接 ``resizeEvent``。
+
+    ## 宽度是调用方给的，文字换行自己扛
+
+    ``size`` 是卡片宽度（正方形基准）；高度以它为下限，文字换行之后更高的
+    按 ``card_fit_height`` 抬上去。**标题与副标题都开 wordWrap**：中文文案
+    在这个宽度里放得下、永远不换行，与从前逐字不差；长外文（俄语
+    「Гроссмейстер」）折行显示而不是被边缘裁掉。单个单词超出卡片宽度时
+    换行也救不了它 —— 那是调用方要把卡片放宽的信号（``main._fit_card_row``
+    按内容需求做这件事）。
     """
     btn = QPushButton()
-    btn.setFixedSize(size, size)
+    btn.setFixedWidth(size)
     btn.setCursor(Qt.PointingHandCursor)
     btn.setProperty("variant", "card")
     btn.setProperty("tone", tone)
@@ -234,15 +275,21 @@ def card_button(text: str, tone: str, *, face: QWidget | None = None,
     label.setAlignment(Qt.AlignCenter)
     label.setProperty("role", "card-text")
     label.setProperty("tone", tone)
+    label.setWordWrap(True)
+    label.ensurePolished()
     box.addWidget(label)
 
     if sub:
         hint = QLabel(t(sub))
         hint.setAlignment(Qt.AlignCenter)
         hint.setProperty("role", "card-sub")
+        hint.setWordWrap(True)
+        hint.ensurePolished()
         box.addWidget(hint)
 
     box.addStretch(1)
+    # 高度：宽度已定，按内容现算；正方形是下限（中文下就是原来的卡片）。
+    btn.setFixedHeight(max(size, card_fit_height(btn, size)))
     return btn
 
 
@@ -264,6 +311,10 @@ class InfoRow(QWidget):
 
         self._label = QLabel(t(label))
         self._label.setProperty("role", "subtitle")
+        # 标签允许换行：俄语「Текущий TCP-порт」比面板内区还宽，单行摆不开。
+        # 中文标签都短于可用宽度，wrap 不触发，观感与从前逐字不差。
+        # （值不 wrap —— 值多是坐标/比分/名字，断行只会更难读。）
+        self._label.setWordWrap(True)
         self._value = value_label(value)
 
         row.addWidget(self._label)
@@ -435,6 +486,9 @@ class TurnIndicator(QFrame):
 
         self.label = QLabel(t("准备开始"))
         self.label.setProperty("role", "turn-text")
+        # 状态文字允许换行：「AI думает…」在俄语下比卡片内残留的宽度长，
+        # 换行显示完整。中文/短译文不触发，观感不变。
+        self.label.setWordWrap(True)
         row.addWidget(self.label, 1)
 
     def _set(self, player: int, text: str, tone: str, state: str) -> None:
