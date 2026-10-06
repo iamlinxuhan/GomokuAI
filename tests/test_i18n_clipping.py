@@ -164,10 +164,21 @@ def test_russian_difficulty_cards_wrap_to_two_rows(qapp):
     page = M.SelectionScreen(mode="difficulty")
     try:
         _show(page, qapp, M._design_size())
-        ys = {c.mapTo(page, QPoint(0, 0)).y() for c in page._cards}
-        assert len(ys) >= 2, "俄语 6 张长卡没有折行"
-        for card in page._cards:
-            assert card.width() >= 192, "卡片宽度没有按最长单词放大"
+        # 不写死像素（Windows/Linux 字体度量不同）：先按本机字体把卡片内容
+        # 的"最长不可断单元 + 边距"算一遍，只有一行真的排不下时才要求折行。
+        _assert_fits(page, "difficulty/ru")
+        cards = page._cards
+        unit = max(
+            _longest_unit(lbl.text(), QFontMetrics(lbl.font()))
+            + 2 * theme.SPACE_MD
+            for card in cards for lbl in card.findChildren(QLabel)
+            if lbl.property("role") in ("card-text", "card-sub"))
+        gap = theme.SPACE_LG
+        if len(cards) * unit + (len(cards) - 1) * gap > M._page_content_w():
+            ys = {c.mapTo(page, QPoint(0, 0)).y() for c in cards}
+            assert len(ys) >= 2, "一行排不下却没有折行"
+        # 同一组卡片必须等宽等高（观感约束，与字体无关）
+        assert len({(c.width(), c.height()) for c in cards}) == 1
     finally:
         page.deleteLater()
         _pump(qapp, 5)
