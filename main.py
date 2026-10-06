@@ -2292,30 +2292,32 @@ class LanMenuScreen(Screen):
 
 
 class LanJoinScreen(Screen):
-    """加入房间：填 IP / 端口，点颜色即发起连接。
+    """加入房间：填 IP / 端口，点「加入房间」即发起连接。
 
-    失败（没有房间 / 席位被占 / 版本不符）不发信号出去，而是**留在本页**
+    房主开房时已经选过颜色，加入方**不再选** —— 服务端把剩下那一席自动
+    分配过来（``seat="auto"``）。两人各选一次是两条互相不知道对方的规则，
+    必然有一天撞车。
+
+    失败（没有房间 / 房间已满 / 版本不符）不发信号出去，而是**留在本页**
     显示原因，用户可以直接改地址重试 —— 连接失败是联机的常态，不该把
     人弹回模式选择页重新走一遍。
     """
 
-    join_requested = pyqtSignal(str, str, int)   # host, port, stone
+    join_requested = pyqtSignal(str, str)   # host, port
     back_clicked = pyqtSignal()
 
     def __init__(self, host: str = "", port: str = "", error: str = ""):
         super().__init__(title="加入房间",
-                         subtitle="输入房主等待页显示的地址，选一种执子颜色")
+                         subtitle="输入房主等待页显示的地址，剩余席位会自动分配")
         form = QVBoxLayout()
         form.setSpacing(theme.SPACE_SM)
         self.host_edit = self._field(form, "房主 IP", host, "例如 192.168.1.7")
         self.port_edit = self._field(form, "端口", port, "例如 51234")
         self.add_content(self._as_widget(form))
 
-        black_btn = button("执黑加入", "primary", width=150)
-        white_btn = button("执白加入", "ghost", width=150)
-        black_btn.clicked.connect(lambda: self._emit_join(1))
-        white_btn.clicked.connect(lambda: self._emit_join(2))
-        self.add_content(hbox(black_btn, white_btn, spacing=theme.SPACE_LG))
+        join_btn = button("加入房间", "primary", width=150)
+        join_btn.clicked.connect(self._emit_join)
+        self.add_content(join_btn)
 
         self.error_label = faint_label("")
         self.add_content(self.error_label)
@@ -2352,9 +2354,9 @@ class LanJoinScreen(Screen):
         box.setLayout(layout)
         return box
 
-    def _emit_join(self, stone: int) -> None:
+    def _emit_join(self) -> None:
         self.join_requested.emit(self.host_edit.text().strip(),
-                                 self.port_edit.text().strip(), stone)
+                                 self.port_edit.text().strip())
 
 
 class LanWaitScreen(Screen):
@@ -2384,6 +2386,7 @@ def _lan_join_error_text(exc) -> str:
     code = getattr(exc, "code", "")
     known = {
         "seat_taken": "该颜色已被占用，换一种颜色试试",
+        "room_full": "房间已满：房主已经在和另一位玩家对局了",
         "no_room": "没有找到这个房间：请确认房主正在等待、地址没有抄错",
         "proto_mismatch": "双方游戏版本不一致，无法联机",
         "already_started": "这一局已经开始了，等下一局再进",
@@ -3467,8 +3470,13 @@ class GomokuGame(QMainWindow):
             return
         self._show_lan_wait(room.port, stone)
 
-    def _on_lan_join_requested(self, host, port, stone):
-        """加入方：握手成功才进对局；失败留在本页显示中文原因。"""
+    def _on_lan_join_requested(self, host, port):
+        """加入方：握手成功才进对局；失败留在本页显示中文原因。
+
+        席位不再是选出来的：房主开房时定过颜色，加入方走 ``seat="auto"``，
+        由服务端分配剩下那一席；真实颜色在 ``_attach_room`` 里从 welcome
+        读回，再校准 UI 镜像与日志。
+        """
         if not host:
             self._lan_join_error("请输入房主的 IP 地址")
             return
@@ -3481,19 +3489,17 @@ class GomokuGame(QMainWindow):
             return
 
         self.playmode = 2
-        self.gamemode = 0 if stone == 1 else 1
-        self._prepare_lan_game("局域网联机（加入方，执%s）"
-                               % ("黑" if stone == 1 else "白"))
-        # human_stone 必须在 attach 之前设好：welcome 是 connect 内同步
-        # 触发的，_on_room_state 的重放口径依赖它。
-        self.session.human_stone = stone
-        seat = "black" if stone == 1 else "white"
+        self._prepare_lan_game("局域网联机（加入方）")
         try:
-            self._attach_room(None, [(seat, stone)], host=host, port=port_no,
+            self._attach_room(None, [("auto", None)], host=host, port=port_no,
                               room_name=LAN_ROOM_NAME)
         except Exception as exc:                    # noqa: BLE001
             self._lan_join_error(_lan_join_error_text(exc))
             return
+        if self.logger:
+            self.logger.f.write("  我方执: %s\n"
+                                % ("黑" if self.session.human_stone == 1 else "白"))
+            self.logger.f.flush()
         self._update_panel()
 
     def _lan_join_error(self, text):
@@ -3563,7 +3569,8 @@ class GomokuGame(QMainWindow):
         ``room`` 非 None：本 UI 创建并持有它（拆局时 ``stop()``）；加入
         远端房间时为 None，地址从 host/port/room_name 给。
         ``client_specs`` 是 ``[(seat_name, stone), ...]``：人机一条（人类
-        席位），本地双人两条，LAN 一条（自己的席位）。
+        席位），本地双人两条；LAN 加入方一条 ``("auto", None)`` —— 颜色由
+        服务端分配，函数从 welcome 读回真实席位。
 
         失败时把已建立的连接连桥一起拆掉，再把异常抛给调用方 —— 单机回
         模式选择页，LAN 留在加入页显示原因。
@@ -3578,9 +3585,16 @@ class GomokuGame(QMainWindow):
         try:
             for seat, stone in client_specs:
                 client = RoomClient(on_event=bridge.event.emit)
-                client.connect(host or room.host, port or room.port,
-                               room_name or room.name, seat)
-                self._room_clients[stone] = client
+                welcome = client.connect(host or room.host,
+                                         port or room.port,
+                                         room_name or room.name, seat)
+                actual = 1 if welcome.get("seat", seat) == "black" else 2
+                self._room_clients[actual] = client
+                if stone is None:
+                    # auto 入座：颜色由房间分配，UI 镜像照 welcome 校准
+                    # （human_stone 决定 LAN 的胜负文案与悬停预览）。
+                    self.session.human_stone = actual
+                    self.gamemode = 0 if actual == 1 else 1
         except Exception:
             self._close_room()
             raise

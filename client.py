@@ -88,13 +88,17 @@ class RoomClient:
 
     # ------------------------------------------------------------ 连接
 
-    def connect(self, host: str, port: int, room: str, seat: str,
+    def connect(self, host: str, port: int, room: str, seat: str = "auto",
                 timeout: float = 5.0) -> dict:
         """握手 + 入座；成功返回 ``welcome`` 报文（并已发给 on_event）。
 
-        被拒（``no_room`` / ``seat_taken`` …）时抛 ``WireError``，并**立即
-        关闭这条 TCP 连接**：调用方（加入房间界面）会在失败后原地重试，
-        不能每试一次就留一条没人管的半开 socket。
+        ``seat`` 取 ``"black"`` / ``"white"`` 时指定席位；取 ``"auto"``（默认）
+        由服务端分配剩下的 remote 席位 —— 加入方不需要再选颜色。真实席位以
+        ``welcome["seat"]`` 为准，可从 :attr:`seat` 读到。
+
+        被拒（``no_room`` / ``seat_taken`` / ``room_full`` …）时抛
+        ``WireError``，并**立即关闭这条 TCP 连接**：调用方（加入房间界面）
+        会在失败后原地重试，不能每试一次就留一条没人管的半开 socket。
         """
         if self._wire is not None:
             raise RuntimeError("这个客户端已经连接")
@@ -115,7 +119,8 @@ class RoomClient:
             raise
 
         self._wire = wire
-        self.seat = seat
+        # auto 入座时真实席位由服务端在 welcome 里给出（"black"/"white"）。
+        self.seat = rep.get("seat", seat)
         self.room_name = room
         self.on_event(rep)
         self._reader = threading.Thread(target=self._read_loop, daemon=True,

@@ -469,9 +469,13 @@ def test_lan_mode_opens_menu_and_join_screen(monkeypatch, qapp):
         qapp.processEvents()
         assert win.lan_join is not None
         assert win.central.currentWidget() is win.lan_join
+        # 加入页不再让用户选颜色：房主定过色，剩余席位由服务端分配
+        labels = [b.text() for b in win.lan_join.findChildren(QPushButton)]
+        assert any("加入房间" in t for t in labels), labels
+        assert all("执黑" not in t and "执白" not in t for t in labels), labels
 
         # 端口不是数字：留在加入页显示原因（不发起连接）
-        win._on_lan_join_requested("127.0.0.1", "not-a-port", 1)
+        win._on_lan_join_requested("127.0.0.1", "not-a-port")
         qapp.processEvents()
         assert win.lan_join is not None
         assert "端口" in win.lan_join.error_label.text()
@@ -479,25 +483,27 @@ def test_lan_mode_opens_menu_and_join_screen(monkeypatch, qapp):
         _teardown(win, qapp)
 
 
-def test_lan_join_seat_taken_shows_error(monkeypatch, qapp):
-    """加入方选到已被占的席位：失败留在加入页，错误可读。"""
+def test_lan_join_room_full_shows_error(monkeypatch, qapp):
+    """房间两席都有人：加入失败留在页面上，错误可读、可原地重试。"""
     monkeypatch.setattr(M, "GameLogger", _DummyLogger)
     local = LocalRoom(SeatSpec("remote"), SeatSpec("remote"),
                       name=M.LAN_ROOM_NAME)
-    holder = RoomClient()
-    holder.connect(local.host, local.port, local.name, "black")
+    h1, h2 = RoomClient(), RoomClient()
+    h1.connect(local.host, local.port, local.name, "black")
+    h2.connect(local.host, local.port, local.name, "white")
     win = M.GomokuGame()
     win.show()
     try:
         win._on_mode_selected(2)
         qapp.processEvents()
-        win._on_lan_join_requested("127.0.0.1", str(local.port), 1)
+        win._on_lan_join_requested("127.0.0.1", str(local.port))
         qapp.processEvents()
         assert win.lan_join is not None
-        assert "已被占用" in win.lan_join.error_label.text()
+        assert "已满" in win.lan_join.error_label.text()
         assert win._room_clients == {}, "失败后不该留下半开的客户端"
     finally:
-        holder.close()
+        h1.close()
+        h2.close()
         local.stop()
         _teardown(win, qapp)
 
@@ -521,8 +527,10 @@ def test_lan_host_waits_then_guest_joins_and_plays(monkeypatch, qapp):
         assert win._room is not None and win._room.host == "0.0.0.0"
         assert win._room.room.auto_consent is False, "LAN 对手的悔棋要协商"
 
-        # 客人（另一台设备的等价物）从 127.0.0.1 入座
-        guest.connect("127.0.0.1", win._room.port, M.LAN_ROOM_NAME, "white")
+        # 客人（另一台设备的等价物）从 127.0.0.1 入座；**不用选色** ——
+        # 服务端把房主没占的那一席（白）分配给他
+        guest.connect("127.0.0.1", win._room.port, M.LAN_ROOM_NAME, "auto")
+        assert guest.seat == "white"
         assert _pump_until(qapp, lambda: win.lan_wait is None), \
             "对手入座后应收回等待屏"
         assert win.central.currentWidget() is win.game_widget
@@ -612,4 +620,32 @@ def test_undo_proposed_dialog_paths(monkeypatch, qapp):
         assert stub.responses == [True, False]
     finally:
         win._room_clients = {}
+        _teardown(win, qapp)
+
+
+def test_lan_join_auto_assigns_remaining_color(monkeypatch, qapp):
+    """房主执黑 → 加入方不选色，自动成为白方并进入对局。"""
+    monkeypatch.setattr(M, "GameLogger", _DummyLogger)
+    local = LocalRoom(SeatSpec("remote"), SeatSpec("remote"),
+                      name=M.LAN_ROOM_NAME)
+    host = RoomClient()
+    host.connect(local.host, local.port, local.name, "black")
+    win = M.GomokuGame()
+    win.show()
+    try:
+        win._on_mode_selected(2)
+        qapp.processEvents()
+        win._on_lan_join_requested("127.0.0.1", str(local.port))
+        qapp.processEvents()
+        assert _pump_until(qapp, lambda: win.session.human_stone == 2), \
+            "自动席位没有把加入方放成白方"
+        assert 2 in win._room_clients and 1 not in win._room_clients
+        assert win.playmode == 2 and win.gamemode == 1
+
+        # 房主先手落子 → 加入方镜像回显
+        host.move(9, 9)
+        assert _pump_until(qapp, lambda: win.board[9][9] == 1)
+    finally:
+        host.close()
+        local.stop()
         _teardown(win, qapp)

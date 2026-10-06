@@ -119,7 +119,7 @@ M4c 对 UI 级覆盖的调整（理由详见 `tests/test_game_flow.py` 模块 do
   hello          {proto: 1, name, caps: [...]}
   list_rooms     {}
   join           {room, password?}
-  seat           {stone: "black"|"white"} | ready
+  seat           {"black"|"white"|"auto"}   # auto = 服务端分配剩余席位
   move           {r, c}
   undo_request   {}
   undo_response  {accept: bool}

@@ -157,3 +157,18 @@ def test_client_undo_with_ai_opponent(monkeypatch):
     finally:
         c.close()
         local.stop()
+
+
+def test_connect_auto_seat_uses_server_assignment():
+    """默认 ``seat="auto"``：真实席位由服务端分配，客户端从 welcome 读回。"""
+    local = LocalRoom(SeatSpec("remote"), SeatSpec("remote"))
+    c1, c2 = RoomClient(), RoomClient()
+    try:
+        rep1 = c1.connect(local.host, local.port, local.name)         # 默认 auto
+        rep2 = c2.connect(local.host, local.port, local.name, "auto")
+        assert rep1["seat"] == "black" and c1.seat == "black"
+        assert rep2["seat"] == "white" and c2.seat == "white"
+    finally:
+        c1.close()
+        c2.close()
+        local.stop()

@@ -525,3 +525,24 @@ def test_undo_pending_freezes_moves(server):
     finally:
         b.close()
         w.close()
+
+def test_auto_seat_fills_the_free_side(server):
+    """``seat="auto"``：加入方不必选色 —— 服务端把剩下的 remote 席位给他。
+
+    房主开房时已经定过颜色，让加入方再选一次是两条互不知情的规则；
+    auto 把"选剩下那一席"交给唯一的权威（房间）。
+    """
+    _srv, _room, port = server
+    w1 = w2 = w3 = None
+    try:
+        w1, r1 = _hello_join(port, seat="auto")
+        assert r1["type"] == "welcome" and r1["seat"] == "black"
+        w2, r2 = _hello_join(port, seat="auto")
+        assert r2["type"] == "welcome" and r2["seat"] == "white"
+
+        w3, r3 = _hello_join(port, seat="auto")
+        assert r3["type"] == "error" and r3["code"] == "room_full"
+    finally:
+        for w in (w1, w2, w3):
+            if w is not None:
+                w.close()

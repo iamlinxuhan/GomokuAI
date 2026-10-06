@@ -131,6 +131,16 @@ class Room:
     def seats_json(self):
         return {str(s): self.specs[s].to_json() for s in (1, 2)}
 
+    def free_remote_seats(self) -> list:
+        """还没人坐的 ``remote`` 席位（黑先顺序）。
+
+        给 ``seat="auto"`` 的加入者用：房主已经定了颜色，加入方不该再选
+        —— 服务端把剩下那一席给他，两个人不可能选重。
+        """
+        with self._cv:
+            return [s for s in (1, 2)
+                    if self.specs[s].kind == "remote" and self._conns[s] is None]
+
     def state_payload(self):
         return {
             "board": self.session.board.tolist(),
