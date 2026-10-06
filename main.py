@@ -1986,40 +1986,57 @@ class GamePanel(QFrame):
                    "平局", "平局！")
 
     def _width_need(self) -> int:
-        """面板宽度需求：按**运行期值域**而不是构造初值推导。
+        """面板宽度需求：逐项按**运行期值域**显式推导。
 
-        构造时各信息行还写着 "—"、回合卡还写着 "准备开始"，直接量
-        ``minimumSizeHint`` 会漏掉运行期真实文本（难度名「Гроссмейстер」比
-        "—" 宽 168px），长语言下面板就会定窄、把值裁掉。这里把"值会变"的
-        两处 —— 难度行与回合卡 —— 挨个试穿值域里的每个文本再恢复。
+        面板宽度要放得下三类东西：单行的操作按钮、每个信息行里"最宽的
+        那个值"（难度名、端口号、引擎名……）、回合卡状态文字里最长的不可断
+        单元。构造时各信息行还写着 "—"、回合卡还写着 "准备开始"，直接量
+        ``minimumSizeHint`` 量不出运行期需求 —— 难度名「Гроссмейстер」比
+        "—" 宽 168px。
 
-        记的是**增量**：面板基准值（含内边距与边框，由控件自己算）+ 该行
-        变宽出来的差值。构造期面板级的 ``minimumSizeHint`` 有缓存、子控件
-        改文本后不会及时刷新，而行级的最小尺寸是即时的 —— 用增量既绕开
-        缓存，也不必手工复刻内边距/边框那几个像素（它们已经含在基准里）。
+        **结果不与面板自己的 ``minimumSizeHint`` 叠加**：那个值会被当时
+        恰好在场的元素主导（例如后来才定型宽的主题胶囊），叠加会把无关的
+        宽度重复计入 —— 实测俄语虚高 120px。逐项取 max 才是"每行都放得下"
+        的正解。内边距与边框（QSS 的 1px 描边）在这里补足，行级的最小尺寸
+        是即时的、不受面板级缓存影响。
         """
-        panel0 = self.minimumSizeHint().width()
-        need = panel0
-        # 难度行：值会换成任何一档的名字（自定义档的名字最长）。
-        row = self.difficulty_row
-        row0 = row.minimumSizeHint().width()
-        orig = row._value.text()
-        for lv in list(engine.DIFFICULTY) + [engine.CUSTOM_LEVEL]:
-            row.set_value(i18n.t(engine.difficulty_name(lv)))
-            need = max(need, panel0 + row.minimumSizeHint().width() - row0)
-        row.set_value(orig)
-        # 回合卡：状态文案随对局走（「AI 思考中…」/「Вы победили!」…），
-        # 状态文本是整句、可以折行，需求由卡内布局算。
+        self.ensurePolished()
+        pad = 2 * theme.SPACE_XL + 2 * max(1, self.frameWidth())
+        need = theme.PANEL_W
+        # 单行的操作按钮。
+        for btn in (self.undo_btn, self.restart_btn, self.quit_btn):
+            need = max(need, btn.sizeHint().width() + pad)
+        # 信息行：标签（wrap 后） + 值域最宽值 + 行距。值域来自各行的
+        # 真实产出点（engine.DIFFICULTY / engine._LABELS / 端口上限等）。
+        pools = (
+            (self.difficulty_row,
+             [i18n.t(engine.difficulty_name(lv))
+              for lv in list(engine.DIFFICULTY) + [engine.CUSTOM_LEVEL]]),
+            (self.engine_row, list(engine._LABELS.values()) + ["—"]),
+            (self.port_row, ["—", "65535"]),
+            (self.undo_row, ["3"]),
+            (self.moves_row, ["361"]),
+            (self.time_row, ["00:00"]),
+        )
+        for row, texts in pools:
+            fm = row._value.fontMetrics()
+            value_w = max(fm.horizontalAdvance(t) for t in texts)
+            need = max(need, row._label.minimumSizeHint().width()
+                       + value_w + theme.SPACE_SM + pad)
+        # 回合卡：状态文案试穿值域（卡的最小尺寸按卡内布局即时算）。
         turn = self.turn_indicator
-        turn0 = turn.minimumSizeHint().width()
-        orig_turn = turn.label.text()
+        saved = turn.label.text()
         texts = list(self._TURN_TEXTS)
         texts += [i18n.tf("%s 行动中", i18n.t(s))
                   for s in ("黑棋 ●", "白棋 ○")]
         for text in texts:
             turn.label.setText(i18n.t(text))
-            need = max(need, panel0 + turn.minimumSizeHint().width() - turn0)
-        turn.label.setText(orig_turn)
+            need = max(need, turn.minimumSizeHint().width() + pad)
+        turn.label.setText(saved)
+        # 图表卡：标题/图例/读数行已开 wrap，其最小尺寸就是"折行后仍摆不下"
+        # 的那部分。
+        for chart in (self.score_chart, self.win_chart):
+            need = max(need, chart.minimumSizeHint().width() + pad)
         return need
 
     def _fit_theme_button(self) -> None:
