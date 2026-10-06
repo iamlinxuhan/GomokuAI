@@ -2021,8 +2021,13 @@ class GamePanel(QFrame):
         for row, texts in pools:
             fm = row._value.fontMetrics()
             value_w = max(fm.horizontalAdvance(t) for t in texts)
-            need = max(need, row._label.minimumSizeHint().width()
-                       + value_w + theme.SPACE_SM + pad)
+            # 标签按**整行文字宽**算，不能用 ``minimumSizeHint()``：wordWrap
+            # 打开后它给的是"最长单词"宽（俄语「Сложность AI」168px 被算成
+            # ~100px），面板于是没为"标签 + 最宽值「Гроссмейстер」"留够空间，
+            # 标签被迫折行而被下缘裁掉 —— CI 的 Linux 字体下实测 6 处。
+            label_w = row._label.fontMetrics().horizontalAdvance(
+                row._label.text())
+            need = max(need, label_w + value_w + theme.SPACE_SM + pad)
         # 回合卡：状态文案试穿值域（卡的最小尺寸按卡内布局即时算）。
         turn = self.turn_indicator
         saved = turn.label.text()
