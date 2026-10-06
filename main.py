@@ -44,7 +44,7 @@ from ui_kit import (BrandMark, InfoRow, QuestionMark, Screen, StoneFace,
                     TurnIndicator,
                     button as _ui_button, card_button as _ui_card_button,
                     card_fit_height, faint_label, hbox as _ui_hbox, separator,
-                    subtitle_label, title_label)
+                    subtitle_label, title_label, wrap_label)
 
 # ---- ui_kit 的"半缩放"补丁 ----------------------------------------------
 #
@@ -1335,8 +1335,8 @@ class LoadingScreen(Screen):
             # **拉满整行**（对齐只给垂直方向）：不拉满时 QLabel 会缩到"启发式
             # 折行宽度"，俄语在启发宽度下要 3 行、容器却只按 sizeHint 给 2 行，
             # 最后一行仍会被裁。拉满后宽度就是页面可用宽，折几行都放得下。
-            warn.setWordWrap(True)
             warn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+            wrap_label(warn)
             self.add_footer(warn, Qt.AlignVCenter)
 
     def _advance(self):
@@ -1907,7 +1907,7 @@ class GamePanel(QFrame):
         # 长语言里这句说明比面板内区还宽（俄语 532px）：开 wordWrap，宽度与
         # 按钮高度一起在 ``_fit_theme_button`` 里按**最终定下的面板宽度**现算
         # —— 面板宽度本身要先由其余元素的需求定出来。
-        self.theme_caption.setWordWrap(True)
+        wrap_label(self.theme_caption)
         # 先 polish 再量尺寸 —— 14px 是 QSS 里定的，不 polish 量到的是按钮
         # 那一档 16px，算出来的按钮宽度就偏了（与 ``ui_kit.card_button``
         # 量左上角序号同一条教训）。

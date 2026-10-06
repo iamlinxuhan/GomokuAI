@@ -36,6 +36,7 @@ import analysis as A
 import theme
 from i18n import t, tf
 from theme import CHART_PLOT_H, SIZE_XS, SPACE_SM, SPACE_XS
+from ui_kit import wrap_label
 
 # 点的来路。用字符串而不是 bool：将来若加上第三种（比如"开局库"），
 # 图例与 tooltip 只需各加一行，不必回头改所有调用点。
@@ -202,14 +203,14 @@ class ChartCard(QFrame):
         # 标题允许换行并**吃掉行内剩余宽度**（原来靠一根 stretch 顶开，wrap 后
         # 标题只拿 sizeHint 的启发值，本可一行摆下的俄语标题会被折成两行）。
         # 中文标题远短于可用宽度，拉满与否在观感上没有差别。
-        self._title.setWordWrap(True)
+        wrap_label(self._title)
         head.addWidget(self._title, 1)
         if legend:
             self._legend = QLabel(t(legend))
             self._legend.setProperty("role", "chart-title")
             # 图例同样多语言：俄语「● Поиск　○ Статика」比标题行剩余宽度还长，
             # 折行显示完整（中文的「● 搜索　○ 静态」不触发）。
-            self._legend.setWordWrap(True)
+            wrap_label(self._legend)
             head.addWidget(self._legend)
         box.addLayout(head)
 
@@ -224,7 +225,7 @@ class ChartCard(QFrame):
             # 里允许在段间折行 —— 它是**数据不是句子**，折行不损可读性，
             # 但被右缘裁掉一段就是数据缺失。高度不钉死：布局按
             # ``heightForWidth`` 给几行就几行，宽卡片里它就是原来的一行。
-            self._readout.setWordWrap(True)
+            wrap_label(self._readout)
             self._readout.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             box.addWidget(self._readout)
 

@@ -116,6 +116,21 @@ def _set_role(w, role: str):
     return w
 
 
+def wrap_label(label: QLabel) -> QLabel:
+    """让 ``label`` 折行，并**把这件事告诉布局**。
+
+    ``QLabel.setWordWrap(True)`` 只影响绘制；``QSizePolicy.hasHeightForWidth()``
+    默认仍是 False，布局于是按"一行高度"分配空间 —— 折出来的后续行会被下缘
+    裁掉。Windows 字体下多数文案一行放得下，这个缺陷要到更宽的字体（CI 的
+    Linux runner、俄语）才暴露。所以**每一个开 wrap 的点都必须同时开这个策略**。
+    """
+    label.setWordWrap(True)
+    sp = label.sizePolicy()
+    sp.setHeightForWidth(True)
+    label.setSizePolicy(sp)
+    return label
+
+
 # ==================== 文本 ====================
 #
 # 四个工厂都过一遍 ``i18n.t()``。**只有这一层拦**，调用方照旧写中文原文 ——
@@ -275,7 +290,7 @@ def card_button(text: str, tone: str, *, face: QWidget | None = None,
     label.setAlignment(Qt.AlignCenter)
     label.setProperty("role", "card-text")
     label.setProperty("tone", tone)
-    label.setWordWrap(True)
+    wrap_label(label)
     label.ensurePolished()
     box.addWidget(label)
 
@@ -283,7 +298,7 @@ def card_button(text: str, tone: str, *, face: QWidget | None = None,
         hint = QLabel(t(sub))
         hint.setAlignment(Qt.AlignCenter)
         hint.setProperty("role", "card-sub")
-        hint.setWordWrap(True)
+        wrap_label(hint)
         hint.ensurePolished()
         box.addWidget(hint)
 
@@ -314,7 +329,7 @@ class InfoRow(QWidget):
         # 标签允许换行：俄语「Текущий TCP-порт」比面板内区还宽，单行摆不开。
         # 中文标签都短于可用宽度，wrap 不触发，观感与从前逐字不差。
         # （值不 wrap —— 值多是坐标/比分/名字，断行只会更难读。）
-        self._label.setWordWrap(True)
+        wrap_label(self._label)
         self._value = value_label(value)
 
         row.addWidget(self._label)
@@ -475,7 +490,9 @@ class TurnIndicator(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setProperty("role", "turn-card")
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        # 纵向 Minimum 而不是 Fixed：状态文字折行时这张卡要能跟着长高
+        # （Fixed 会让折出来的第二行被上缘/下缘裁掉，Linux 宽字体下实测）。
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
@@ -488,7 +505,7 @@ class TurnIndicator(QFrame):
         self.label.setProperty("role", "turn-text")
         # 状态文字允许换行：「AI думает…」在俄语下比卡片内残留的宽度长，
         # 换行显示完整。中文/短译文不触发，观感不变。
-        self.label.setWordWrap(True)
+        wrap_label(self.label)
         row.addWidget(self.label, 1)
 
     def _set(self, player: int, text: str, tone: str, state: str) -> None:
