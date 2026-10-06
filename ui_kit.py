@@ -16,13 +16,15 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import Qt, QPointF, QRectF
-from PyQt5.QtGui import QBrush, QColor, QPainter, QPixmap, QRadialGradient
+from PyQt5.QtGui import (QBrush, QColor, QPainter, QPen, QPixmap,
+                         QRadialGradient)
 from PyQt5.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton,
                              QSizePolicy, QStyle, QStyleOption, QVBoxLayout,
                              QWidget)
 
 import board_render
 import theme
+from i18n import t
 from theme import (CARD_PX, CONTROL_H, SPACE_LG, SPACE_MD, SPACE_SM,
                    SPACE_XL, SPACE_XS, SPACE_XXL)
 
@@ -115,30 +117,38 @@ def _set_role(w, role: str):
 
 
 # ==================== 文本 ====================
+#
+# 四个工厂都过一遍 ``i18n.t()``。**只有这一层拦**，调用方照旧写中文原文 ——
+# 界面文案进控件的路径就这几条，拦在这里比在五百个调用点各写一次 ``t()`` 稳
+# 靠：漏了一个调用点，用户看到的是中文，而**这里**漏了谁都跑不掉。
+#
+# 代价是"看起来该被翻译的都被翻了"这句话不成立：值（比分、坐标、计时、玩家
+# 名）也走这几个工厂。不过 ``t()`` 查不到就原样返回，值天然查不到，等于零开销
+# 的一趟字典查找。
 
 def title_label(text: str, role: str = "title") -> QLabel:
     """屏幕主标题。字号由 QSS 的 ``role`` 决定，不在这里写死。"""
-    lbl = QLabel(text)
+    lbl = QLabel(t(text))
     lbl.setAlignment(Qt.AlignCenter)
     return _set_role(lbl, role)
 
 
 def subtitle_label(text: str) -> QLabel:
-    lbl = QLabel(text)
+    lbl = QLabel(t(text))
     lbl.setAlignment(Qt.AlignCenter)
     return _set_role(lbl, "subtitle")
 
 
 def faint_label(text: str, align=Qt.AlignCenter) -> QLabel:
     """页脚 / 统计行等次要文字。"""
-    lbl = QLabel(text)
+    lbl = QLabel(t(text))
     lbl.setAlignment(align)
     return _set_role(lbl, "faint")
 
 
 def value_label(text: str = "—") -> QLabel:
     """信息行里的值。"""
-    lbl = QLabel(text)
+    lbl = QLabel(t(text))
     lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
     return _set_role(lbl, "value")
 
@@ -164,7 +174,7 @@ def button(text: str, variant: str = "primary", *,
     高 45、卡片另算一套），半径与字号互不匹配。现在变体是**数据**
     （``theme.button_variants()``），新增一种只是加一行。
     """
-    btn = QPushButton(text)
+    btn = QPushButton(t(text))
     btn.setFixedHeight(height)
     if width is not None:
         btn.setFixedWidth(width)
@@ -220,14 +230,14 @@ def card_button(text: str, tone: str, *, face: QWidget | None = None,
     if face is not None:
         box.addWidget(face, 0, Qt.AlignHCenter)
 
-    label = QLabel(text)
+    label = QLabel(t(text))
     label.setAlignment(Qt.AlignCenter)
     label.setProperty("role", "card-text")
     label.setProperty("tone", tone)
     box.addWidget(label)
 
     if sub:
-        hint = QLabel(sub)
+        hint = QLabel(t(sub))
         hint.setAlignment(Qt.AlignCenter)
         hint.setProperty("role", "card-sub")
         box.addWidget(hint)
@@ -252,7 +262,7 @@ class InfoRow(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(SPACE_SM)
 
-        self._label = QLabel(label)
+        self._label = QLabel(t(label))
         self._label.setProperty("role", "subtitle")
         self._value = value_label(value)
 
@@ -334,6 +344,48 @@ def stone_row(players, *, diameter: int = 28) -> QWidget:
     return hbox(*(StoneFace(p, diameter) for p in players), spacing=SPACE_XS)
 
 
+class QuestionMark(QWidget):
+    """一个自绘的「?」—— 自定义难度那张卡的卡面。
+
+    **为什么不用 ``faint_label("?")``。** 上一版卡面是一颗 `＋`，用 ``QLabel``
+    凑的：字号由 QSS 的 ``faint`` 角色定死，于是它比同排难度卡的强度条小一大
+    截、颜色也偏灰，六张卡摆在一起时那一张看起来像"没加载出来"。文字控件的
+    尺寸只有在字体度量里才有意义，跟旁边的自绘图形对不齐。
+
+    **为什么不是 ``＋`` 而是 ``?``。** `＋` 说的是"再加一档"，而自定义档不是
+    "比宗师还强的一档"—— 它可能被调得比入门还弱。`?` 说的是"这一档是什么，
+    得你来定"，与卡面副标题「算法与深度可调」正好一句话的两半。
+
+    画法是一个圆环加字形本身：环给出与棋子同级的视觉重量，字形走
+    ``drawText`` 而不是手绘路径 —— 各平台的字形微调差得远，硬画路径会在某些
+    字体下歪掉，而 `?` 是 ASCII，任何字体都有。
+    """
+
+    def __init__(self, size: int = 60, parent=None):
+        super().__init__(parent)
+        self._size = float(size)
+        self.setFixedSize(size, size)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        d = self._size
+        # 环留 1px 给抗锯齿的笔宽外沿，否则圆的边缘会被控件边界切平。
+        pen_w = max(2.0, d * 0.075)
+        p.setPen(QPen(QColor(theme.ACCENT), pen_w))
+        p.setBrush(Qt.NoBrush)
+        inset = pen_w / 2.0 + 1.0
+        p.drawEllipse(QRectF(inset, inset, d - 2 * inset, d - 2 * inset))
+
+        font = p.font()
+        font.setPointSizeF(d * 0.46)
+        font.setBold(True)
+        p.setFont(font)
+        p.setPen(QPen(QColor(theme.ACCENT)))
+        p.drawText(self.rect(), Qt.AlignCenter, "?")
+        p.end()
+
+
 class BrandMark(QWidget):
     """应用标记：一块缩微的木棋盘（见 ``board_render.brand_mark``）。
 
@@ -381,13 +433,13 @@ class TurnIndicator(QFrame):
         self.dot = StoneDot()
         row.addWidget(self.dot, 0, Qt.AlignVCenter)
 
-        self.label = QLabel("准备开始")
+        self.label = QLabel(t("准备开始"))
         self.label.setProperty("role", "turn-text")
         row.addWidget(self.label, 1)
 
     def _set(self, player: int, text: str, tone: str, state: str) -> None:
         self.dot.set_player(player)
-        self.label.setText(text)
+        self.label.setText(t(text))
         self.label.setProperty("tone", tone)
         self.setProperty("state", state)
         # 动态属性改完必须 repolish，否则 QSS 不重算（老坑）。

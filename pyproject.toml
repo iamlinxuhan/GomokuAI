@@ -29,11 +29,11 @@
 
 [project]
 name = "gomoku-ai"
-# 版本号与 README 徽章（version-3.0.8）、git tag 保持一致，发布时一起改。
+# 版本号与 README 徽章（version-3.0.9）、git tag 保持一致，发布时一起改。
 # 不能用 dynamic = ["version"]：那会让 uv 调 setuptools 构建元数据，而本仓库
 # 顶层有 cpp/installer/packaging 多个目录，setuptools 的 flat-layout 自动发现
 # 会直接报错。没有代码读这个字段；打包的 APP_VERSION 由 CI 从 tag 解析。
-version = "3.0.8"
+version = "3.0.9"
 description = "A human-vs-AI Gomoku (five-in-a-row) program with a bitboard C++17 search core"
 readme = "README.md"
 # SPDX 标识符（PEP 639）。界面用的 PyQt5 本身以 GPLv3 发布，链接它的二进制整体

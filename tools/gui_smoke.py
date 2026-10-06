@@ -52,6 +52,7 @@ from PyQt5.QtTest import QTest  # noqa: E402
 from PyQt5.QtWidgets import (QApplication, QLabel, QPushButton,  # noqa: E402
                              QScrollArea)
 
+import i18n  # noqa: E402
 import theme  # noqa: E402
 import main as M  # noqa: E402
 
@@ -768,29 +769,25 @@ def do_review(app):
           f"{len(w.review_records)} 条")
     check(w.game_panel is None, "复盘期间没有残留对局面板")
 
-    # 复盘结果页同样要有设置入口，且从这儿进去、原路回来 —— 不换档，纯验证
-    # "来回一趟不会把结果页顶掉"（换档重建那条由 do_settings 覆盖）。
+    # 复盘结果页同样要有设置入口，且**开弹窗不换页** —— 不换档，纯验证
+    # "开一趟关一趟不会把结果页顶掉"（换档重建那条由 do_settings 覆盖）。
     rgear = _settings_btn(w)
     if check(rgear is not None and rgear.isVisible(),
              "复盘结果页上齿轮可见"):
-        rgear.click()
-        pump(60, app)
-        check(w.central.currentWidget() is w.settings_screen,
-              "从复盘结果页进得了设置页")
-        check(w._settings_origin is w.review_list,
-              "设置页记住了来路是复盘结果页")
-        w.settings_screen.back_clicked.emit()
-        pump(60, app)
-        check(w.central.currentWidget() is w.review_list,
-              "返回回到复盘结果页")
-        # 再来一趟：设置页是复用的，**第二趟不该再往栈里塞一页**。
         n_pages = w.central.count()
         rgear.click()
         pump(60, app)
-        w.settings_screen.back_clicked.emit()
+        check(w.settings_dialog is not None, "从复盘结果页开得出设置弹窗")
+        check(w.central.currentWidget() is w.review_list,
+              "弹窗期间结果页还在原位")
+        w.settings_dialog.close()
         pump(60, app)
+        check(w.central.currentWidget() is w.review_list,
+              "关窗后回到复盘结果页")
         check(w.central.count() == n_pages,
-              "来回两趟没有在栈里堆页面", f"{w.central.count()} 页")
+              "开一趟关一趟没有在栈里堆页面", f"{w.central.count()} 页")
+        # 没换档就不该重建结果页 —— 重建会把列表滚动位置与当前选中项丢掉。
+        check(w.review_list is not None, "结果页没有被换掉")
 
     for rec in w.review_records:
         b, p = rec['best'], rec['played']
@@ -1038,7 +1035,7 @@ def do_review_cancel(app):
 
 
 def do_settings(app):
-    """设置：**每一页都有入口**、从哪儿进就回哪儿、换档不丢局面。
+    """设置弹窗：每一页都有入口、弹窗期间不切页、换档不丢局面、关窗才重建。
 
     只在关掉自动适配（``GOMOKU_AI_UI_AUTOFIT=0``，本文件开头已设）的前提下
     跑 —— 否则离屏的 800×600 会让档位初始值取决于平台，断言不稳定。
@@ -1060,7 +1057,7 @@ def do_settings(app):
     if not check(w.selection_mode is not None, "设置用例：进入模式选择页"):
         return
 
-    # ---- 1. 选择页：右上角齿轮 ----
+    # ---- 1. 模式选择页：齿轮开弹窗 ----
     gear = _settings_btn(w)
     if not check(gear is not None and gear.isVisible(),
                  "模式选择页上齿轮可见"):
@@ -1068,25 +1065,37 @@ def do_settings(app):
     check(_gear_is_right_of_title(w),
           "齿轮紧贴在当前页主标题文字的右边",
           f"{_gear_rect(w)} / 标题 {_title_rect(w)}")
+
+    page_before = w.central.currentWidget()
+    n_pages_before = w.central.count()
     gear.click()
     pump(60, app)
-    scr = w.settings_screen
-    if not check(scr is not None, "「⚙ 设置」进入设置页"):
+    dlg = w.settings_dialog
+    if not check(dlg is not None, "「⚙ 设置」打开设置弹窗"):
         return
-    check(w.central.currentWidget() is scr, "当前页就是设置页")
+    # **弹窗化最核心的一条**：它不占 `central` 的一页，底下那一页在弹窗期间
+    # 纹丝不动。从前"进设置"要切页、出去要按 `_settings_origin` 原路返回。
+    check(w.central.currentWidget() is page_before,
+          "开弹窗不切页（底下还是进来时那一页）")
+    check(w.central.count() == n_pages_before,
+          "弹窗没有往页面栈里塞东西", f"{w.central.count()} 页")
 
-    texts = _button_texts(scr)
+    texts = _button_texts(dlg)
     labels = [theme.scale_label(n) for n in theme.available_scales()]
     check(all(t in texts for t in labels),
-          "设置页列出全部字号档位", str([t for t in texts if t in labels]))
+          "弹窗列出全部字号档位", str([t for t in texts if t in labels]))
 
-    checked = [b.text() for b in scr.findChildren(QPushButton) if b.isChecked()]
+    # 「语言」那一排也是可勾选的按钮，但它归另一个组。这里问的是"字号档位里
+    # 只有一个被勾中"，所以先把语言按钮摘出去，否则勾中的语言会被算进来。
+    lang_btns = set(dlg.language_row.findChildren(QPushButton))
+    checked = [b.text() for b in dlg.findChildren(QPushButton)
+               if b.isChecked() and b not in lang_btns]
     check(checked == [theme.scale_label(theme.current_scale())],
           "当前档位是唯一被勾选的那个", str(checked))
 
-    # 点「小」：字号变、QSettings 落盘、本页重建
+    # 点「小」：字号变、QSettings 落盘、**弹窗自己**重建
     before_md = theme.SIZE_MD
-    scr.scale_selected.emit(small_name)
+    dlg.scale_selected.emit(small_name)
     pump(60, app)
     check(theme.current_scale() == small_name,
           "点档位后 theme 的档位变了", theme.current_scale())
@@ -1095,22 +1104,20 @@ def do_settings(app):
     check(s.value(theme._SETTINGS_SCALE_KEY) == small_name,
           "档位写穿到 QSettings（下次打开还是这一档）",
           str(s.value(theme._SETTINGS_SCALE_KEY)))
-    check(w.settings_screen is not scr,
-          "换档后设置页重建了（旧页的布局已经不适用）")
-    check(w.central.currentWidget() is w.settings_screen,
-          "重建后当前页仍是设置页")
+    check(w.settings_dialog is not dlg,
+          "换档后弹窗重建了（旧控件的度量已经不适用）")
+    check(w.settings_dialog is not None, "重建后弹窗还在")
 
-    # 返回：**回进来时那一页**。设置页是借道的，走的时候要把它从栈里摘掉，
-    # 否则来回进几次就会让栈一直带着这一页。
-    n_before = w.central.count()          # 含这一趟的设置页
-    w.settings_screen.back_clicked.emit()
+    # 关窗：档位变过 → 底下那一页按新度量重建，且当前页指向新对象。
+    w.settings_dialog.close()
     pump(60, app)
+    check(w.settings_dialog is None, "关窗后主窗口撤了引用")
     check(w.central.currentWidget() is w.selection_mode,
-          "「← 返回」回到进来时的那一页（模式选择页）")
-    check(w.central.count() == n_before - 1,
-          "离开设置页后它没有赖在栈里", f"{w.central.count()} 页")
+          "关窗后还在进来时那一页（模式选择页）")
+    check(w.central.currentWidget() is not page_before,
+          "换过档后底下那一页重建了")
 
-    # ---- 2. 对局页：面板标题行的紧凑入口，换档后局面/用时都不丢 ----
+    # ---- 2. 对局页：换档后局面/用时都不丢 ----
     theme.set_scale("normal", persist=False)
     w.selection_mode.mode_selected.emit(0)          # 挑战 AI
     pump(40, app)
@@ -1144,16 +1151,22 @@ def do_settings(app):
           f"{_gear_rect(w)} / 标题 {_title_rect(w)}")
 
     game_before = w.game_widget
+    n_pages_before = w.central.count()
     w.settings_btn.click()
     pump(60, app)
-    check(w.central.currentWidget() is w.settings_screen,
-          "对局中点「⚙」进入了设置页")
-    w.settings_screen.scale_selected.emit(small_name)
+    check(w.settings_dialog is not None, "对局中点「⚙」开出了设置弹窗")
+    check(w.central.currentWidget() is game_before,
+          "对局中开弹窗不会把棋盘页顶掉")
+    # **弹窗开着时对局事件照旧在到达**（AI 落子、计时走表）—— 这条时序是
+    # 弹窗化最容易踩的一处：关窗时 `_rebuild_for_scale` 拿到的是"带着新状态的"
+    # 那一页，快照-回灌必须把新状态一起带过去。
+    pump(80, app)
+    w.settings_dialog.scale_selected.emit(small_name)
     pump(60, app)
-    w.settings_screen.back_clicked.emit()
+    w.settings_dialog.close()
     pump(120, app)
     check(w.central.currentWidget() is w.game_widget,
-          "从对局页进设置，返回还在对局页（没有被踢回首页）")
+          "关窗后还在对局页（没有被踢回首页）")
     check(w.game_widget is not game_before,
           "换档后对局页按新档位重建了（面板宽度等常量不会自己变）")
     check(int((w.board != 0).sum()) == stones_before,
@@ -1176,7 +1189,126 @@ def do_settings(app):
     else:
         s.setValue(theme._SETTINGS_SCALE_KEY, saved_scale)
     w._cancel_ai()
-    w.settings_screen = None
+    if w.settings_dialog is not None:
+        w.settings_dialog.close()
+    w.close()
+    w.deleteLater()
+    pump(30, app)
+
+def _card_text(card):
+    """卡片上的主文案（``card_button`` 是个空按钮，文字在子 label 里）。"""
+    for lbl in card.findChildren(QLabel):
+        if lbl.property("role") == "card-text":
+            return lbl.text()
+    return None
+
+
+def do_custom_difficulty(app):
+    """自定义难度：第 6 张卡 → 配置弹窗 → 参数真的进了搜索，复盘跳过强度页。
+
+    这一条测的是**接线**：卡片发出的档位号、弹窗写回引擎的配置、被下发的请求
+    参数、以及复盘时用的是哪一份 —— 四处任一接错，界面都照样好看。
+    """
+    import engine
+
+    s = QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP)
+    saved_custom = s.value(M._SETTINGS_CUSTOM_KEY, None)
+    engine.reset_custom_config()
+
+    w = M.GomokuGame()
+    w.show()
+    pump(120, app)
+    w._on_loading_finished()
+    pump(40, app)
+
+    w.selection_mode.mode_selected.emit(0)          # 挑战 AI
+    pump(40, app)
+    w.selection_color.color_selected.emit(0)        # 执黑
+    pump(40, app)
+    if not check(w.selection_difficulty is not None, "自定义用例：进入难度页"):
+        return
+
+    cards = w.selection_difficulty._cards
+    check(len(cards) == len(engine.DIFFICULTY) + 1,
+          "难度页比预设档多一张卡", f"{len(cards)} 张")
+    if not check(_card_text(cards[-1]) == "自定义",
+                 "第 6 张卡就是「自定义」", str(_card_text(cards[-1]))):
+        return
+
+    # 点第 6 张卡：**只开弹窗**，这一刻引擎里的配置一个字都没动。
+    before = engine.custom_config()
+    cards[-1].click()
+    pump(60, app)
+    if not check(w.custom_dialog is not None, "点「自定义」开出了配置弹窗"):
+        return
+    check(w.central.currentWidget() is w.selection_difficulty,
+          "配置弹窗期间难度页还在原位")
+    check(engine.custom_config() == before,
+          "还没点「确定」，引擎里的配置没被改")
+    check(w.gamekunnan != engine.CUSTOM_LEVEL,
+          "还没点「确定」，没有换档开局")
+
+    # 三条连续量各是一根滑杆，刻度就是用户点名的那三组。
+    for key, lo, hi, unit in (("time", 10, 60, "秒"),
+                              ("max_depth", 2, 40, "层"),
+                              ("qply", 2, 24, "层")):
+        sl = w.custom_dialog._rows[key]._slider
+        check((sl.minimum(), sl.maximum()) == (lo, hi),
+              f"「{key}」的滑杆刻度是 {lo}–{hi} {unit}",
+              f"{sl.minimum()}–{sl.maximum()}")
+
+    # 改「深度上限」到 9 层，再点「确定」。滑杆只走整数刻度，所以直接 setValue，
+    # 不再像按钮版那样按文案去 findChildren 找那个「9 层」按钮。
+    slider = w.custom_dialog._rows["max_depth"]._slider
+    slider.setValue(9)
+    pump(20, app)
+    check(w.custom_dialog._cfg["max_depth"] == 9, "弹窗内改深度已生效")
+    check(w.custom_dialog._rows["max_depth"]._readout.text() == "9 层",
+          "滑杆读数跟着走到 9 层",
+          w.custom_dialog._rows["max_depth"]._readout.text())
+    w.custom_dialog._on_accept()
+    pump(200, app)
+
+    check(w.gamekunnan == engine.CUSTOM_LEVEL, "确定后换到了自定义档")
+    check(engine.custom_config()["max_depth"] == 9,
+          "引擎里的自定义配置已更新", str(engine.custom_config()["max_depth"]))
+    check(w.game_custom_cfg is not None and w.game_custom_cfg["max_depth"] == 9,
+          "本局快照记下了这份参数")
+    saved = s.value(M._SETTINGS_CUSTOM_KEY, None)
+    check(saved is not None and '"max_depth": 9' in str(saved),
+          "自定义配置写穿了 QSettings", str(saved)[:80])
+    if not check(w.game_widget is not None, "自定义局真的开起来了"):
+        return
+    check(w.game_panel is not None, "对局面板已建")
+    check(w.game_panel.difficulty_row._value.text() == "自定义",
+          "面板的难度行读作「自定义」",
+          w.game_panel.difficulty_row._value.text())
+
+    # 日志里除了档位名还要有**具体参数** —— 两份自定义配置的档位名逐字相同，
+    # 不带参数的话事后翻日志分不出这一局按什么搜的。
+    w.logger.f.flush()
+    with open(w.logger.filepath, encoding="utf-8") as fh:
+        log_text = fh.read()
+    check("自定义参数" in log_text and "深度 9" in log_text,
+          "日志 dump 了自定义参数",
+          next((ln for ln in log_text.splitlines() if "自定义参数" in ln), ""))
+
+    # 复盘直通：自定义局**跳过强度页**，把快照参数交给复盘线程。
+    w._cancel_ai()
+    w.central.setCurrentWidget(w.game_widget)
+    w._show_review_strength()
+    pump(60, app)
+    check(w.review_strength is None, "自定义局复盘不渲染强度页")
+    check(w.review_progress is not None, "自定义局复盘直接进进度页")
+    w._cancel_review(discard=True)
+    pump(60, app)
+
+    engine.reset_custom_config()
+    if saved_custom is None:
+        s.remove(M._SETTINGS_CUSTOM_KEY)
+    else:
+        s.setValue(M._SETTINGS_CUSTOM_KEY, saved_custom)
+    w._cancel_ai()
     w.close()
     w.deleteLater()
     pump(30, app)
@@ -1207,6 +1339,10 @@ def main():
     # 不继承开发者机器上存着的档位：下面的断言全按设计尺寸写。设置页那条用例
     # 自己会换档，换完也会复原。
     theme.set_scale("normal", persist=False)
+    # 同理不继承界面语言：下面按中文原文写的断言，在选过俄语的机器上会整片红。
+    i18n.set_system_locale("zh_CN")
+    i18n.set_language(i18n.DEFAULT)
+    M._load_language = lambda: None
     app.setStyle("Fusion")
 
     log_dir = tempfile.mkdtemp(prefix="gomoku_smoke_")
@@ -1235,6 +1371,7 @@ def main():
         do_quit_during_think(app, w)
         do_local_battle(app)
         do_settings(app)
+        do_custom_difficulty(app)
         do_review(app)
         do_review_finish(app)
         do_review_cancel(app)

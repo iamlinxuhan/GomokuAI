@@ -99,6 +99,8 @@ __all__ = [
     "engine_label", "current_port", "note_book", "binary_path",
     "DIFFICULTY", "DIFFICULTY_NAMES",
     "difficulty_name",
+    "CUSTOM_LEVEL", "custom_config", "custom_defaults",
+    "set_custom_config", "reset_custom_config",
 ]
 
 
@@ -227,6 +229,78 @@ assert set(_local.DIFFICULTY) == set(range(1, _LOCAL_MAX_LEVEL + 1)), \
 _RESERVE = _local.RESERVE  # 仅作文档锚点，见上
 
 
+# ---------------------------------------------------------------------------
+# 2b. 自定义难度（第 6 张卡）
+# ---------------------------------------------------------------------------
+#
+# 用户在难度页上多了一个「自定义」：时限 / 深度上限 / VCF 预算 / 静止搜索层数 /
+# 增强搜索，五项自己调。它**不是** ``DIFFICULTY`` 里的第 6 档，而是一个哨兵档位号
+# 加一份可注入的配置。
+#
+# 为什么不干脆往 ``DIFFICULTY`` 里加 ``6:``：那张表被一堆地方当作"**出厂的五档**"
+# 来读 —— ``sorted(DIFFICULTY)``（难度页与复盘页的卡片循环）、
+# ``max(DIFFICULTY)``（非法档位的回退目标）、``tools/bench.py`` 与
+# ``tools/ui_e2e.py`` 的档位遍历。塞进去会连带惊动它们，其中最硬的两处是
+# ``main.py`` 里 ``assert len(tones) == len(levels)`` 与难度卡配色表。更要紧的是
+# **用户可见**的一处：复盘强度页按「不低于本局难度」过滤，而 6 是最大值 ——
+# 于是**每一局**打完的复盘页都会多出一张「自定义」卡，而不只是自定义局。
+#
+# 哨兵方案让上面这些一个字都不用改：``DIFFICULTY`` 仍是「五档」，
+# 「自定义」只出现在难度页；自定义局的复盘**直接跳过强度页**用本局快照跑。
+#
+# **两份引擎的支持面不同，界面必须如实说。** ``time`` / ``max_depth`` /
+# ``vcf_budget`` / ``qply`` 两项引擎都读；``enhance``（LMR + 强制着法延伸）
+# **只有 C++ 有** —— ``engine_local`` 里根本没有这条路。而且降级到本地时
+# ``ai_move`` 的回退分支压根不转发 cfg，本地按自己的档位表跑最强档，
+# 所以**自定义参数在回退时几乎全部不生效**（唯一的例外是复盘：
+# ``analyze`` 的回退分支显式传了 ``time_limit``）。
+CUSTOM_LEVEL = 6
+
+#: 自定义档的出厂值。取**宗师（5）的原值** —— 自定义是"往上调"的入口，
+#: 默认不该比预设最强档还弱；关掉 ``enhance`` 就自然落到「高级」附近。
+#:
+#: ``bias`` 固定 ``None``，**不做成选项**：它在表里只为入门档存在，而且实测过
+#: 它是纯棋力倒退（同档自我对打，中级 0 胜 8 负，连"只在分值完全相同的手之间
+#: 重排"都输 6—14，见 ``DIFFICULTY`` 里 B24 那段注释）。把它做成旋钮，等于请
+#: 用户亲手把 AI 调坏。
+_CUSTOM_DEFAULT = dict(name="自定义", time=20.0, max_depth=24,
+                       vcf_budget=3.0, qply=12, enhance=True, bias=None)
+
+_CUSTOM_CFG = dict(_CUSTOM_DEFAULT)
+
+
+def custom_config() -> dict:
+    """自定义档当前的那份配置。**返回副本** —— 调用方改它不该改到引擎。"""
+    return dict(_CUSTOM_CFG)
+
+
+def custom_defaults() -> dict:
+    """出厂值。给界面上的「恢复默认」用 —— 它要的是**出厂**值，不是当前值。"""
+    return dict(_CUSTOM_DEFAULT)
+
+
+def set_custom_config(cfg: dict) -> None:
+    """设自定义档配置。未知键忽略，缺失键沿用出厂值。
+
+    **整只重绑定**而不是原地 ``update``：只改几个键的话，上一次改过的其余键会
+    悄悄留下来，"下次打开时回显的就是我上次设的"这句话就不成立了。
+    """
+    merged = dict(_CUSTOM_DEFAULT)
+    for k in _CUSTOM_DEFAULT:
+        if k in cfg and cfg[k] is not None:
+            merged[k] = cfg[k]
+    merged["name"] = _CUSTOM_DEFAULT["name"]
+    merged["bias"] = None
+    global _CUSTOM_CFG
+    _CUSTOM_CFG = merged
+
+
+def reset_custom_config() -> None:
+    """恢复出厂值。"""
+    global _CUSTOM_CFG
+    _CUSTOM_CFG = dict(_CUSTOM_DEFAULT)
+
+
 def binary_path():
     """C++ 可执行文件的路径；这台机器上找不到则返回 ``None``。
 
@@ -238,7 +312,13 @@ def binary_path():
 
 
 def difficulty_name(level: int) -> str:
-    """档位 → 名称；非法档位回退到最高档的名字（与引擎的取档语义一致）。"""
+    """档位 → 名称；非法档位回退到最高档的名字（与引擎的取档语义一致）。
+
+    ``CUSTOM_LEVEL`` 不在 ``DIFFICULTY_NAMES`` 里，必须显式接住 —— 否则会落到
+    回退分支去，日志与面板上都会把自定义局写成「宗师」。
+    """
+    if level == CUSTOM_LEVEL:
+        return _CUSTOM_DEFAULT["name"]
     return DIFFICULTY_NAMES.get(level, DIFFICULTY_NAMES[max(DIFFICULTY)])
 
 
@@ -248,7 +328,12 @@ def _cfg_for(level: int) -> dict:
     ``main.py`` 的档位来自难度卡，正常范围内；这条回退是给"存档里存着旧版本
     的档位号"这类情况兜底，**不抛异常**：抛出去会让 AIWorker 报 AI异常，
     用户看到的是"不能下棋"，而正确答案是"下一档最强的"。
+
+    哨兵档必须在 ``.get`` **之前**接住：``CUSTOM_LEVEL=6`` 不在表里，落到
+    `.get` 就会静默变成"宗师"，那正是自定义这个功能最不该有的失败方式。
     """
+    if level == CUSTOM_LEVEL:
+        return custom_config()
     return DIFFICULTY.get(level, DIFFICULTY[max(DIFFICULTY)])
 
 
@@ -1017,7 +1102,7 @@ def ai_move(board, ai_player, depth, cancel=None):
 _analyze_warned = False
 
 
-def analyze(board, me, level, cancel=None):
+def analyze(board, me, level, cancel=None, cfg=None):
     """逐候选分析一个局面（战后复盘用）。返回 ``(best_idx, best_val, cands, info)``。
 
     ``cands`` 是 ``[(idx, val), ...]``，``best_idx`` 是引擎在本局面会走的着法
@@ -1031,11 +1116,17 @@ def analyze(board, me, level, cancel=None):
     把面板那一行改成「Python (本地)」，那是**对局中**的实时状态；复盘发生在对局
     **结束之后**，那时把面板改掉是在报告一件已经过去的事。所以这条路只往 stderr
     打一行限流警告（限流标记与 `ai_move` 的分开，互不顶掉），`_note` 一次都不调。
+
+    ``cfg`` 可以**显式传一份配置**覆写按 ``level`` 查出来的那份。自定义局靠它把
+    "开局那一刻快照的参数"交给复盘 —— 否则用户打完棋之后再打开自定义弹窗改几个
+    数字，这一局的复盘结果就跟着变了。默认 ``None`` 时仍走 ``_cfg_for(level)``，
+    所以五档的行为一个字都没变。
     """
     global _analyze_warned
     if not _has_stones(board):
         return -1, 0, [], {}
-    cfg = _cfg_for(level)
+    if cfg is None:
+        cfg = _cfg_for(level)
     try:
         idx, info, cands = _CLIENT.analyze(board, me, cfg, cancel)
     except Exception as exc:

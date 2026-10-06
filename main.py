@@ -6,19 +6,21 @@
 import os
 import sys
 import math
+import json
 import threading
 
 import numpy as np
 
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget,
+    QApplication, QMainWindow, QWidget, QDialog,
     QVBoxLayout, QHBoxLayout, QStackedWidget, QStackedLayout,
     QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea, QButtonGroup,
-    QLineEdit, QMessageBox
+    QGridLayout, QLineEdit, QSlider, QMessageBox
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QThread, QObject, QAbstractAnimation, pyqtSignal, QRect,
-    QPoint, QPointF, QSize, QElapsedTimer, QEasingCurve, QVariantAnimation
+    QPoint, QPointF, QSize, QElapsedTimer, QEasingCurve, QVariantAnimation,
+    QLocale, QSettings
 )
 from PyQt5.QtGui import (
     QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent, QIcon
@@ -29,6 +31,7 @@ import anim
 import board_render
 import charts
 import engine
+import i18n
 import theme
 from board_geometry import BoardGeometry
 from client import LocalRoom, RoomClient, local_ip
@@ -37,7 +40,8 @@ from engine import (BOARD_SIZE, Board, evaluate, is_mate,
 from gamelog import GameLogger
 from room import SeatSpec
 from session import Session
-from ui_kit import (BrandMark, InfoRow, Screen, StoneFace, TurnIndicator,
+from ui_kit import (BrandMark, InfoRow, QuestionMark, Screen, StoneFace,
+                    TurnIndicator,
                     button as _ui_button, card_button as _ui_card_button,
                     faint_label, hbox as _ui_hbox, separator,
                     subtitle_label, title_label)
@@ -141,7 +145,7 @@ def settings_button():
     """
     b = button("⚙", "ghost", height=_px(32), width=_px(32))
     b.setProperty("iconOnly", "true")
-    b.setToolTip("字号 / 主题")
+    b.setToolTip(i18n.t("字号 / 主题"))
     return b
 
 
@@ -289,11 +293,15 @@ class ReviewWorker(QThread):
     progressed = pyqtSignal(int, int)   # (已完成, 总数)
     completed = pyqtSignal(object)      # [record, ...]
 
-    def __init__(self, moves, human, level):
+    def __init__(self, moves, human, level, cfg=None):
         super().__init__()
         self.moves = list(moves)
         self.human = human
         self.level = level
+        # 自定义档的复盘**用开局时快照的那份参数**，而不是现读引擎里那一份 ——
+        # 否则打完棋再打开自定义弹窗改参数，这一局的复盘结果会被改写。预设档
+        # 传 None，照旧走难度表。
+        self.cfg = dict(cfg) if cfg is not None else None
         self._cancel = threading.Event()
 
     def cancel(self):
@@ -332,7 +340,7 @@ class ReviewWorker(QThread):
         before = item['before']
         played = (item['r'], item['c'])
         best_idx, best_val, cands, _info = engine.analyze(
-            before, self.human, self.level, cancel=self._cancel)
+            before, self.human, self.level, cancel=self._cancel, cfg=self.cfg)
         if self._cancel.is_set():
             return None
         if not cands:
@@ -428,27 +436,27 @@ def _record_line(rec):
     分值差在杀棋局面里没有量纲意义（两个杀棋分之差是 2×10⁷ 这个量级），
     所以那里改报一句文字结论 —— 光甩一个七位数只会让人以为程序算错了。
     """
-    head = "第 %d 手   %s" % (rec['seq'], _fmt_point(rec['played']))
+    head = i18n.tf("第 %d 手   %s", rec['seq'], _fmt_point(rec['played']))
     if not _is_rated(rec):
         # 空盘起始手没有"最优点"可言；搜索没跑完一轮则是没算出来。都不编。
-        return head + ("   空盘起始手，无候选可比" if rec['empty']
-                       else "   未能比较（搜索未跑完一轮）")
+        return head + ("   " + i18n.t("空盘起始手，无候选可比") if rec['empty']
+                       else "   " + i18n.t("未能比较（搜索未跑完一轮）"))
     if _is_optimal(rec):
         # 走对了就不必再报一遍同样的坐标（``played == best``，写成
         # "J13 → 最优点 J13" 只会让人以为程序在说胡话）。
-        return head + "   最优"
-    head += " → 最优点 %s" % _fmt_point(rec['best'])
+        return head + "   " + i18n.t("最优")
+    head += i18n.tf(" → 最优点 %s", _fmt_point(rec['best']))
     if rec['offboard']:
-        return head + "   偏离战场（不在候选点内）"
+        return head + "   " + i18n.t("偏离战场（不在候选点内）")
     if rec['mate']:
-        return (head + "   %s" %
-                ("错失必胜" if rec['best_val'] > 0 else "漏防必败"))
+        return head + "   " + i18n.t(
+            "错失必胜" if rec['best_val'] > 0 else "漏防必败")
     if rec['delta'] is None:
         # 合法候选点却没有分值：搜索被时限截断在半张表上（``_root`` 的提前
         # 返回之外，取消也会走到这里）。**不能**当 0 处理 —— "没算过"与
         # "算过了、没问题"是两件事。
-        return head + "   未能比较（搜索被截断）"
-    return head + "   分值差 %d" % rec['delta']
+        return head + "   " + i18n.t("未能比较（搜索被截断）")
+    return head + i18n.tf("   分值差 %d", rec['delta'])
 
 
 class ReviewProgressScreen(Screen):
@@ -458,7 +466,8 @@ class ReviewProgressScreen(Screen):
 
     def __init__(self, total, level):
         super().__init__(title="算法复盘",
-                         subtitle="正在按「%s」逐手重算" % engine.difficulty_name(level),
+                         subtitle=i18n.tf("正在按「%s」逐手重算",
+                                          i18n.t(engine.difficulty_name(level))),
                          backdrop=True)
         self.total = max(1, int(total))
         self.setup_ui()
@@ -473,7 +482,7 @@ class ReviewProgressScreen(Screen):
         self.progress_bar.setFixedWidth(_px(300))
         self.add_content(self.progress_bar)
 
-        self.step_label = faint_label("第 0/%d 手" % self.total)
+        self.step_label = faint_label(i18n.tf("第 %d/%d 手", 0, self.total))
         self.add_content(self.step_label)
 
         cancel_btn = button("✕ 取消复盘", "danger", width=_px(150))
@@ -483,7 +492,7 @@ class ReviewProgressScreen(Screen):
     def set_progress(self, done, total):
         self.progress_bar.setRange(0, max(1, int(total)))
         self.progress_bar.setValue(int(done))
-        self.step_label.setText("第 %d/%d 手" % (done, total))
+        self.step_label.setText(i18n.tf("第 %d/%d 手", done, total))
 
 
 class ReviewScreen(Screen):
@@ -500,9 +509,10 @@ class ReviewScreen(Screen):
                        if _is_rated(r) and not _is_optimal(r))
         super().__init__(
             title="复盘结果",
-            subtitle="强度「%s」· 共 %d 手，其中 %d 手可改进%s" % (
-                engine.difficulty_name(level), len(records), blunders,
-                "（已取消，仅列出已算完的部分）" if cancelled else ""),
+            subtitle=i18n.tf(
+                "强度「%s」· 共 %d 手，其中 %d 手可改进%s",
+                i18n.t(engine.difficulty_name(level)), len(records), blunders,
+                i18n.t("（已取消，仅列出已算完的部分）") if cancelled else ""),
             backdrop=True)
         self.records = list(records)
         self.setup_ui()
@@ -637,12 +647,270 @@ class ReviewBoardScreen(Screen):
         return 1 if self.rec['seq'] % 2 == 1 else 2
 
 
-class SettingsScreen(Screen):
-    """设置页：字号档位 + 深/浅主题。
+# ==================== 设置弹窗 ====================
+#
+# 2026-10-06 从整页改为模态弹窗。动机不是"弹窗更好看"：它原来是一页，塞在
+# `central` 这个 QStackedWidget 里，于是"进设置"要借道切页、"出设置"要原路返回
+# 并重建原页 —— 一整套 `_settings_origin` / `_scale_changed_in_settings` /
+# `_rebuild_settings` / `_back_from_settings` 都是在为"它占了一页"这件事服务。
+# 弹窗期间 `central` 的当前页岿然不动，"从哪来"这个问题就不存在了。
+# （`_scale_changed_in_settings` 留着：它是"弹窗里换过档没有"的标记，关窗时据此
+#   决定要不要按新度量重建底下那一页。）
+#
+# **用 ``open()`` 而不是 ``exec_()``。** 两者都是模态，但 ``exec_()`` 进的是嵌套
+# 事件循环，`tools/gui_smoke.py` 那套靠 QTimer/pump() 驱动的手动测试会卡死在里面；
+# ``open()`` 不阻塞调用方，信号照常直连、事件循环照常由测试推进。
 
-    **点选即刻生效并落盘**（``theme.set_scale(..., persist=True)``），随后整页
-    重建 —— 否则用户点了"特大"却看不见任何变化，会以为按钮没坏就是没生效。
-    重建由主窗口的 ``_rebuild_settings`` 负责：页面自己不掌握 ``QStackedWidget``。
+def _even_width(buttons, minimum: int = 0) -> int:
+    """把一排按钮统一成同一个宽度：取其中最宽的那个，但不低于 ``minimum``。
+
+    跨语言时同一排按钮的文案长度差得很远 —— 「关 / 低 / 中 / 高 / 满」在俄语里
+    是「Выкл / Низкий / Сред / Высокий / Макс」，写死 78px 会把「Высокий」和
+    「Макс」各裁掉一截。统一成最宽的那个，既保住"一排等宽"的观感，又不会在
+    任何一种语言下截断。
+
+    ``sizeHint()`` 是问过 QSS 的（padding/border 都算进去），所以这里量的宽度
+    就是按钮真的需要占的宽度。
+    """
+    w = max([minimum] + [b.sizeHint().width() for b in buttons])
+    for b in buttons:
+        b.setFixedWidth(w)
+    return w
+
+
+class _OptionRow(QWidget):
+    """自定义难度里的一行**枚举**参数：标签 + 一排互斥的 ghost 按钮。
+
+    **用按钮而不是 QComboBox。** `theme.py` 的 QSS 不覆盖 QComboBox —— 原生
+    下拉框在这套设计系统里会是一个没被样式化的灰块，深浅两套主题下都不对。
+    可勾选的 ghost 按钮则是设置弹窗里那四档字号用过的写法，QSS 早已覆盖。
+
+    留给**取值离散且带语义**的参数（VCF 的关/低/中/高/满、增强的开/关）：这些
+    选项各自是一个说法，不是一个刻度上的刻度值，摆成滑杆反而看不出"关"与
+    "低"之间到底是什么关系。连续量走 ``_SliderRow``。
+    """
+
+    value_selected = pyqtSignal(object)
+
+    def __init__(self, label, options, current, parent=None):
+        """``options`` 是 ``[(值, 按钮文案), ...]``；``current`` 是当前值。"""
+        super().__init__(parent)
+        self._value = current
+        col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(theme.SPACE_XS)
+
+        col.addWidget(faint_label(label, align=Qt.AlignLeft))
+
+        group = QButtonGroup(self)
+        row = []
+        self._options = list(options)
+        for value, text in options:
+            b = button(text, "ghost")
+            b.setCheckable(True)
+            b.setChecked(value == current)
+            b.clicked.connect(lambda _=False, v=value: self._pick(v))
+            group.addButton(b)
+            row.append(b)
+        _even_width(row, _px(78))
+        # group 只挂在局部变量上会被 GC 掉，互斥随之失效。
+        self._group = group
+        self._buttons = row
+        col.addWidget(hbox(*row, spacing=theme.SPACE_XS, align=Qt.AlignLeft))
+
+    def _pick(self, value):
+        self._value = value
+        self.value_selected.emit(value)
+
+    def value(self):
+        return self._value
+
+    def set_value(self, value):
+        """外部（如「恢复默认」）改选中项，**不**发 ``value_selected``。"""
+        self._value = value
+        for b, (v, _text) in zip(self._buttons, self._options):
+            b.setChecked(v == value)
+
+
+class _SliderRow(QWidget):
+    """自定义难度里的一行**连续**参数：标签 / 当前值 —— 滑杆。
+
+    ## 为什么滑杆，以及为什么必须给 ``theme.py`` 补规则
+
+    时限 10–60 秒、深度 2–40 层、静止搜索 2–24 层：这类量**每一档都有意义**，
+    摆成一排按钮就得二选一 —— 要么列 51 个按钮，要么把刻度砍成残的（旧版列
+    6 档，用户立刻发现"只能选 1/3/7/15/20/30 秒"，没有 12 秒）。滑杆才是它
+    本来的形状。
+
+    代价是 Qt 的**原生** QSlider 是带立体感的灰槽 + 凸起方块，摆进两套扁平主题
+    里都是异物，而 ``theme.py`` 原先对 QSlider 一条规则都没有。所以这里配一条
+    ``QSlider[role="value"]`` 的 QSS（见 ``theme._SLIDER``）—— 这是整个自定义
+    弹窗唯一新增的样式规则，也是它唯一该新增的地方（``main.py`` 不许写颜色）。
+
+    ## 值是整数刻度，落盘仍是原来的类型
+
+    滑杆只能走整数，所以 10–60 是"秒数"这个整数刻度；发射时 ``time`` 转回
+    ``float``（引擎那一格本来就是浮点），其余按整数发。刻度 1 步进，与用户
+    "步长 1 秒 / 一层"的要求一致。
+    """
+
+    value_selected = pyqtSignal(object)
+
+    def __init__(self, label, lo, hi, unit, current, *, to_float=False,
+                 parent=None):
+        super().__init__(parent)
+        self._lo, self._hi = int(lo), int(hi)
+        self._unit = unit
+        self._to_float = to_float
+        # **进来先夹一次。** 落盘的那份配置可能来自旧版本、也可能是手改 conf 的
+        # 结果（比如 max_depth 写成 999）。滑杆自己会夹到 40，但 ``_value`` 若照
+        # 抄原值，读数行显示"40 层"而 ``value()`` 报 999 —— 界面说的和引擎收到的
+        # 就不是同一件事了。
+        self._value = self._emit_value(self._clamp(current))
+
+        col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(theme.SPACE_XS)
+
+        head = QHBoxLayout()
+        head.setContentsMargins(0, 0, 0, 0)
+        head.addWidget(faint_label(label, align=Qt.AlignLeft))
+        head.addStretch(1)
+        self._readout = faint_label("", align=Qt.AlignRight)
+        head.addWidget(self._readout)
+        col.addLayout(head)
+
+        self._slider = QSlider(Qt.Horizontal)
+        self._slider.setProperty("role", "value")
+        self._slider.setRange(self._lo, self._hi)
+        self._slider.setSingleStep(1)
+        self._slider.setPageStep(max(1, (self._hi - self._lo) // 10))
+        # 高度给足 16px 的滑块 + 上下各 4px，否则滑块会被行高裁成一条。
+        self._slider.setFixedHeight(_px(24))
+        # **必须有下限宽度。** 这一行被 `add_content` 以 `Qt.AlignLeft` 加进
+        # 弹窗的内容列，那个对齐标志会让控件只占 sizeHint 宽度（不再横向拉伸）；
+        # 而 QSlider 的 sizeHint 只有一百多像素，三条滑杆就会缩成三个小短条，
+        # 框里的三项参数各占一小截。给一个下限，弹窗宽度也随之由它定下来。
+        self.setMinimumWidth(_px(400))
+        self._slider.setCursor(Qt.PointingHandCursor)
+        self._slider.setValue(self._clamp(current))
+        self._slider.valueChanged.connect(self._on_slide)
+        col.addWidget(self._slider)
+
+        self._sync_readout(self._slider.value())
+
+    # ---- 内部 ----
+
+    def _clamp(self, value):
+        return max(self._lo, min(self._hi, int(round(float(value)))))
+
+    def _emit_value(self, raw):
+        return float(raw) if self._to_float else int(raw)
+
+    def _sync_readout(self, raw):
+        # 读数写成"整数 + 单位"，与滑杆刻度一一对应 —— 拖到哪读到哪。
+        self._readout.setText("%d %s" % (raw, i18n.t(self._unit)))
+
+    def _on_slide(self, raw):
+        self._value = self._emit_value(raw)
+        self._sync_readout(raw)
+        self.value_selected.emit(self._value)
+
+    # ---- 与 _OptionRow 同形的接口 ----
+
+    def value(self):
+        return self._value
+
+    def set_value(self, value):
+        """外部（如「恢复默认」）改刻度，**不**发 ``value_selected``。
+
+        ``blockSignals`` 是必须的：``setValue`` 会触发 ``valueChanged``，于是
+        读数行会刷一次（对），但 ``value_selected`` 也会跟着发一次 —— 而
+        「恢复默认」正在做的事情恰恰是**绕过**用户交互直接改配置，再往上发一次
+        就变成了回环。
+        """
+        self._value = value
+        blocked = self._slider.blockSignals(True)
+        try:
+            self._slider.setValue(self._clamp(value))
+        finally:
+            self._slider.blockSignals(blocked)
+        self._sync_readout(self._slider.value())
+
+
+class _LanguageRow(QWidget):
+    """设置弹窗里的「语言」一行：七种选项，两列网格。
+
+    ## 为什么每个选项写**自名**而不是当前语言里的说法
+
+    一个只会日语的人打开这个下拉，得能认出「日本語」三个字。写成当前界面语言
+    的说法（"日语" / "Japanese"），恰恰是唯一读不懂这台机器上那份界面的人
+    最不容易认出的写法 —— 语言选项是**唯一**该用自名的界面文案。
+
+    唯一随界面语言变的是**「跟随系统」那一项**：它不是一个语言名，而是一个
+    选择（"用系统那一档"），所以用户原话里给了它六种写法。
+
+    ## 为什么两列而不是像字号那样排成一行
+
+    七个选项排成一行要 7×190 + 6×间距 ≈ 1400px，比整个窗口还宽；而按钮文本
+    长度差得远（"한국어" 与 "Use system language" 差三倍），按最长的那条定宽
+    会让其余六条全是空荡的宽条。两列四行是这七个里最接近方的排法。
+
+    ## 文案不走 ``i18n``
+
+    选项文本是各语言的自名，**永远不翻**（翻了就失去意义）；「跟随系统」那一
+    项由 ``i18n.follow_system_label()`` 现取。两者都直接进按钮，不像别处那样
+    留中文原文给工厂去查表 —— 所以这里的 ``button()`` 刻意收的是成品串，
+    查表落空后原样返回，结果正好。
+    """
+
+    language_selected = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(theme.SPACE_XS)
+
+        col.addWidget(faint_label(i18n.language_label(), align=Qt.AlignLeft))
+
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(theme.SPACE_XS)
+        group = QButtonGroup(self)
+        current = i18n.language()
+        self._buttons = {}
+        for i, code in enumerate(i18n.CHOICES):
+            b = button(i18n.language_name(code), "ghost")
+            b.setCheckable(True)
+            b.setChecked(code == current)
+            # 给测试与工具一个稳定的抓手：按钮上的文字会随语言变，这个属性不会。
+            b.setProperty("langChoice", code)
+            b.clicked.connect(lambda _=False, c=code: self._pick(c))
+            group.addButton(b)
+            grid.addWidget(b, i // 2, i % 2, Qt.AlignLeft)
+            self._buttons[code] = b
+        # 两列网格也要等宽，否则「시스템 설정 따르기」会把那一列撑出去、另一列
+        # 空一截。取全部七个里最宽的那个，两列就一样宽。
+        _even_width(self._buttons.values(), _px(190))
+        self._group = group
+        col.addLayout(grid)
+
+        col.addWidget(faint_label(i18n.language_hint(), align=Qt.AlignLeft))
+
+    def _pick(self, code):
+        self.language_selected.emit(code)
+
+
+class SettingsDialog(QDialog):
+    """设置弹窗：字号档位 + 深/浅主题 + 语言。
+
+    **点选即刻生效并落盘**（``theme.set_scale(..., persist=True)``），随后**弹窗
+    自己重建** —— 否则用户点了"特大"却看不见任何变化，会以为按钮坏了。这条理由
+    与它当年还是一页时一字不差（少一档就重算一次度量，旧布局就过期了）。
+
+    弹窗不掌握 ``QStackedWidget``，所以重建只重建自己；底下那一页由主窗口在
+    ``finished`` 里按新档位重建（见 ``GomokuGame._on_settings_dialog_closed``）。
 
     四个档位按钮用 ``QButtonGroup`` 互斥（默认 ``autoExclusive``），外观走现成的
     ``QPushButton[variant="ghost"]:checked`` —— 不需要为它新增任何 QSS。
@@ -650,41 +918,304 @@ class SettingsScreen(Screen):
 
     scale_selected = pyqtSignal(str)
     theme_toggled = pyqtSignal()
+    language_selected = pyqtSignal(str)
     back_clicked = pyqtSignal()
 
-    def __init__(self):
-        super().__init__(title="设置",
-                         subtitle="字号立即生效并记住；下次打开还是这一档",
-                         backdrop=True)
-        self.setup_ui()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(i18n.t("设置"))
+        self.setModal(True)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self._body = None
+        # 「关闭」按钮与 Esc 走同一条路：关掉就是关掉。主窗口挂在 finished 上，
+        # 所以这里不需要（也不该）自己去通知谁。
+        self.back_clicked.connect(self.close)
+        self._build_body()
 
-    def setup_ui(self):
+    def _build_body(self):
+        """重建整只内容体（换档后度量全变了，旧布局已经不对）。"""
+        old = self._body
+        # 底板直接复用页面那套：Screen 自己会设 objectName("screenRoot") 与
+        # WA_StyledBackground，于是 QSS 里那条 `QWidget#screenRoot` 渐变照旧生效
+        # —— 不用给 QDialog 单独写背景，也就不用在 main.py 里碰任何颜色。
+        body = Screen(title="设置",
+                      subtitle="字号立即生效并记住；下次打开还是这一档",
+                      backdrop=False, parent=self)
+
         group = QButtonGroup(self)
         row = []
         for name in theme.available_scales():
-            b = button(theme.scale_label(name), "ghost", width=_px(110))
+            b = button(theme.scale_label(name), "ghost")
             b.setCheckable(True)
             b.setChecked(name == theme.current_scale())
             # 当前档位再单独给个 tooltip，鼠标停在按钮上就能确认选中的是它。
             if name == theme.current_scale():
-                b.setToolTip("当前档位")
-            b.clicked.connect(lambda _=False, n=name: self.scale_selected.emit(n))
+                b.setToolTip(i18n.t("当前档位"))
+            b.clicked.connect(lambda _=False, n=name: self._on_scale_clicked(n))
             group.addButton(b)
             row.append(b)
-        # 让 group 活到本页销毁 —— 只挂在局部变量上会被 GC 掉，互斥随之失效。
-        self._scale_group = group
-        self.add_content(hbox(*row, spacing=theme.SPACE_SM))
+        _even_width(row, _px(110))
+        # 让 group 活到本次内容体销毁 —— 只挂在局部变量上会被 GC 掉。
+        body._scale_group = group
+        body.add_content(hbox(*row, spacing=theme.SPACE_SM))
+        body.add_content(faint_label(i18n.tf("当前：%s", theme.scale_label(
+            theme.current_scale()))))
 
-        self.add_content(faint_label("当前：%s" % theme.scale_label(
-            theme.current_scale())))
+        # 用**下限**宽度而不是固定宽度：这句文案在俄语里比中文长一倍多，钉死
+        # 280px 会把「Сменить тёмную / светлую тему」裁掉后半截。给下限既保住
+        # 中文版不会缩成一小条，又让长文案自己撑开。
+        theme_btn = button("🌓 切换深色 / 浅色主题", "ghost")
+        theme_btn.setMinimumWidth(_px(280))
+        theme_btn.clicked.connect(self._on_theme_clicked)
+        body.add_content(theme_btn)
 
-        theme_btn = button("🌓 切换深色 / 浅色主题", "ghost", width=_px(280))
-        theme_btn.clicked.connect(self.theme_toggled.emit)
-        self.add_content(theme_btn)
+        body.add_content(separator())
 
-        back = button("← 返回", "primary", width=_px(150))
+        # 语言放在最下面：换一次语言整只弹窗要重建成另一种文字，摆在下半区
+        # 用户才不会觉得"我刚点的按钮自己跑了"。换档同理，但档位是这一页的
+        # 主角，它得在最上面。
+        self.language_row = _LanguageRow(self)
+        self.language_row.language_selected.connect(self._on_language_clicked)
+        body.add_content(self.language_row, Qt.AlignLeft)
+
+        back = button("关闭", "primary", width=_px(150))
         back.clicked.connect(self.back_clicked.emit)
-        self.add_content(back)
+        body.add_content(back)
+
+        self.layout().addWidget(body)
+        self._body = body
+        if old is not None:
+            self.layout().removeWidget(old)
+            old.deleteLater()
+        self.adjustSize()
+
+    def _on_scale_clicked(self, name):
+        """先让主窗口落盘并作废棋盘缓存，再重建自己。
+
+        顺序不能反：``scale_selected`` 是直连信号，``emit`` 返回时主窗口那一段
+        已经做完了，此时重建才读得到新的 ``theme.current_scale()``。
+        """
+        self.scale_selected.emit(name)
+        self._build_body()
+
+    def _on_theme_clicked(self):
+        self.theme_toggled.emit()
+        # 主题不改任何像素度量，但弹窗自己的配色要跟上。
+        self._build_body()
+
+    def _on_language_clicked(self, code):
+        """换语言：先让主窗口落盘并切过去，再重建自己。
+
+        顺序与换档一字不差，理由也一样 —— ``language_selected`` 是直连信号，
+        ``emit`` 返回时 ``i18n`` 已经切好了，此时重建读到的才是新语言；反过
+        来先重建，弹窗会整体重画成**旧**语言，用户会以为点了没用。
+
+        重建是必须的：这几十条文案是**构造期**写进控件的，不重建就留在原地。
+        """
+        self.language_selected.emit(code)
+        self._build_body()
+
+
+# ==================== 自定义难度 ====================
+#
+# 五项参数取自 ``engine._search_request`` 真正会下发的那些键 —— 一个键都不多。
+# 每项都在下面标出**两份引擎是否都认它**，因为这两件事不一样：
+#  ``time`` / ``max_depth`` / ``vcf_budget`` / ``qply``  两份都读
+#  ``enhance``（LMR + 强制着法延伸）                     只有 C++ 有
+# 而且降级到本地时 ``ai_move`` 的回退分支压根不转发配置，本地按自己的档位表跑
+# 最强档 —— 也就是说**自定义参数在回退时几乎全部不生效**。界面必须把这件事说
+# 出来，否则就是"静默降级"换了个壳。
+_CUSTOM_OPTIONS = (
+    # 连续量 —— 滑杆。刻度范围覆盖全部预设档位再留余量：
+    #   时限  预设 0.5–20 s，滑杆到 60 s（原来的 30 s 上限于"想让它多想一会儿"
+    #         这件事没有意义，用户点名要 60）。
+    #   深度  预设 2–24 层，滑杆到 40。
+    #   qply  预设 2–12 层，滑杆到 24。
+    ("time", "思考时间上限", ("range", 10, 60, "秒", True)),
+    ("max_depth", "搜索深度上限", ("range", 2, 40, "层", False)),
+    ("qply", "静止搜索层数", ("range", 2, 24, "层", False)),
+    # 离散量 —— 按钮。摆成滑杆看不出"关"与"低"之间是什么关系。
+    ("vcf_budget", "VCF（连续冲四）预算",
+     ("choice", ((0.0, "关"), (0.3, "低"), (0.5, "中"), (1.5, "高"), (3.0, "满")))),
+    ("enhance", "增强搜索（LMR + 强制着法延伸）",
+     ("choice", ((False, "关"), (True, "开")))),
+)
+
+#: 每项参数在**当前取值**下要不要挂一句说明。空串表示不挂。
+#:
+#: VCF 关掉那一句不是"提醒"，是项目自己实测出来的结论：关掉 VCF 的档位不是变
+#: 简单，是**失明** —— 既算不出自己的冲四链，也看不见对手的，曾有低档因此整局
+#: 没有任何机制能看见对手一条 11 手的连续冲四（见 ``tests/test_vcf.py``）。
+#: 用户点名要这个开关，所以给；但代价必须写在开关旁边。
+_CUSTOM_HINTS = {
+    "vcf_budget": lambda v: (
+        "关掉 VCF 之后 AI 会看不见连续冲四：既算不出自己的，也看不见对手的。"
+        "预设的五档从不用这个办法拉开差距 —— 它们靠深度上限。"
+        if float(v) <= 0.0 else ""),
+    "enhance": lambda v: (
+        "" if v else "关掉后与「高级」的搜索方式一致。"),
+}
+
+
+def _build_custom_row(label, spec, current, parent=None):
+    """按 ``_CUSTOM_OPTIONS`` 里的规格造出这一行的控件。
+
+    ``spec`` 两种形状：``("range", 下限, 上限, 单位, 是否浮点)`` 造滑杆，
+    ``("choice", ((值, 文案), ...))`` 造按钮排。两种控件的对外接口同形
+    （``value`` / ``set_value`` / ``value_selected``），所以 ``_build`` 与
+    ``_on_reset`` 不必分情况。
+    """
+    if spec[0] == "range":
+        lo, hi, unit, to_float = spec[1], spec[2], spec[3], spec[4]
+        return _SliderRow(label, lo, hi, unit, current,
+                          to_float=to_float, parent=parent)
+    if spec[0] == "choice":
+        return _OptionRow(label, list(spec[1]), current, parent=parent)
+    raise ValueError("未知的自定义参数类型：%r" % (spec[0],))
+
+
+def _custom_engine_note():
+    """自定义弹窗底部那行「这份配置能生效到哪一步」。"""
+    if engine.binary_path():
+        return ("五项参数随每次搜索下发给 C++ 引擎；其中增强搜索只有 C++ 有。")
+    return ("没找到 C++ 引擎，本机将退回本地 Python：自定义参数基本不生效，"
+            "本地会按自己最强的一档跑（15 秒 / 深度 24）。")
+
+
+#: 自定义难度在 QSettings 里的键。
+#:
+#: **落盘放在界面层，不放进 engine.py。** `engine.py` / `engine_local.py` 是零 Qt
+#: 设计（`server.py`、`tools/bench.py` 这些无头程序都导入它们），一个 QSettings
+#: 就会把 Qt 拖进去。无头程序照旧用 `engine.py` 里的出厂值 —— 一致且可预期。
+_SETTINGS_CUSTOM_KEY = "custom_difficulty"
+
+
+def _load_custom_settings():
+    """开机时把上次的自定义难度读回引擎。缺项 / 损坏 / 没有记录都静默回出厂值。"""
+    raw = QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP).value(
+        _SETTINGS_CUSTOM_KEY, None)
+    if not raw:
+        return
+    try:
+        cfg = json.loads(raw)
+    except (TypeError, ValueError):
+        return
+    if isinstance(cfg, dict):
+        engine.set_custom_config(cfg)
+
+
+def _save_custom_settings(cfg):
+    """把自定义难度落盘。失败不抛 —— 存不下配置不该让一局棋开不了。"""
+    try:
+        QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP).setValue(
+            _SETTINGS_CUSTOM_KEY, json.dumps(cfg))
+    except (TypeError, ValueError):
+        pass
+
+
+#: 界面语言在 QSettings 里的键。落盘放在界面层，理由与自定义难度那份一样：
+#: ``i18n`` 是零 Qt 模块，``server.py`` 那些无头程序导入它不该被拖进 Qt。
+_SETTINGS_LANG_KEY = "ui_language"
+
+
+def _load_language():
+    """开机时把上次选的语言读回 ``i18n``。
+
+    **没存过就等同于「跟随系统」**（``i18n`` 的出厂值）—— 一个从没进过设置页
+    的用户，系统是什么语言就该看到什么语言。
+    """
+    # 系统语言先喂进去：即使这一步之后读不到任何落盘值，"跟随系统"也有答案。
+    i18n.set_system_locale(QLocale.system().name())
+    saved = QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP).value(
+        _SETTINGS_LANG_KEY, None)
+    i18n.set_language(saved if saved else i18n.SYSTEM)
+
+
+def _save_language(code):
+    """把语言选择落盘。失败不抛 —— 存不下偏好不该让界面开不了。"""
+    try:
+        QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP).setValue(
+            _SETTINGS_LANG_KEY, code)
+    except (TypeError, ValueError):
+        pass
+
+
+class CustomDifficultyDialog(QDialog):
+    """自定义算法与难度：五项参数 + 恢复默认 / 取消 / 确定。
+
+    打开时用**当前的**自定义配置回显，所以"改第二次"是在上次的基础上改。
+    「确定」把结果放进 ``self.chosen``，由调用方写回引擎并开局；「取消」什么都不动。
+    """
+
+    def __init__(self, cfg, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(i18n.t("自定义算法和难度"))
+        self.setModal(True)
+        #: 用户点了「确定」之后的那份配置。取消时保持 ``None``。
+        self.chosen = None
+        self._cfg = dict(cfg)
+        self._rows = {}
+        self._hints = {}
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        self._build()
+
+    def _build(self):
+        body = Screen(title="自定义算法和难度",
+                      subtitle="五项参数随每次搜索下发，只影响这一档",
+                      backdrop=False, parent=self)
+
+        for key, label, spec in _CUSTOM_OPTIONS:
+            row = _build_custom_row(label, spec, self._cfg[key], self)
+            row.value_selected.connect(lambda v, k=key: self._on_value(k, v))
+            self._rows[key] = row
+            body.add_content(row, Qt.AlignLeft)
+            hint = faint_label("", align=Qt.AlignLeft)
+            body.add_content(hint, Qt.AlignLeft)
+            self._hints[key] = hint
+
+        for key in self._rows:
+            self._refresh_hint(key)
+
+        body.add_content(separator())
+        body.add_content(faint_label(_custom_engine_note()))
+
+        # 同样用下限而不是固定宽度：「恢复默认」在英语里是 "Restore defaults"，
+        # 钉死 130px 会把它裁成 "estore defaults"。
+        reset_btn = button("恢复默认", "ghost")
+        cancel_btn = button("取消", "ghost")
+        ok_btn = button("确定", "primary")
+        for b, w in ((reset_btn, 130), (cancel_btn, 110), (ok_btn, 130)):
+            b.setMinimumWidth(_px(w))
+        reset_btn.clicked.connect(self._on_reset)
+        cancel_btn.clicked.connect(self.reject)
+        ok_btn.clicked.connect(self._on_accept)
+        body.add_content(hbox(reset_btn, cancel_btn, ok_btn,
+                              spacing=theme.SPACE_SM))
+
+        self.layout().addWidget(body)
+        self.adjustSize()
+
+    def _on_value(self, key, value):
+        self._cfg[key] = value
+        self._refresh_hint(key)
+
+    def _refresh_hint(self, key):
+        fn = _CUSTOM_HINTS.get(key)
+        self._hints[key].setText(fn(self._cfg[key]) if fn else "")
+
+    def _on_reset(self):
+        """回到出厂值。**只动这个弹窗**，不碰引擎 —— 用户还可以再改回去。"""
+        defaults = engine.custom_defaults()
+        for key, _label, _spec in _CUSTOM_OPTIONS:
+            self._cfg[key] = defaults[key]
+            self._rows[key].set_value(defaults[key])
+            self._refresh_hint(key)
+
+    def _on_accept(self):
+        self.chosen = dict(self._cfg)
+        self.accept()
 
 
 # ==================== 加载界面 ====================
@@ -1303,7 +1834,7 @@ class GamePanel(QFrame):
         # 说明文字与图标**都挂在按钮上**（不是并列的两个控件）：文案写着"点击
         # 以切换"，整条就该是热区，只让 18px 的图标可点是自相矛盾的。
         self.theme_btn = button("", "ghost", height=_px(32))
-        self.theme_btn.setToolTip("切换深色 / 浅色主题")
+        self.theme_btn.setToolTip(i18n.t("切换深色 / 浅色主题"))
         self.theme_btn.clicked.connect(self.theme_clicked.emit)
 
         # 字号取 ``subtitle`` 那一档（14px），不用 ``faint``（12px）：12px 在这
@@ -1441,7 +1972,13 @@ class GamePanel(QFrame):
             # 显示档位**名称**而不是"N 级"。档位号重构后从 3 档变成 5 档，旧编号
             # 已经没有稳定含义；名称直接来自 engine.DIFFICULTY 那一张表，改表即改
             # 界面，不会出现"界面上写 3 级、代码里是中级"这种两处对不上的情形。
-            self.difficulty_row.set_value(engine.difficulty_name(difficulty))
+            # InfoRow.set_value 是**值**的入口，不走 i18n（值多为坐标 / 比分 /
+            # 计时，逐个查表纯属浪费）。所以这里明确翻一次 —— 难度名是唯一的
+            # 例外：它是一句文案，只是碰巧从 engine 的表里来。
+            self.difficulty_row.set_value(
+                i18n.t(engine.difficulty_name(difficulty)))
+            # 引擎名（"C++ 引擎" / "Python (本地)"）**不翻** —— 它与日志里的
+            # 写法必须一致，用户拿这个字符串去搜日志时要能搜到。
             self.engine_row.set_value(engine.engine_label())
             port = engine.current_port()
             self.port_row.set_value(str(port) if port else "—")
@@ -1452,8 +1989,8 @@ class GamePanel(QFrame):
                 if turn == human:
                     self.turn_indicator.set_turn(turn, "轮到你落子")
                 else:
-                    self.turn_indicator.set_turn(turn,
-                                                 f"{players[turn]} 行动中")
+                    self.turn_indicator.set_turn(
+                        turn, i18n.tf("%s 行动中", i18n.t(players[turn])))
         elif status in ("黑方获胜", "白方获胜"):
             # 本地对战：谁赢就以谁的子色落定，"轮到你落子"那种措辞在这里没有
             # 主语，所以整句由 `status` 给。
@@ -1554,6 +2091,19 @@ def _strength_bar(players, diameter=28, card_px=None):
     return bar
 
 
+def _custom_mark():
+    """自定义卡卡面上的「?」，边长与同一排难度卡上的棋子方盒同高。
+
+    高度必须**问控件要**，理由与 ``_strength_bar`` 里那段一样：``StoneFace``
+    的方盒是 ``round(d * 1.25)``，抄一份数字过来就把它钉死了。同一排卡片的
+    face 高度只要一致，六张卡看起来才是同一套。
+
+    **不收卡片边长参数**（``_strength_bar`` 收，是为了算一排子排不排得下）
+    —— 这里只有一颗图形，卡片被 ``_card_fit_size`` 压小与否都不影响它。
+    """
+    return QuestionMark(StoneFace(1, 28).width())
+
+
 class SelectionScreen(Screen):
     """对战模式 / 执棋颜色 / AI难度 / 复盘强度 选择。
 
@@ -1580,7 +2130,8 @@ class SelectionScreen(Screen):
         self.min_level = int(min_level)
         title, subtitle = self._TITLES[mode]
         if mode == "review":
-            subtitle = subtitle % engine.difficulty_name(self.min_level)
+            subtitle = i18n.tf(subtitle,
+                               i18n.t(engine.difficulty_name(self.min_level)))
         super().__init__(title=title, subtitle=subtitle, backdrop=True)
         self._cards = []
         self.setup_ui()
@@ -1664,20 +2215,44 @@ class SelectionScreen(Screen):
             # —— 那是上一页的事。反过来，颜色选择页与面板的回合指示**不能**
             # 这么改，那里的子必须如实显示黑白。
             bar_player = 2 if theme.current_theme() == "dark" else 1
-            size = _card_fit_size(len(levels), gap)
+            # 「自定义」只出现在**难度页**，复盘页不加。两个理由：
+            #  * 复盘页的档位是"用哪一档重算"，而自定义局的复盘**直接跳过这一页**
+            #    用本局快照的参数跑（见 GomokuGame._show_review_strength），所以
+            #    它在这里没有用武之地；
+            #  * 复盘页的过滤是「不低于本局难度」，如果自定义也进这张表，用户
+            #    只是想让 AI 从某一档重算，却先要面对一个要填参数的弹窗。
+            extra = 1 if self.mode == "difficulty" else 0
+            size = _card_fit_size(len(levels) + extra, gap)
             for level, tone in zip(levels, tones):
                 # N 颗子当强度条 —— 用的是棋盘上那套材质，不是另画一个图标。
                 # 排不下时收紧的是**间隙**，不是棋子（见 _strength_bar）。
                 btn = card_button(engine.difficulty_name(level), tone,
                                   face=_strength_bar([bar_player] * level,
                                                      card_px=size),
-                                  sub="思考上限 %g 秒" % engine.DIFFICULTY[level]["time"],
+                                  sub=i18n.tf(
+                                      "思考上限 %g 秒",
+                                      engine.DIFFICULTY[level]["time"]),
                                   index=f"{level:02d}", size=size)
                 # 同一批卡片服务于两个页面，只有"点了发哪个信号"不同。
                 sig = (self.review_level_selected if self.mode == "review"
                        else self.difficulty_selected)
                 btn.clicked.connect(lambda _=False, l=level, s=sig: s.emit(l))
                 self._cards.append(btn)
+
+            if self.mode == "difficulty":
+                # 第 6 张卡：**不画强度条**。强度条只表达"几颗子 = 多强"，而
+                # 自定义不表示某个固定强度 —— 硬塞五颗会和宗师那张看起来一样。
+                # 卡面换成自绘的「?」，说的是"这一档由你来定"（见 ui_kit
+                # 的 QuestionMark，那里写了为什么不是文字控件、为什么是问号）。
+                custom_btn = card_button(
+                    engine.difficulty_name(engine.CUSTOM_LEVEL), "ghost",
+                    face=_custom_mark(),
+                    sub="算法与深度可调",
+                    index=f"{engine.CUSTOM_LEVEL:02d}", size=size)
+                custom_btn.clicked.connect(
+                    lambda _=False: self.difficulty_selected.emit(
+                        engine.CUSTOM_LEVEL))
+                self._cards.append(custom_btn)
 
         # 5 张卡在 SPACE_XL(24) 下是 5×160+4×24 = 896px，仍塞得进 WINDOW_W=1022
         # —— 但只剩 126px 余量。降到 SPACE_LG(16) 得 864px，只调难度/复盘页：
@@ -1745,7 +2320,9 @@ class LanJoinScreen(Screen):
         self.error_label = faint_label("")
         self.add_content(self.error_label)
         if error:
-            self.error_label.setText(error)
+            # 错误文案在 `_lan_join_error_text` 里是一张中文表；统一在这一个
+            # 出口翻，那张表就不必感知语言。
+            self.error_label.setText(i18n.t(error))
 
         back = button("← 返回", "ghost", width=150)
         back.clicked.connect(self.back_clicked.emit)
@@ -1760,7 +2337,7 @@ class LanJoinScreen(Screen):
         tag = faint_label(label, align=Qt.AlignRight | Qt.AlignVCenter)
         tag.setFixedWidth(72)
         edit = QLineEdit(text)
-        edit.setPlaceholderText(placeholder)
+        edit.setPlaceholderText(i18n.t(placeholder))
         edit.setFixedWidth(260)
         edit.setFixedHeight(theme.CONTROL_H)
         lay.addWidget(tag)
@@ -2039,6 +2616,17 @@ class GomokuGame(QMainWindow):
         # 装在这儿离屏冒烟才会真的执行这套样式。
         theme.install()
 
+        # 上次存下来的自定义难度读回引擎。放在这里而不是 ``main()``：gui_smoke
+        # 直接构造本窗口、不走 ``main()``，而它要验的正是"自定义参数真的进了
+        # 搜索"。无头程序（server.py / tools/bench.py）不经过这里，照旧用
+        # engine.py 里的出厂值。
+        _load_custom_settings()
+
+        # 界面语言。**必须早于任何文案被造出来** —— 界面文字是构造期写进控件
+        # 的（见 ui_kit 的文本工厂），晚一行就有半屏中文留在原地。放在这里而不是
+        # ``main()``：与上面那条同一个理由，gui_smoke 直接构造本窗口。
+        _load_language()
+
         # 小屏自动降档：**只在用户从未在设置页存过档位时**才自作主张，
         # 一旦用户选过就以他为准（`saved_scale()` 返回非 None）。
         # `persist=False` —— 自动判定是按这台机器现算的，不该写进配置里，
@@ -2048,12 +2636,11 @@ class GomokuGame(QMainWindow):
             av = screen.availableGeometry()
             theme.set_scale(_autofit_scale(av.width(), av.height()), persist=False)
 
-        self.setWindowTitle("五子棋 AI")
+        self.setWindowTitle(i18n.t("五子棋 AI"))
         # 标题栏 + 边框的高度，第一次 show 之后才量得准（见 `showEvent`）。
         # ``_fit_cap_h`` 要从可用高度里扣掉它；量到之前用保守常量兜底。
         self._frame_h = 0
-        # 设置入口挂在哪一页上 —— 从对局/复盘中途进来的也要能原路回去。
-        self._settings_origin = None
+        # 设置弹窗里换过档位没有 —— 换过才需要在关窗时重建底下那一页。
         self._scale_changed_in_settings = False
         # 复盘结果页重建所需的参数（换档后要按同一份材料重建一份）。
         self.review_cancelled = False
@@ -2157,7 +2744,7 @@ class GomokuGame(QMainWindow):
         # 换页也不会让它重建。
         self.settings_btn = settings_button()
         self.settings_btn.setParent(self)
-        self.settings_btn.clicked.connect(self._show_settings)
+        self.settings_btn.clicked.connect(self._open_settings_dialog)
 
         # 各页面
         self.loading_screen = None
@@ -2173,7 +2760,14 @@ class GomokuGame(QMainWindow):
         self.lan_join = None
         self.lan_wait = None
         self._game_row = None       # 棋盘行容器（收回等待遮罩时切回它）
-        self.settings_screen = None
+        # 设置弹窗：**不占 `central` 的一页**，所以不参与 _drop_pages 的页面表；
+        # 关掉即销毁，下次点齿轮重新建（档位/主题可能已经变了，重建即回显）。
+        self.settings_dialog = None
+        # 自定义难度弹窗（难度页第 6 张卡打开的）
+        self.custom_dialog = None
+        # 本局开局时快照的自定义参数（非自定义局为 None）。复盘时用它重算 ——
+        # 快照而不是现读，是为了"打完之后再改参数"不改写这一局的复盘结果。
+        self.game_custom_cfg = None
         # 复盘三页
         self.review_strength = None
         self.review_progress = None
@@ -2307,7 +2901,7 @@ class GomokuGame(QMainWindow):
         self._game_over_timer.stop()
         for attr in ("loading_screen", "selection_mode", "selection_color",
                      "selection_difficulty", "game_widget", "lan_menu",
-                     "lan_join", "settings_screen", "review_strength",
+                     "lan_join", "review_strength",
                      "review_progress", "review_list", "review_board"):
             page = getattr(self, attr, None)
             if page is not None:
@@ -2321,16 +2915,19 @@ class GomokuGame(QMainWindow):
         for attr in ("loading_screen", "selection_mode", "selection_color",
                      "selection_difficulty", "game_widget", "board_widget",
                      "game_panel", "game_over_overlay", "_stack", "_game_row",
-                     "lan_menu", "lan_join", "lan_wait", "settings_screen",
+                     "lan_menu", "lan_join", "lan_wait",
                      "review_strength", "review_progress", "review_list",
                      "review_board"):
             setattr(self, attr, None)
-        # 这三样指的是页面本身，页面已经拆了 —— 不清就是悬垂引用，
-        # `_back_from_settings` 拿它去 `central.indexOf()` 会拿到 -1（还好），
-        # 但语义已经错了。
-        self._settings_origin = None
+        # 设置弹窗不占 `central`，页面全拆了它照样活着 —— 但它底下那一页已经
+        # 没了，留着就是一块悬在空窗口上的板子。关掉它再撤引用。
+        if self.settings_dialog is not None:
+            self.settings_dialog.close()
+            self.settings_dialog = None
         self._scale_changed_in_settings = False
         self._review_board_idx = None
+        # 自定义参数快照属于"上一局"，重开就作废。
+        self.game_custom_cfg = None
 
     def _on_page_changed(self):
         """当前页换了：重算中央容器的下限，顺带刷一下右上角齿轮的可见性。"""
@@ -2373,15 +2970,15 @@ class GomokuGame(QMainWindow):
     def _update_settings_button(self):
         """按当前页决定齿轮是否显示。
 
-        加载页是开场过场、设置页自己就是设置 —— 这两页藏起来，其余一律显示。
-        （用户 2026-10-05：「他妈的加载界面你放个设置干啥」。）
+        只有加载页藏起来 —— 那是开场过场，齿轮摆在那儿没有意义。
+        （用户 2026-10-05：「他妈的加载界面你放个设置干啥」。）设置既然是弹窗，
+        就不再需要"设置页自己藏自己"这一支。
         """
         b = getattr(self, "settings_btn", None)
         if b is None:
             return
         page = self.central.currentWidget()
-        show = page is not None and not isinstance(
-            page, (LoadingScreen, SettingsScreen))
+        show = page is not None and not isinstance(page, LoadingScreen)
         b.setVisible(show)
         if show:
             self._place_settings_button()
@@ -2408,29 +3005,58 @@ class GomokuGame(QMainWindow):
         self.selection_mode.mode_selected.connect(self._on_mode_selected)
         self._switch_page(self.selection_mode)
 
-    # ---- 设置页 ----
+    # ---- 设置弹窗 ----
 
-    def _show_settings(self):
-        """进设置页。**记住从哪一页进来的**。
+    def _open_settings_dialog(self):
+        """点齿轮：开设置弹窗。
 
-        对局中、复盘中、看复盘棋盘时都能进设置 —— 用户 2026-10-05 的原话是
-        「难道指望用户退出棋局回首页吗」。所以进来先记下来路，出去时原路返回；
-        而换过档之后那一页的度量已经过期，还得先按新档位重建（见
-        `_back_from_settings`）。
+        **不再是一页。** 以前它借 `central` 占一页，进去要切页、出来要原路返回，
+        `_settings_origin` 那一整套登记与回退都是在给"它占一页"收拾残局。做成
+        弹窗之后底下那一页在弹窗期间一直没动过，这些机制整体消失。
+
+        用 ``open()`` 而不是 ``exec_()``：``exec_()`` 会进嵌套事件循环，工具的
+        驱动方式（QTimer + 手动 pump）会陷在里面出不来。``open()`` 在 Qt5 里
+        同样是模态，但不阻塞调用方。
         """
-        origin = self.central.currentWidget()
-        if origin is not None and origin is not self.settings_screen:
-            self._settings_origin = origin
+        if self.settings_dialog is not None:
+            self.settings_dialog.raise_()
+            self.settings_dialog.activateWindow()
+            return
         self._scale_changed_in_settings = False
-        if self.settings_screen is None:
-            self.settings_screen = SettingsScreen()
-            self._wire_settings(self.settings_screen)
-        self._switch_page(self.settings_screen)
+        self._language_changed_in_settings = False
+        dlg = SettingsDialog(self)
+        dlg.scale_selected.connect(self._on_scale_selected)
+        dlg.theme_toggled.connect(self._on_theme_toggled)
+        dlg.language_selected.connect(self._on_language_selected)
+        dlg.finished.connect(self._on_settings_dialog_closed)
+        self.settings_dialog = dlg
+        dlg.open()
 
-    def _wire_settings(self, page):
-        page.scale_selected.connect(self._on_scale_selected)
-        page.theme_toggled.connect(self._on_theme_toggled)
-        page.back_clicked.connect(self._back_from_settings)
+    def _on_settings_dialog_closed(self, _result=0):
+        """弹窗关了：如果档位或语言变过，重建底下那一页。
+
+        两条改动都要重建这一页，但来路不同：换档是**度量**变了（面板宽度、
+        棋盘半径这些是构造期算死的），换语言是**文案**变了（每条文字都是构造
+        期写进控件的）。表现却一样 —— 不重建的话，关掉弹窗后底下还停在旧字号
+        / 旧语言，用户会以为设置没生效。
+
+        弹窗期间对局线程照旧在往那一页推事件（AI 落子、计时），所以这里拿到的
+        可能是一张"带着刚到达的新状态"的页面 —— 与从前设置页的情形同构，
+        `_rebuild_for_scale` 的快照-回灌路径已经覆盖这一路。
+        """
+        self.settings_dialog = None
+        if not (self._scale_changed_in_settings
+                or self._language_changed_in_settings):
+            return
+        self._scale_changed_in_settings = False
+        self._language_changed_in_settings = False
+        page = self.central.currentWidget()
+        if page is None:
+            return
+        rebuilt = self._rebuild_for_scale(page)
+        # `_replace_page` 只换 widget，不负责置当前 —— 少了这一句底下还是旧页。
+        self.central.setCurrentWidget(rebuilt)
+        anim.fade_in(rebuilt)
 
     def _on_scale_selected(self, name):
         """换档：落盘 → 作废棋盘缓存 → 整页重建。
@@ -2445,6 +3071,19 @@ class GomokuGame(QMainWindow):
         theme.set_scale(name, persist=True)
         self._scale_changed_in_settings = True
         self._invalidate_board_caches()
+        self._rebuild_settings()
+
+    def _on_language_selected(self, code):
+        """换语言：切过去 → 落盘 → 重建弹窗。
+
+        **不在这里重建底下那一页** —— 弹窗还开着，重建它会在用户眼皮底下换掉
+        他背后的内容；等 ``finished`` 再统一处理（与换档同一条路径）。
+        """
+        if code == i18n.language():
+            return
+        i18n.set_language(code)
+        _save_language(code)
+        self._language_changed_in_settings = True
         self._rebuild_settings()
 
     def _on_theme_toggled(self):
@@ -2465,41 +3104,25 @@ class GomokuGame(QMainWindow):
             w.update()
 
     def _rebuild_settings(self):
-        """原地重建设置页（尺寸/配色变了，旧页的布局已经不对）。"""
-        old = self.settings_screen
-        self.settings_screen = SettingsScreen()
-        self._wire_settings(self.settings_screen)
-        self.central.addWidget(self.settings_screen)
-        self.central.setCurrentWidget(self.settings_screen)
-        if old is not None:
-            self.central.removeWidget(old)
-            old.deleteLater()
-        anim.fade_in(self.settings_screen)
+        """尺寸/配色变了：重建**弹窗自己**，好让勾选值跟着新档位回显。
 
-    def _back_from_settings(self):
-        """离开设置页：回**进来时那一页**；换过档就先按新档位重建它。
-
-        **不调 `_show_mode_selection`** —— 那会把模式页也拆了重建，白闪一下，
-        而且模式页本来就是按当前字号新建的（每次进入都重建），直接切回去即可。
+        弹窗里的控件度量也是构造期算死的，不重建就出现"点了「特大」，弹窗纹丝
+        不动"—— 用户会以为按钮坏了（它当年还是一页时就写下过这条理由）。
+        重建期间不动 `central`：底下那一页本来就等着 `finished` 再处理。
         """
-        origin = self._settings_origin
-        changed = self._scale_changed_in_settings
-        self._scale_changed_in_settings = False
-        if origin is None or origin is self.settings_screen:
-            origin = self.selection_mode
-        if origin is None:
-            self._show_mode_selection()
+        if self.settings_dialog is None:
             return
-        if changed and self.central.indexOf(origin) >= 0:
-            origin = self._rebuild_for_scale(origin)
-        self._settings_origin = origin
-        # 设置页是**借道**的一页，离开就把它从栈里摘掉（不销毁 —— 下次直接复用）。
-        # 留着不走的话，来回进几次设置就让 QStackedWidget 一直显示有这一页，
-        # 而它的存在与否对别的流程毫无意义（比如复盘那套按页数做的断言）。
-        if self.settings_screen is not None:
-            self.central.removeWidget(self.settings_screen)
-        self.central.setCurrentWidget(origin)
-        anim.fade_in(origin)
+        dlg = SettingsDialog(self)
+        dlg.scale_selected.connect(self._on_scale_selected)
+        dlg.theme_toggled.connect(self._on_theme_toggled)
+        dlg.language_selected.connect(self._on_language_selected)
+        dlg.finished.connect(self._on_settings_dialog_closed)
+        old = self.settings_dialog
+        self.settings_dialog = dlg
+        old.finished.disconnect(self._on_settings_dialog_closed)
+        old.close()
+        old.deleteLater()
+        dlg.open()
 
     def _rebuild_for_scale(self, page):
         """换档后按新度量重建 ``page``，返回重建出来的页面对象。
@@ -2684,8 +3307,41 @@ class GomokuGame(QMainWindow):
         self._switch_page(self.selection_difficulty)
 
     def _on_difficulty_selected(self, level):
-        """选择了难度，开始游戏"""
+        """选择了难度，开始游戏。
+
+        自定义档先开配置弹窗：「确定」才带着那份参数开局，「取消」退回难度页
+        —— 退回时**什么都不改**，引擎里那份自定义配置保持原样。
+        """
+        if level == engine.CUSTOM_LEVEL:
+            self._on_custom_requested()
+            return
+        self.game_custom_cfg = None
         self.gamekunnan = level
+        self._start_game()
+
+    def _on_custom_requested(self):
+        """难度页第 6 张卡：开自定义配置弹窗。"""
+        if self.custom_dialog is not None:
+            self.custom_dialog.raise_()
+            self.custom_dialog.activateWindow()
+            return
+        dlg = CustomDifficultyDialog(engine.custom_config(), self)
+        self.custom_dialog = dlg
+        dlg.finished.connect(self._on_custom_dialog_closed)
+        dlg.open()
+
+    def _on_custom_dialog_closed(self, _result=0):
+        dlg = self.custom_dialog
+        self.custom_dialog = None
+        if dlg is None or dlg.chosen is None:
+            return
+        cfg = dict(dlg.chosen)
+        # 写回引擎（对局路径靠 `_cfg_for(CUSTOM_LEVEL)` 现读模块级那份）并落盘，
+        # 同时**快照到本局** —— 复盘读的是快照，见 `ReviewWorker.cfg`。
+        engine.set_custom_config(cfg)
+        _save_custom_settings(engine.custom_config())
+        self.game_custom_cfg = cfg
+        self.gamekunnan = engine.CUSTOM_LEVEL
         self._start_game()
 
     def _start_game(self):
@@ -2707,6 +3363,16 @@ class GomokuGame(QMainWindow):
         # 一列 0.5 秒和 7 秒的差别只能靠它解释。注意措辞：这一行说的是"能不能
         # 用 C++"，而不是"实际用了谁"（那要等第一次搜索之后才有答案）。
         self.logger.f.write(f"  难度: {engine.difficulty_name(self.gamekunnan)}\n")
+        if self.gamekunnan == engine.CUSTOM_LEVEL:
+            # 只写"自定义"是不够的 —— 事后翻日志要能回答"这一局到底按什么参数
+            # 搜的"，而两份自定义配置的档位名逐字相同。这一行的立意与下面那行
+            # 「引擎」一样：让日志成为事后唯一说得清现场的东西。
+            c = self.game_custom_cfg or engine.custom_config()
+            self.logger.f.write(
+                "  自定义参数: 时限 %gs / 深度 %d / VCF %g / qply %d / "
+                "增强 %s\n" % (float(c["time"]), int(c["max_depth"]),
+                              float(c["vcf_budget"]), int(c["qply"]),
+                              "开" if c.get("enhance") else "关"))
         self.logger.f.write(f"  引擎: {engine.binary_path() or 'C++ 不可用，将用本地 Python 引擎'}\n\n")
         self.logger.f.flush()
 
@@ -3262,8 +3928,10 @@ class GomokuGame(QMainWindow):
         client = self._room_clients.get(me)
         if client is None:
             return
+        # 按钮上的 "Yes" / "No" 是 Qt 内置的（跟随 Qt 自己的翻译），我们只
+        # 翻标题与正文 —— 界面语言是我们自己管的，Qt 的按钮语言管不着。
         answer = QMessageBox.question(
-            self, "悔棋请求", "对手请求悔棋，是否同意？",
+            self, i18n.t("悔棋请求"), i18n.t("对手请求悔棋，是否同意？"),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
         try:
             client.undo_response(answer == QMessageBox.Yes)
@@ -3457,7 +4125,15 @@ class GomokuGame(QMainWindow):
         self._show_review_strength()
 
     def _show_review_strength(self):
-        """复盘强度：只列不低于本局难度的档位（``min_level``）。"""
+        """复盘强度：只列不低于本局难度的档位（``min_level``）。
+
+        **自定义局跳过这一页。** 用户的口径是"直接取自定义难度的算法进行复盘"，
+        所以没有可选项可挑；而且这一页的卡片表只装 ``DIFFICULTY`` 里的五档，拿
+        ``min_level=6`` 去过滤会得到一张空页。
+        """
+        if self.gamekunnan == engine.CUSTOM_LEVEL:
+            self._on_review_level_selected(engine.CUSTOM_LEVEL)
+            return
         self.review_strength = SelectionScreen(mode="review",
                                                min_level=self.gamekunnan)
         self.review_strength.review_level_selected.connect(
@@ -3474,7 +4150,11 @@ class GomokuGame(QMainWindow):
         human = 1 if self.gamemode == 0 else 2
         self._review_generation += 1
         gen = self._review_generation
-        self.review_worker = ReviewWorker(self.human_moves, human, level)
+        # 自定义局把**开局那一刻快照的参数**交给复盘；预设档传 None，照旧查表。
+        cfg = (self.game_custom_cfg
+               if level == engine.CUSTOM_LEVEL else None)
+        self.review_worker = ReviewWorker(self.human_moves, human, level,
+                                          cfg=cfg)
         self.review_worker.progressed.connect(self._on_review_progress)
         self.review_worker.completed.connect(
             lambda recs, lv=level, g=gen: self._on_review_done(recs, lv, g))

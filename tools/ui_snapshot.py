@@ -35,6 +35,7 @@ sys.path.insert(0, _ROOT)
 from PyQt5.QtCore import QPoint, QRect  # noqa: E402
 from PyQt5.QtWidgets import QApplication  # noqa: E402
 
+import i18n  # noqa: E402
 import theme  # noqa: E402
 import main as M  # noqa: E402
 
@@ -277,6 +278,11 @@ def main():
     # 不继承开发者机器上存着的档位：探针按设计尺寸量，档位一变全飘。
     # `_explicit_scale` 一旦置位，`theme.install()` 就不会再去读 QSettings。
     theme.set_scale("normal", persist=False)
+    # 同理不继承界面语言：截图要可复现，机器上选过俄语就该截出俄语图吗？不 ——
+    # 那会让"这两张图不一样"变成无法归因的噪音。钉死简体中文。
+    i18n.set_system_locale("zh_CN")
+    i18n.set_language(i18n.DEFAULT)
+    M._load_language = lambda: None
     app.setStyle("Fusion")
 
     # 截图不该在仓库根目录留 game_log_*.txt
@@ -353,21 +359,49 @@ def main():
         w.resize(*M._design_size())
         pump(app, 150)
 
-        # ---- 5c. 设置页 ----
-        # 从对局页的真实入口进去再原路回来：这张图既是给人看的（四个档位、
-        # 主题切换、返回各占一行），也顺带把"对局中也能改字号"这条路走通一遍。
-        print("[5c/6] 设置页")
+        # ---- 5c. 设置弹窗 ----
+        # 从对局页的真实入口开出来再关掉：这张图既是给人看的（四个档位、
+        # 主题切换、关闭各占一行），也顺带把"对局中也能改字号"这条路走通一遍。
+        print("[5c/6] 设置弹窗")
         w.settings_btn.click()
         pump(app, 200)
-        save(w.grab(), args.out, "09_settings.png")
-        probes.append(("设置页记住了来路",
-                       w._settings_origin is w.game_widget,
-                       f"origin={type(w._settings_origin).__name__}"))
-        w.settings_screen.back_clicked.emit()
-        pump(app, 200)
-        probes.append(("从设置页返回对局页",
+        if w.settings_dialog is not None:
+            # 抓弹窗自己 —— 它不占 `central` 的一页，抓窗口只会看到它盖住棋盘。
+            save(w.settings_dialog.grab(), args.out, "09_settings.png")
+        probes.append(("弹窗期间没有切页",
                        w.central.currentWidget() is w.game_widget,
                        type(w.central.currentWidget()).__name__))
+        if w.settings_dialog is not None:
+            w.settings_dialog.close()
+        pump(app, 200)
+        probes.append(("关闭弹窗后仍在对局页",
+                       w.central.currentWidget() is w.game_widget,
+                       type(w.central.currentWidget()).__name__))
+
+        # ---- 5d. 自定义难度弹窗 ----
+        # 六张卡的那一页 + 配置弹窗各一张：前者的第 6 张卡是本轮新增的可见
+        # 元素，后者是它打开的东西。
+        print("[5d/6] 自定义难度")
+        w.selection_difficulty = M.SelectionScreen(mode="difficulty")
+        w.central.addWidget(w.selection_difficulty)
+        w.central.setCurrentWidget(w.selection_difficulty)
+        pump(app, 200)
+        save(w.grab(), args.out, "10_difficulty.png")
+        probes.append(("难度页有六张卡",
+                       len(w.selection_difficulty._cards) == 6,
+                       f"{len(w.selection_difficulty._cards)} 张"))
+        w.selection_difficulty._cards[-1].click()
+        pump(app, 200)
+        if w.custom_dialog is not None:
+            save(w.custom_dialog.grab(), args.out, "11_custom.png")
+        probes.append(("「自定义」卡开得出配置弹窗",
+                       w.custom_dialog is not None,
+                       type(w.custom_dialog).__name__ if w.custom_dialog
+                       else "None"))
+        if w.custom_dialog is not None:
+            w.custom_dialog.reject()
+        pump(app, 100)
+        w.central.setCurrentWidget(w.game_widget)
 
         # ---- 6. 结算遮罩 ----
         print("[6/6] 结算遮罩")

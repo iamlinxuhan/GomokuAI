@@ -34,6 +34,7 @@ from PyQt5.QtWidgets import (QFrame, QHBoxLayout, QLabel, QSizePolicy,
 
 import analysis as A
 import theme
+from i18n import t, tf
 from theme import CHART_PLOT_H, SIZE_XS, SPACE_SM, SPACE_XS
 
 # 点的来路。用字符串而不是 bool：将来若加上第三种（比如"开局库"），
@@ -196,12 +197,12 @@ class ChartCard(QFrame):
         head = QHBoxLayout()
         head.setContentsMargins(0, 0, 0, 0)
         head.setSpacing(SPACE_SM)
-        self._title = QLabel(title)
+        self._title = QLabel(t(title))
         self._title.setProperty("role", "chart-title")
         head.addWidget(self._title)
         head.addStretch(1)
         if legend:
-            self._legend = QLabel(legend)
+            self._legend = QLabel(t(legend))
             self._legend.setProperty("role", "chart-title")
             head.addWidget(self._legend)
         box.addLayout(head)
@@ -216,11 +217,15 @@ class ChartCard(QFrame):
             box.addWidget(self._readout)
 
         if tooltip:
-            self.setToolTip(tooltip)
+            self.setToolTip(t(tooltip))
 
     def set_title(self, text: str) -> None:
         """改标题。**只有 AI 评分卡用得上** —— 它那一格要等玩家选完执棋颜色
-        才知道该写什么（见 ``ScoreChart.set_ai_player``）。"""
+        才知道该写什么（见 ``ScoreChart.set_ai_player``）。
+
+        收的是**已翻好**的成品字符串（调用方知道该翻哪个模板），这里不再过
+        ``t()`` —— 过了只会拿着译文再查一次表，白记一条漏译。
+        """
         self._title.setText(text)
 
     def set_series(self, series) -> None:
@@ -268,9 +273,10 @@ class ScoreChart(ChartCard):
 
     @classmethod
     def _tooltip(cls, player: int) -> str:
-        return (f"AI（{cls._STONE[player]}）视角的搜索分。实心点 = 搜索结果"
-                "（有深度，可信）；空心点 = 静态估值（无深度、无轮次概念，"
-                "只作参考）。纵轴为对数刻度。")
+        return tf(
+            "AI（%s）视角的搜索分。实心点 = 搜索结果（有深度，可信）；"
+            "空心点 = 静态估值（无深度、无轮次概念，只作参考）。"
+            "纵轴为对数刻度。", t(cls._STONE[player]))
 
     def set_ai_player(self, player: int) -> None:
         """把 AI 执的子写进标题：``AI（白棋）评分``。
@@ -278,7 +284,7 @@ class ScoreChart(ChartCard):
         **不能在构造函数里做** —— 面板是在 `_build_game_ui` 里建的，那时玩家
         还没选执棋颜色；颜色是在 `_on_color_selected` 才定下来的。
         """
-        self.set_title(f"AI（{self._STONE[player]}）评分")
+        self.set_title(tf("AI（%s）评分", t(self._STONE[player])))
         self.setToolTip(self._tooltip(player))
 
     def set_decade(self, decade: int) -> None:

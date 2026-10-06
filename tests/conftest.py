@@ -67,6 +67,28 @@ def _neutral_ui_scale():
     theme.set_scale("normal", persist=False)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _neutral_ui_language():
+    """测试进程不继承开发者机器上选着的界面语言。
+
+    `_neutral_ui_scale` 的同构版本，防的是同一种事故：界面文案现在是查表翻的，
+    开发者在设置里点过一次俄语，所有断言中文文案的用例（``"⚙"`` 的 tooltip、
+    局域网那几句提示）就会在**他那台机器上**红，而失败点与他改的代码无关。
+
+    钉死之后还要把 ``main._load_language`` 换成空操作：``GomokuGame.__init__``
+    每次都调它，会把落盘的语言读回来盖掉上面这一行。测试要的是确定的语言，
+    所以这一步在测试进程里整个跳过。
+    """
+    import i18n
+    # 系统语言也一并钉住：``set_language(SYSTEM)`` 时要落到一个确定的答案上，
+    # 不能随测试机是 en_US 还是 ja_JP 而变。
+    i18n.set_system_locale("zh_CN")
+    i18n.set_language(i18n.DEFAULT)
+
+    import main
+    main._load_language = lambda: None
+
+
 @pytest.fixture(scope="session")
 def legacy_engine():
     """冻结的旧引擎（A/B 基线）。"""

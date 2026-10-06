@@ -45,6 +45,8 @@ from PyQt5.QtCore import QSettings
 from PyQt5.QtGui import QFont, QFontDatabase
 from PyQt5.QtWidgets import QApplication
 
+import i18n
+
 # ==================== 双调色板：界面色 ====================
 # 值随主题切换。棋盘色不在这里 —— 见下方"棋盘（共享）"。
 #
@@ -320,8 +322,8 @@ def available_scales() -> tuple:
 
 
 def scale_label(name: str) -> str:
-    """档位的中文名（设置页按钮文案）。"""
-    return _SCALE_LABELS[name]
+    """档位的名字（设置页按钮文案）。原文是中文，出表前过一遍 ``i18n``。"""
+    return i18n.t(_SCALE_LABELS[name])
 
 
 def saved_scale():
@@ -719,10 +721,74 @@ QPushButton[iconOnly="true"] { padding: 0; }
 """
 
 
+# 数值滑杆（自定义难度的时限 / 深度 / 静止搜索层数）。
+#
+# Qt 的**原生** QSlider 是一个带立体感的灰色槽 + 一个凸起的方块滑块 —— 那是
+# 90 年代的系统控件外观，摆在两套扁平主题里都是异物。而它又不像按钮那样能靠
+# ``QPushButton[variant=...]`` 复用既有规则：``theme.py`` 原先对 QSlider 一条
+# 规则都没有，不写就是原样吐出来。
+#
+# 只认 ``role="value"``：**不给裸 QSlider 上样式**，将来谁再摆一个原生滑杆
+# 会立刻看出是"没被设计的"，而不是悄悄混进设计体系里。
+#
+# ``groove`` 的高度必须与 ``handle`` 的 ``margin`` 对上，否则滑块会偏到槽的
+# 一边 —— ``margin: -5px 0`` 配 6px 槽 + 16px 滑块，正好同心。
+#
+# ## 两条踩过的坑，都别改回去
+#
+# 1. **滑块不能有 ``border``。** 加上之后 Qt 会丢掉 ``border-radius``，圆滑块
+#    变成一个带白边的方块（试过 12/14/18px 三种尺寸，都是这样）。所以要一个
+#    有描边的滑块，只能另想办法（比如外面再套一圈），不能指望 border。
+# 2. **伪状态必须写在子控件之后。** 第一版把禁用态写成
+#    ``QSlider[role=...]:disabled::sub-page:horizontal``，Qt 的解析器会**整条
+#    丢弃 QSlider 的规则集** —— 不报错、不影响别的控件，只是滑杆悄悄长回原生
+#    的立体灰槽。禁用态因此写成 ``::sub-page:horizontal:disabled``（子控件在前，
+#    伪状态在后），这是唯一能让它生效的顺序。
+_SLIDER = """
+QSlider[role="value"] { background: transparent; }
+QSlider[role="value"]::groove:horizontal {
+    height: 6px;
+    background: $track;
+    border-radius: 3px;
+}
+QSlider[role="value"]::sub-page:horizontal {
+    height: 6px;
+    background: $accent;
+    border-radius: 3px;
+}
+QSlider[role="value"]::add-page:horizontal {
+    height: 6px;
+    background: $track;
+    border-radius: 3px;
+}
+QSlider[role="value"]::sub-page:horizontal:disabled { background: $border; }
+QSlider[role="value"]::add-page:horizontal:disabled { background: $track; }
+QSlider[role="value"]::handle:horizontal {
+    width: 16px;
+    height: 16px;
+    margin: -5px 0;
+    background: $accent;
+    border-radius: 8px;
+}
+QSlider[role="value"]::handle:horizontal:hover { background: $accent_hi; }
+QSlider[role="value"]::handle:horizontal:pressed { background: $accent_hi; }
+QSlider[role="value"]::handle:horizontal:disabled { background: $text_faint; }
+"""
+
+
 def app_stylesheet() -> str:
-    """完整样式表。必须在 ``QApplication`` 之后调用（要用 QFontDatabase）。"""
-    return (_BASE.substitute(_tokens()) + _button_rules() + _card_rules()
-            + _ICON_BTN)
+    """完整样式表。必须在 ``QApplication`` 之后调用（要用 QFontDatabase）。
+
+    ``_SLIDER`` 也必须过一遍 ``substitute``。第一版把它**直接拼上去**，于是
+    ``$track`` 这类占位符原样进了样式表 —— Qt 只打印一行 "Could not parse
+    application stylesheet"，不报位置、也不影响其余规则，所以整个自定义难度
+    弹窗静默地没有滑杆样式（滑杆照样能用，只是长回原生灰控件的样子）。
+    这正是本模块 docstring 里那条"用 ``substitute`` 而不是 ``safe_substitute``，
+    未定义的 key 当场 KeyError"要防的失败模式，绕过去一次就中一次。
+    """
+    toks = _tokens()
+    return (_BASE.substitute(toks) + _button_rules() + _card_rules()
+            + _ICON_BTN + Template(_SLIDER).substitute(toks))
 
 
 # ==================== 安装 ====================
