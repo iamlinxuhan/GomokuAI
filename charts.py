@@ -36,7 +36,7 @@ import analysis as A
 import theme
 from i18n import t, tf
 from theme import CHART_PLOT_H, SIZE_XS, SPACE_SM, SPACE_XS
-from ui_kit import wrap_label
+from ui_kit import propagate_wrap_height, wrap_label
 
 # 点的来路。用字符串而不是 bool：将来若加上第三种（比如"开局库"），
 # 图例与 tooltip 只需各加一行，不必回头改所有调用点。
@@ -231,6 +231,10 @@ class ChartCard(QFrame):
 
         if tooltip:
             self.setToolTip(t(tooltip))
+
+        # 容器自身也要声明：面板的布局只问 ChartCard 这一层，不递归看内部
+        # label；不声明时折行的标题/读数会被面板按一行高度分配。
+        propagate_wrap_height(self)
 
     def set_title(self, text: str) -> None:
         """改标题。**只有 AI 评分卡用得上** —— 它那一格要等玩家选完执棋颜色

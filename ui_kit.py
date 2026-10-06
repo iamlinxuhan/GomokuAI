@@ -131,6 +131,20 @@ def wrap_label(label: QLabel) -> QLabel:
     return label
 
 
+def propagate_wrap_height(widget: QWidget) -> QWidget:
+    """让**容器**对上层布局声明"我的高度随宽度变"。
+
+    Qt 只问每一层自己的 ``sizePolicy``，**不会递归看子控件**：``InfoRow`` 里的
+    label 开了 ``heightForWidth``，但 ``InfoRow`` 自己不声明时，面板的布局仍按
+    "一行"给它高度，折出来的第二行被裁（Linux 宽字体下的俄语实测 6 处）。
+    ``QWidget.heightForWidth`` 会转问内部布局，所以容器只需带上这个标志位。
+    """
+    sp = widget.sizePolicy()
+    sp.setHeightForWidth(True)
+    widget.setSizePolicy(sp)
+    return widget
+
+
 # ==================== 文本 ====================
 #
 # 四个工厂都过一遍 ``i18n.t()``。**只有这一层拦**，调用方照旧写中文原文 ——
@@ -335,6 +349,8 @@ class InfoRow(QWidget):
         row.addWidget(self._label)
         row.addStretch(1)
         row.addWidget(self._value)
+        # 容器自身也要声明：面板的布局只问 InfoRow 这一层，不递归看 label。
+        propagate_wrap_height(self)
 
     def set_value(self, text: str, tone: str = "normal") -> None:
         """更新值。``tone`` 走动态属性 + repolish（Qt 不会自动重算样式）。"""
@@ -493,6 +509,7 @@ class TurnIndicator(QFrame):
         # 纵向 Minimum 而不是 Fixed：状态文字折行时这张卡要能跟着长高
         # （Fixed 会让折出来的第二行被上缘/下缘裁掉，Linux 宽字体下实测）。
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Minimum)
+        propagate_wrap_height(self)
 
         row = QHBoxLayout(self)
         row.setContentsMargins(SPACE_LG, SPACE_MD, SPACE_LG, SPACE_MD)
