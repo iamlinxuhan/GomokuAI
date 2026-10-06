@@ -30,6 +30,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
+from PyQt5.QtCore import QRect, Qt
 from PyQt5.QtGui import QFontMetrics
 from PyQt5.QtWidgets import QAbstractButton, QApplication, QLabel, QWidget
 
@@ -111,15 +112,17 @@ def _clipped(root):
             fm = QFontMetrics(w.font())
             unit = _longest_unit(txt, fm)
             if unit > w.width() + 1:
+                # 单个不可断单元就超宽：折行也救不了，直接判裁。
                 bad.append((w, "wrap-word", unit, w.width()))
-            else:
-                # 单行文字的 leading（lineSpacing - height）不是裁切：行距只
-                # 在多行之间起作用，而字形盒（ascent+descent）就是 height。
-                # Linux 字体普遍有 2px leading（Windows 也有），旧判据把
-                # "需要 17 / 实际 15" 当成缺一行，误报 6 处。
-                need = w.heightForWidth(w.width())
-                leading = max(0, fm.lineSpacing() - fm.height())
-                if need > w.height() + leading + 1:
+            elif fm.horizontalAdvance(txt) > w.width() + 1:
+                # **确实需要折行**时才要求折行高度。单行文案的
+                # ``heightForWidth`` 会比字形盒多出 frame/leading 的 2px
+                # （CI 的 17/15 就是它），那不是裁切；而单行放得下时布局
+                # 只需给到 ``fm.height()``。
+                need = fm.boundingRect(
+                    QRect(0, 0, max(1, w.width()), 10 ** 6),
+                    Qt.TextWordWrap, txt).height()
+                if need > w.height() + 2:
                     bad.append((w, "wrap-height", need, w.height()))
             continue
         if w.sizeHint().width() > w.width() + 1:
