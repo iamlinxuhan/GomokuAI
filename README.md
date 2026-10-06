@@ -13,6 +13,8 @@ A human-vs-AI Gomoku (five-in-a-row) program built on **PyQt5**. The engine is
 quiescence search + VCF (continuous forced fours)**, running on CPU only. Five
 difficulty levels; a cool-toned design system around a warm wooden board, with a
 side panel that plots the AI's score and the estimated human win rate live.
+**Three ways to play**: challenge the AI, play a local match with a second person
+at the same machine, or **play over the LAN** against another copy of the program.
 
 The search core was rewritten in **C++17** (same algorithm, aligned line by
 line) and exposed to the UI over a local TCP socket. Measured nps went from
@@ -76,11 +78,12 @@ reference for A/B comparisons.
     this move (`C++` / `Python (local)` / `Book`), the second says which port
     the connection landed on
 - **Asynchronous AI**: threaded on a QThread, so the UI never stalls
-- **Two ways to play**: right after the splash you choose "Challenge the AI" or
-  "Local match". A local match involves no AI at all — two people take turns on
-  one machine — so the turn hint and the final result both speak in stone
-  colours (`Black wins` / `White wins` / `Draw`), and its endgame overlay offers
-  no review: with no AI there is no algorithm to review against
+- **Three ways to play**: right after the splash you choose "Challenge the AI",
+  "Local match" or "LAN play". A local match involves no AI at all — two people
+  take turns on one machine — so the turn hint and the final result both speak in
+  stone colours (`Black wins` / `White wins` / `Draw`), and its endgame overlay
+  offers no review: with no AI there is no algorithm to review against. LAN play
+  has its own section below
 - **Post-game algorithmic review**: after losing to the AI you can pick a
   strength no lower than the one you played and have the engine re-compute each
   move in turn. **Every move gets a row** — the good ones marked green and
@@ -184,6 +187,82 @@ Dependencies are managed with **uv** (`pyproject.toml` + a committed
 
 ---
 
+## 🌐 LAN play
+
+Two copies of the program on the same network can play each other. This is the
+**third card** on the mode screen and it involves no AI at all, which is why it
+gets a section of its own. (It is LAN only — crossing NAT, i.e. playing someone
+outside your network, is **not** implemented.)
+
+> **Not in a release yet.** The newest package on the Releases page is v3.0.8,
+> which predates all of this; LAN play currently exists on `main` and when
+> running from source.
+
+### Sessions, players and rooms
+
+The game state machine was lifted out of the UI (M1–M4). The authoritative state
+— board, move list, win/draw, undo policy, review snapshots — lives in
+`session.py`, which holds **no Qt and no sockets**. The UI holds none of it: it
+renders and forwards intent.
+
+| Module | What it is |
+|---|---|
+| `session.py` | The single source of truth for the rules. Single-player, LAN and the dedicated server all run through the same `Session` — there is no second win check anywhere |
+| `players.py` | A seat is a `PlayerSpec`; `HumanLocal` and `AIPlayer` implement it, and `AIPlayer` simply wraps the existing `engine.ai_move`. **The C++ engine, silent degradation and cooperative cancellation are untouched by this refactor** |
+| `match.py` | Headless `Match`: black-first alternating play, opening prefix, cooperative cancel. Zero Qt — the room reuses it |
+| `room.py` | One room = one `Session` + the seats. An `ai` seat is computed server-side; a `remote` seat is driven by whatever connection attaches. **An illegal move is answered with an error and re-asked — it never ends the game** |
+| `wire.py` | JSON + `\n` line protocol, `PROTO_VERSION = 1`, two-way `hello` version check. "It connects" is not the same as "it is our program" — the lesson `engine.py` had already learned |
+| `server.py` | `RoomServer`: listen, room registry, connection lifecycle. Default port **48900**, kept clear of the engine's port pool (49001–49093) |
+| `client.py` | `RoomClient` (reader thread + `on_event`) and `LocalRoom` |
+
+**The UI always speaks through a `RoomClient`.** Single-player uses an in-process
+transport, LAN uses TCP — so single-player and multiplayer go down the same
+protocol path, the same shape as Minecraft, where single-player *is* the built-in
+server. The `Room` runs on its own game thread; AI seats search on a board
+snapshot and moves and undos are serialised under one lock, so a half-applied
+position is never read.
+
+### Single-player is now a built-in room
+
+M4c rewired single-player from "the UI holds a `Session` and runs its own
+`AIWorker`" to "the app opens a room and attaches `RoomClient`s to it". The
+`AIWorker` class still exists (its own test uses it) but **the main flow no
+longer references it** — one game engine, one path.
+
+### Dedicated server
+
+`server.py` also runs headless, with a human or an AI on either seat:
+
+```bash
+python server.py --port 48900 --room demo --black ai --white remote
+```
+
+### What the room decides, and what the UI only mirrors
+
+`RoomConfig` (`allow_undo` / `undo_limit` / `allow_review` / `allow_restart` /
+`show_ai_scores`) travels down with `welcome`, and **its defaults are exactly
+today's single-player behaviour**. The client disables the entries a room has
+switched off. (There is no UI to edit it yet.)
+
+Undo across a network is a **negotiation**: `undo_proposed` / `undo_response`,
+and **the game is frozen while a proposal is pending** — a remote move arriving
+in that window is held, not dropped. A same-process opponent (single-player and
+local match) keeps the old behaviour of applying an undo straight away. The
+policy itself is "rewind to before the requester's own last stone", so an AI's
+opening move that gets undone is simply **re-played** rather than leaving the
+opponent to move first on an empty board.
+
+### Known limits
+
+- **Disconnecting ends the game.** `Room.detach()` terminates an unfinished
+  game; reconnect / resume is **not** implemented.
+- Two real machines across a firewall have **not** been verified by hand. The
+  LAN path is covered by socket-level and UI-level tests on a single machine.
+- Joining the **dedicated server** is not wired into the UI (no room list, no
+  room name entry), and spectators are not implemented.
+
+---
+
 ## ⚙️ The C++ compute core
 
 The algorithm is not newly written: constant tables, the pattern classifier, the
@@ -211,12 +290,13 @@ has to be surfaced at build time.
 ```
 ┌─ Python (UI, PyQt5) ────────────┐        ┌─ C++17 ───────────────────┐
 │  main.py                        │        │  gomoku_engine            │
-│    └ AIWorker(QThread)          │  TCP   │   ├ Board (bitboard)      │
-│         └ engine.ai_move() ─────┼───────►│   ├ evaluate (incremental)│
-│              │                  │ JSON   │   ├ search (PVS+TT+QS)    │
-│              ├─ ok → C++ result │◄───────┤   └ vcf (forced fours)    │
-│              └─ fail → silent ↓ │        │  one client / cancellable │
-│  engine_local.py  (the old one) │        └───────────────────────────┘
+│    └ RoomClient                 │        │   ├ Board (bitboard)      │
+│         └ Room → AIPlayer       │  TCP   │   ├ evaluate (incremental)│
+│              └ engine.ai_move()─┼───────►│   ├ search (PVS+TT+QS)    │
+│              │                  │ JSON   │   └ vcf (forced fours)    │
+│              ├─ ok → C++ result │◄───────┤  one client / cancellable │
+│              └─ fail → silent ↓ │        └───────────────────────────┘
+│  engine_local.py  (the old one) │
 │    fallback + all light funcs   │
 └─────────────────────────────────┘
 ```
@@ -618,24 +698,35 @@ no longer by heuristic.
 ```
 GomokuAI/
 ├── main.py            # UI assembly + game-flow wiring (no search/eval logic)
-├── engine.py          # engine façade: TCP client + player abstraction + silent degradation (**no algorithms**)
+├── session.py         # authoritative game state machine: board / rules / undo policy (no Qt, no sockets)
+├── players.py         # PlayerSpec + HumanLocal / AIPlayer (AIPlayer wraps engine.ai_move)
+├── match.py           # headless Match: alternating play, opening prefix, cooperative cancel
+├── room.py            # one room = Session + seats + message routing (the rule authority for LAN)
+├── server.py          # RoomServer: listen, room registry, dedicated --server mode
+├── wire.py            # JSON + newline line protocol, hello handshake, error codes
+├── client.py          # RoomClient (reader thread) + LocalRoom (in-process room)
+├── engine.py          # engine façade: TCP client + silent degradation (**no algorithms**)
 ├── engine_local.py    # the AI engine proper: bitboard / eval / search / VCF (no Qt, numpy only, unit-testable standalone)
+├── opening_book.py    # generated opening table (do not edit by hand; see tools/build_book.py)
 ├── config.py          # locating the C++ binary and connection parameters (path resolution only, no IO)
 ├── cpp/               # C++17 compute core (zero third-party deps, CMake)
 │   └── src/           # board / evaluate / search / vcf / opening / tcp_server + json_util
 ├── analysis.py        # score -> win-rate conversion, symlog mapping, readout formatting (pure functions, no Qt)
 ├── charts.py          # the two self-drawn charts on the panel (line / grid / markers)
+├── anim.py            # UI transition animations (fade/slide), stopped explicitly on page teardown
 ├── gamelog.py         # game logs and board-coordinate format
 ├── theme.py           # design system: palette / font sizes / spacing / radii / QSS generation
 ├── ui_kit.py          # reusable widget primitives (titles, info rows, buttons, page skeleton, tech texture)
 ├── board_geometry.py  # pixel <-> cell conversion (pure math, no Qt)
 ├── board_render.py    # offscreen board rendering (wood grain / stone sprites / layer cache)
-├── tests/             # pytest: geometry, incremental engine, position suite, win-rate conversion, review candidates, colour-literal guard
-├── tools/             # bench / selfplay / positions / gui_smoke / ui_e2e / build_book / ab_enhance …
+├── tests/             # pytest: geometry, incremental engine, position suite, session / room / wire, colour-literal guard
+├── tools/             # bench / selfplay / arena / positions / bot_client / gui_smoke / ui_e2e / build_book / ab_enhance …
 │   ├── BASELINE.md    # measured baselines and thresholds per stage
+│   ├── PLAN_SESSION.md   # the Session / Player / Room design + the M0–M4 records
 │   └── legacy_engine.py  # verbatim snapshot of the old engine (must not be modified; the A/B control)
 ├── packaging/         # shared packaging recipe for the four Linux architectures (built in a container)
 ├── installer/         # Windows installer script (Inno Setup, UTF-8 with BOM)
+├── AGENTS.md          # repo guide for coding agents (commands / architecture / do-not-touch / release)
 ├── pyproject.toml     # dependency manifest (uv): numpy / PyQt5, no version pins
 └── uv.lock            # locked versions per platform and Python (committed)
 ```
@@ -646,8 +737,8 @@ GomokuAI/
 
 ```bash
 uv sync                              # runtime + dev dependencies (pytest / pyinstaller)
-uv run pytest -q                     # full suite, 359 tests
-uv run pytest -q -m "not perf"       # skip machine-speed-dependent thresholds (what CI runs, 338 tests)
+uv run pytest -q                     # full suite, 453 tests
+uv run pytest -q -m "not perf"       # skip machine-speed-dependent thresholds (what CI runs, 432 tests)
 ```
 
 **About the `perf` marker**: a handful of thresholds test "has the engine
@@ -671,6 +762,16 @@ review's candidate table (`test_analyze`: the table is **complete**, its maximum
 equals the reported best value, collecting does not change the chosen move, and
 a fresh engine is used each time), and the colour-literal guard
 (`test_no_literal_colors`).
+
+**The session / network layer has its own set, and it is socket-level, not
+mocked**: the session's rules and undo policy (`test_session`), the **behaviour
+contracts** the M1 refactor had to preserve move for move (`test_game_flow`),
+headless matches (`test_match`), the line protocol and its error codes
+(`test_wire`), a real two-client game over loopback (`test_room`), the client
+under a dropped connection (`test_client` / `test_remote_client`), and
+C++↔Python parity on the pinned positions (`test_engine_parity`) — the
+agreement the `enhanced == 0` guarantee rests on. The UI's font-scale thresholds
+and theme rules have their own guards (`test_ui_scale` / `test_theme`).
 
 There is also `tools/gui_smoke.py` (headless UI smoke test, testing **wiring**)
 and `tools/ui_e2e.py` (**actually plays one full game at each of the five
@@ -724,6 +825,7 @@ needs an API migration (`pyqtSignal` → `Signal`, `pyqtSlot` → `Slot`, and so
 
 | Version | Date | Contents |
 |---|---|---|
+| **unreleased** | — | **Three modes now, and one authoritative session behind all of them.** The mode screen gained a third card, **LAN play**: one player creates a room — the app binds a real `RoomServer` and shows `local IP:port` while waiting — and the other joins by typing that address; the two then play over plain TCP. A failed create/join is reported **in place** (the UI is Chinese-only) as `seat_taken` / `no_room` / `proto_mismatch` … and can be retried without leaving the page. **Underneath, the game state machine was lifted out of the UI** (M1–M4): rules, undo policy and review snapshots now live in an authoritative `Session` with **no Qt and no sockets**; `Player` abstracts a seat (human-local or AI, the latter just wrapping `engine.ai_move`); a `Room` holds one `Session` plus its seats and owns the game thread. **Single-player was rewired to be a built-in room** — the UI no longer drives `AIWorker` directly (the class survives for its own test; the main flow does not reference it), it attaches a `RoomClient` to an in-process room, so single-player and LAN run the *same* protocol path — Minecraft's "single-player is the built-in server". The line protocol is JSON + newline with a two-way `hello` check and a **hard version refusal** (no best-effort compatibility); the default room port is **48900**, kept clear of the engine's port pool. **`RoomConfig` travels down with `welcome` and its defaults are exactly the old single-player behaviour**, so a room can switch off undo / review / restart or hide the score charts, and the client greys out exactly those entries. **Undo across a network is a negotiation** (`undo_proposed` / `undo_response`) and **the game is frozen while one is pending** — a remote move arriving in that window is held, not dropped; a same-process opponent keeps the old "applies immediately" behaviour. An illegal move gets an error and a re-ask, never a dead game. There is also a headless dedicated server (`python server.py --port 48900 --room demo --black ai --white remote`) and a network bot client, so an AI on one machine can sit down against an AI on another. **Still not implemented**: reconnect / resume (a dropped connection ends the game), spectators, and joining the dedicated server from the UI. Separately, the licence moved from GPL-2.0 to **GPL-3.0-or-later** — the old text carried no "or later" clause, reading as GPL-2.0-only, which is incompatible with the GPLv3 PyQt5 the UI links against (see "Why GPLv3") |
 | **v3.0.8** | 2026-10-03 | **Fixed: the Windows build silently fell back to the Python engine.** A user reported the Windows version dropping to the local Python engine "for unknown reasons" — the symptom is an **AI that is visibly slower and weaker, with no hint anywhere in the UI**, because the fallback path only prints one line to stdout (`_note("local", exc)` in `engine.py`) and packaged builds write no log, so the user never sees it. **The cause was not the engine's algorithms but the seam between packaging and build**: a PyInstaller bundle's root contains `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll` and `ucrtbase.dll` but **not `MSVCP140.dll`** (the copies Qt and numpy ship both sit in subdirectories, and `pyi_rth_pyqt5.py` only prepends the bundle root to PATH, so the child process's loader cannot reach them), while `gomoku_engine.exe` was built with MSVC's default **`/MD`** and therefore imports it. On a machine without the VC++ Redistributable the engine dies at load with **`STATUS_DLL_NOT_FOUND` (`0xC0000135`)**; on a machine that has it, everything works — which is exactly why some users were hit and others were not. **How to tell which engine a log came from**: the `reason` column is useless (both engines write `PVS搜索`), and the `引擎:` line only says the file was *found*, not that it ran — you have to look at **`val` + `dep`**: C++ level 1 is `time=0.5 / max_depth=2` while local Python level 1 is `time=3.0 / max_depth=4`, so on the same position C++ returns `val=-610 / dep=2` and local Python returns `val=-540 / dep=4`; the reported log showed `val=-540 / dep=4 / 1640ms`, **matching the local Python engine character for character**, with a `dep=4` that physically exceeds the C++ level's depth cap. **The fix**: `cpp/CMakeLists.txt` now sets `CMAKE_MSVC_RUNTIME_LIBRARY` to `MultiThreaded` under MSVC, **linking the runtime statically** so the engine carries everything it needs and no longer depends on the target machine having the Redistributable (the variable is read when `add_executable` runs, so it has to come first); and the `windows` job in `.github/workflows/build.yml` now scans the bytes of `gomoku_engine.exe` right after building and **fails if `MSVCP140.dll` is present** — this regression is silent, so CI has to go red on the spot rather than waiting for a user to report it. Linux is untouched (the whole block is inside `if(MSVC)`); the build plus `--verify-tables --selftest` and all 345 tests stay green |
 | **v3.0.7** | 2026-10-03 | **The review screen now lists every move, none skipped.** It used to show only the moves that were *not* optimal, but a review can run for minutes — coming back to check "where did I play on move 9?" found nothing, because that move wasn't in the list. Now **every move is a row**, good ones included, marked green and labelled "optimal", and the subtitle reads "N moves, M improvable". **The opening move on an empty board and "the search never finished a round" are now their own category**: they were *never compared*, not "compared and found fine", so they say so plainly ("no candidates to compare" / "could not compare") and are **excluded from the improvable count** — counting them would have the result screen accusing the player of mistakes they never made. **A tied optimum now rings the move you actually played**: `delta == 0` only means your move scored the same as the engine's best, and `best_idx` is merely one of the tied points — it can easily be a different one, and ringing elsewhere while the row says "optimal" reads like the program contradicting itself. On a tie the best point is repointed at your own stone, so the ghost stone and the ring coincide. **The move list must not break**: `ReviewWorker` used to drop an entire row whenever the candidate table came back empty; now only a cancel drops a row. Also fixed a page leak — clicking "Show position" repeatedly stacked one full board widget tree per move viewed (each with two layers of pixmap cache), the same bug `_drop_pages` documents as "one tree left behind per game restarted"; the previous board is now reclaimed on every switch. The list height shrinks to its content under the same 420px cap, so two records no longer sit in an empty 420px box |
 | **v3.0.6** | 2026-10-03 | **Local two-player mode**: a mode screen now sits between the splash and the colour screen ("Challenge the AI" / "Local match"). The latter involves no AI at all — two people take turns on one machine — so the turn hint and the final result both speak in stone colours ("Black wins" / "White wins" / "Draw"), and its endgame overlay offers no review, since with no AI there is no algorithm to review against. **Post-game algorithmic review**: after losing to the AI the overlay gains a "Review" button. Pick a strength no lower than the difficulty you played, and the engine re-computes each of *your* moves in turn, listing the ones that were not optimal (original point → best point + score difference), with a progress bar and a cancel that keeps whatever was already computed. "Show position" displays the board **as it stood before that move**, with the best point ringed and your actual move drawn as a ghost stone so the two can be compared on one board. The result screen ends with "Finish" / "Quit". **The engine side extended the TCP protocol**: a new `analyze` request carries fields byte-identical to `compute` (including the conditional `bias_*` and `enhanced/lmr/extend` — review must use the same configuration the game did) and replies with a `cands` array. Root candidates come from a new `outRoot` out-parameter on `Engine::think`; when `outRoot == nullptr`, `collectOn == biasOn`, so the entire old path is bit-for-bit unchanged and the `enhanced == 0` C++↔Python identity is untouched. An older C++ build answers `analyze` with "unknown type", which the Python side silently degrades to local analysis — both directions of the protocol are safe. Worth recording: **to get a complete candidate table you must disable the aspiration window while collecting** — a narrow window prunes some root moves, leaving them with no score to compare; missing that one spot raises no error, it just yields a half-filled table |
