@@ -30,6 +30,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PyQt5.QtCore import QSettings
+from PyQt5.QtGui import QColor
 from PyQt5.QtWidgets import QApplication
 
 import engine
@@ -358,15 +359,17 @@ def _make_stub(captured):
 
 @pytest.fixture
 def _lang_restore():
-    """让语言行相关的用例改完语言能还原，别漏给别的用例。
+    """让语言行相关的用例改完语言（与系统语言）能还原，别漏给别的用例。
 
     ``conftest.py`` 里那个钉语言的夹具是 session 级的，只在会话开头跑一次 ——
-    这里改语言会顺流到后面所有文件的用例去。
+    这里改语言会顺流到后面所有文件的用例去；系统语言同理（「跟随系统」的
+    文案现在由它决定）。
     """
     import i18n
-    keep = i18n.language()
+    keep = (i18n.language(), i18n._system_locale)
     yield i18n
-    i18n.set_language(keep)
+    i18n.set_system_locale(keep[1])
+    i18n.set_language(keep[0])
 
 
 def _slider_row(**kw):
@@ -457,49 +460,83 @@ def test_slider_style_actually_reaches_the_widget(qapp):
 
 def test_language_row_offers_all_seven_choices(qapp, _lang_restore):
     row = M._LanguageRow()
-    assert set(row._buttons) == set(i18n.CHOICES)
-    assert len(row._buttons) == 7
+    items = [row.combo.itemData(i) for i in range(row.combo.count())]
+    assert items == list(i18n.CHOICES)
+    assert len(items) == 7
 
 
-def test_language_row_shows_self_names_and_follows_the_interface(qapp,
-                                                                 _lang_restore):
-    _lang_restore.set_language("ru")
+def test_language_row_shows_self_names_and_the_system_label(qapp,
+                                                            _lang_restore):
+    """自名不随界面语言变；『跟随系统』跟**系统**语言走（2026-10-07 的修复）。"""
+    _lang_restore.set_system_locale("ru_RU")
+    _lang_restore.set_language("ja")
     row = M._LanguageRow()
-    # 自名不随界面语言变 —— 在俄语界面里「日本語」还是「日本語」。
-    assert row._buttons["ja"].text() == "日本語"
-    assert row._buttons["zh-TW"].text() == "中文（繁體）"
-    # 「跟随系统」是个选择，不是语言名，它跟着界面走。
-    assert row._buttons[i18n.SYSTEM].text() == "Как в системе"
+    texts = {row.combo.itemData(i): row.combo.itemText(i)
+             for i in range(row.combo.count())}
+    # 自名：界面是日语，它们也还是各自的语言写法。
+    assert texts["ja"] == "日本語"
+    assert texts["zh-TW"] == "中文（繁體）"
+    # 「跟随系统」：系统是俄语 —— 界面换到哪儿它都写「Как в системе」。
+    assert texts[i18n.SYSTEM] == "Как в системе"
+    _lang_restore.set_language("ko")
+    row2 = M._LanguageRow()
+    follow = {row2.combo.itemData(i): row2.combo.itemText(i)
+              for i in range(row2.combo.count())}
+    assert follow[i18n.SYSTEM] == "Как в системе"
 
 
 def test_language_row_checks_the_current_choice(qapp, _lang_restore):
     _lang_restore.set_language("ko")
     row = M._LanguageRow()
-    checked = [c for c, b in row._buttons.items() if b.isChecked()]
-    assert checked == ["ko"]
+    assert row.combo.currentData() == "ko"
 
 
-def test_language_row_clicking_a_button_emits_that_code(qapp, _lang_restore):
+def test_language_combo_picking_an_item_emits_that_code(qapp, _lang_restore):
     row = M._LanguageRow()
     got = []
     row.language_selected.connect(got.append)
-    row._buttons["zh-TW"].click()
+    row.combo.setCurrentIndex(row.combo.findData("zh-TW"))
     assert got == ["zh-TW"]
 
 
-def test_language_buttons_are_never_narrower_than_their_text(qapp,
-                                                             _lang_restore):
-    """等宽之后每一格仍得装得下自己的文案。
+def test_language_combo_is_never_narrower_than_its_widest_item(
+        qapp, _lang_restore):
+    """任何语言下，下拉框都要装得下最宽的那条选项（含『跟随系统』）。
 
-    按钮文本长度差三倍（"한국어" 对 "Use system language"），按最长的那条定宽
-    正是为了避免裁字 —— 所以这条断言是"定宽没把谁裁掉"的回归。
+    选项文本长度差三倍（"한국어" 对 "Use system language"），宽度由下拉框的
+    sizeHint 自己撑开；这条是"没被最小宽度把谁裁掉"的回归。
     """
     for lang in i18n.LANGUAGES + (i18n.SYSTEM,):
         _lang_restore.set_language(lang)
         row = M._LanguageRow()
-        for code, b in row._buttons.items():
-            assert b.width() >= b.sizeHint().width(), \
-                f"{lang} 界面下 {code} 的按钮被裁了"
+        row.adjustSize()
+        assert row.combo.width() >= row.combo.sizeHint().width(), \
+            f"{lang} 界面下语言下拉被裁了"
+
+
+def test_language_combo_style_and_self_drawn_arrow(qapp, _lang_restore):
+    """``theme._COMBO`` 是本轮新增的 QSS；箭头则是自绘的（QSS 画不了三角）。
+
+    离屏平台画不了文字，但图形能画：在 ``::drop-down`` 区正中取一个像素，
+    它应当与下拉框底色明显不同 —— 箭头没画上去时那里就是纯底色。
+    """
+    row = M._LanguageRow()
+    assert row.combo.property("role") == "language"
+    assert 'QComboBox[role="language"]' in theme.app_stylesheet()
+    row.resize(row.sizeHint())
+    row.show()
+    for _ in range(20):
+        qapp.processEvents()
+    img = row.combo.grab().toImage()
+    # 图像是设备像素；cx/cy 按比例换算，高 DPI 下也对得上。
+    cx = img.width() - img.width() * theme.SPACE_XL // (2 * row.combo.width())
+    cy = img.height() // 2
+    px = img.pixelColor(cx, cy)
+    bg = QColor(theme.SURFACE_2)
+    dist = (abs(px.red() - bg.red()) + abs(px.green() - bg.green())
+            + abs(px.blue() - bg.blue()))
+    assert dist > 30, f"下拉箭头没画出来：像素 {px.name()} ≈ 底色 {bg.name()}"
+    row.deleteLater()
 
 
 def test_even_width_takes_the_widest_and_respects_the_floor(qapp):

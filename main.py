@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QDialog,
     QVBoxLayout, QHBoxLayout, QStackedWidget, QStackedLayout,
     QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea, QButtonGroup,
-    QGridLayout, QLineEdit, QSlider, QMessageBox
+    QLineEdit, QSlider, QMessageBox, QComboBox
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QThread, QObject, QAbstractAnimation, pyqtSignal, QRect,
@@ -23,7 +23,8 @@ from PyQt5.QtCore import (
     QLocale, QSettings
 )
 from PyQt5.QtGui import (
-    QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent, QIcon
+    QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent, QIcon,
+    QPolygonF
 )
 
 import analysis
@@ -735,9 +736,10 @@ def _even_width(buttons, minimum: int = 0) -> int:
 class _OptionRow(QWidget):
     """自定义难度里的一行**枚举**参数：标签 + 一排互斥的 ghost 按钮。
 
-    **用按钮而不是 QComboBox。** `theme.py` 的 QSS 不覆盖 QComboBox —— 原生
-    下拉框在这套设计系统里会是一个没被样式化的灰块，深浅两套主题下都不对。
-    可勾选的 ghost 按钮则是设置弹窗里那四档字号用过的写法，QSS 早已覆盖。
+    **用按钮而不是 QComboBox。** 样式表只为语言下拉写了
+    ``QComboBox[role="language"]``（见 ``theme._COMBO``）—— 裸 QComboBox 在这套
+    设计系统里仍是一个没被样式化的灰块，深浅两套主题下都不对。可勾选的 ghost
+    按钮则是设置弹窗里那四档字号用过的写法，QSS 早已覆盖。
 
     留给**取值离散且带语义**的参数（VCF 的关/低/中/高/满、增强的开/关）：这些
     选项各自是一个说法，不是一个刻度上的刻度值，摆成滑杆反而看不出"关"与
@@ -892,30 +894,59 @@ class _SliderRow(QWidget):
         self._sync_readout(self._slider.value())
 
 
+class _LanguageCombo(QComboBox):
+    """设置里的语言下拉框。**箭头是自绘的。**
+
+    ``theme.py`` 的 QSS 覆盖了这只下拉框（``QComboBox[role="language"]``），
+    但 QSS 画不了三角形：``::down-arrow`` 只认 ``image:``（本仓库不引位图
+    资源），而用 border 拼 CSS 三角的写法在 Qt 里会渲染成一个方块（实测）。
+    所以先让样式表画完整只下拉框（含透明的 ``::drop-down`` 区），再补一笔
+    主题色小三角 —— 与齿轮用「⚙」字符同一条"不引资源"路线。
+    """
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setBrush(QColor(theme.TEXT_DIM))
+        p.setPen(Qt.NoPen)
+        # 三角画在 ``::drop-down`` 区正中（那一区宽度 = SPACE_XL，见 theme._COMBO）。
+        cx = self.width() - theme.SPACE_XL // 2
+        cy = self.height() // 2
+        # 点集用 QPolygonF 显式包一层：``drawPolygon(p1, p2, p3)`` 那种便捷重载
+        # 会在反复绘制中损坏内存（本机实测：冒烟跑到后面的图表绘制才段错误）。
+        p.drawPolygon(QPolygonF([
+            QPointF(cx - _px(4), cy - _px(2)),
+            QPointF(cx + _px(4), cy - _px(2)),
+            QPointF(cx, cy + _px(3)),
+        ]))
+        p.end()
+
+
 class _LanguageRow(QWidget):
-    """设置弹窗里的「语言」一行：七种选项，两列网格。
+    """设置弹窗里的「语言」一行：标签 + 下拉框。
 
-    ## 为什么每个选项写**自名**而不是当前语言里的说法
+    ## 为什么是下拉而不是七枚按钮
 
-    一个只会日语的人打开这个下拉，得能认出「日本語」三个字。写成当前界面语言
-    的说法（"日语" / "Japanese"），恰恰是唯一读不懂这台机器上那份界面的人
-    最不容易认出的写法 —— 语言选项是**唯一**该用自名的界面文案。
+    七个选项摆成按钮阵列（两列四行）会占掉弹窗近一半高度，而"语言"是那种设
+    一次就不再碰的项 —— 下拉把它收成一行。选项文本是各语言的**自名**：一个
+    只会日语的人得在菜单里认出「日本語」，写成当前界面语言反而是他最读不懂
+    的写法。这是语言选项**唯一**该用自名的理由，也是它贯穿不变的规矩。
 
-    唯一随界面语言变的是**「跟随系统」那一项**：它不是一个语言名，而是一个
-    选择（"用系统那一档"），所以用户原话里给了它六种写法。
+    唯一随外界变的是**「跟随系统」那一项**：它不是一个语言名，而是"切到系统
+    那一档"的选择，文案由 ``i18n.follow_system_label()`` 按**系统语言**给出
+    —— 不随应用内语言变（2026-10-07 修的 bug：选了俄语后它变成了「Как в
+    системе」，而它描述的明明是系统那边）。
 
-    ## 为什么两列而不是像字号那样排成一行
+    ## 文案不走 ``i18n.t()``
 
-    七个选项排成一行要 7×190 + 6×间距 ≈ 1400px，比整个窗口还宽；而按钮文本
-    长度差得远（"한국어" 与 "Use system language" 差三倍），按最长的那条定宽
-    会让其余六条全是空荡的宽条。两列四行是这七个里最接近方的排法。
+    选项文本是各语言的自名 + 「跟随系统」成品串，两者都直接进下拉，不像别处
+    那样留中文原文给工厂去查表 —— 所以这里用 ``addItem`` 而不是 ``t()``。
 
-    ## 文案不走 ``i18n``
+    ## 即时生效
 
-    选项文本是各语言的自名，**永远不翻**（翻了就失去意义）；「跟随系统」那一
-    项由 ``i18n.follow_system_label()`` 现取。两者都直接进按钮，不像别处那样
-    留中文原文给工厂去查表 —— 所以这里的 ``button()`` 刻意收的是成品串，
-    查表落空后原样返回，结果正好。
+    选中即发 ``language_selected``；弹窗收到后落盘、切语言、重建自己，与档位
+    按钮的字号同一条流水线（见 ``SettingsDialog._on_language_clicked``）。
     """
 
     language_selected = pyqtSignal(str)
@@ -926,34 +957,35 @@ class _LanguageRow(QWidget):
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(theme.SPACE_XS)
 
-        col.addWidget(faint_label(i18n.language_label(), align=Qt.AlignLeft))
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(theme.SPACE_SM)
+        row.addWidget(faint_label(i18n.language_label(),
+                                  align=Qt.AlignLeft | Qt.AlignVCenter))
 
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(theme.SPACE_XS)
-        group = QButtonGroup(self)
-        current = i18n.language()
-        self._buttons = {}
-        for i, code in enumerate(i18n.CHOICES):
-            b = button(i18n.language_name(code), "ghost")
-            b.setCheckable(True)
-            b.setChecked(code == current)
-            # 给测试与工具一个稳定的抓手：按钮上的文字会随语言变，这个属性不会。
-            b.setProperty("langChoice", code)
-            b.clicked.connect(lambda _=False, c=code: self._pick(c))
-            group.addButton(b)
-            grid.addWidget(b, i // 2, i % 2, Qt.AlignLeft)
-            self._buttons[code] = b
-        # 两列网格也要等宽，否则「시스템 설정 따르기」会把那一列撑出去、另一列
-        # 空一截。取全部七个里最宽的那个，两列就一样宽。
-        _even_width(self._buttons.values(), _px(190))
-        self._group = group
-        col.addLayout(grid)
+        self.combo = _LanguageCombo()
+        self.combo.setProperty("role", "language")
+        # 高度与设置里那排字号按钮一致；宽度保留下限，长语言自己撑开。
+        self.combo.setFixedHeight(theme.CONTROL_H)
+        self.combo.setMinimumWidth(_px(190))
+        for code in i18n.CHOICES:
+            self.combo.addItem(i18n.language_name(code), code)
+        self.combo.setCurrentIndex(i18n.CHOICES.index(i18n.language()))
+        self.combo.currentIndexChanged.connect(self._pick)
+        row.addWidget(self.combo)
+        col.addLayout(row)
 
         col.addWidget(faint_label(i18n.language_hint(), align=Qt.AlignLeft))
 
-    def _pick(self, code):
-        self.language_selected.emit(code)
+    def _pick(self, index):
+        """报出选中的语言代码。
+
+        ``currentIndexChanged`` 也可能由程序性改动触发，但程序性改动只发生在
+        ``__init__`` 里 —— 那时信号还没接上，所以这里只会是用户操作。
+        """
+        code = self.combo.itemData(index)
+        if code:
+            self.language_selected.emit(code)
 
 
 class SettingsDialog(QDialog):

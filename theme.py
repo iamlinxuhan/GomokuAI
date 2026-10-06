@@ -670,7 +670,8 @@ def _tokens() -> dict:
         overlay=_c("OVERLAY"),
         font_ui=resolve_family(mono=False), font_mono=resolve_family(mono=True),
         s_xs=SIZE_XS, s_sm=SIZE_SM, s_md=SIZE_MD, s_lg=SIZE_LG, s_xl=SIZE_XL,
-        sp_lg=SPACE_LG,
+        sp_xs=SPACE_XS, sp_sm=SPACE_SM, sp_lg=SPACE_LG, sp_xl=SPACE_XL,
+        on_accent=_c("ON_ACCENT"),
         r_sm=RADIUS_SM, r_md=RADIUS_MD, r_lg=RADIUS_LG,
     )
 
@@ -776,19 +777,53 @@ QSlider[role="value"]::handle:horizontal:disabled { background: $text_faint; }
 """
 
 
+# 语言下拉（设置弹窗里那一只）。
+#
+# 这是全应用**唯一**被样式表覆盖的 QComboBox，选择器钉在 ``role="language"``
+# 上 —— 与 QSlider 的 ``role="value"`` 同一条规矩：不给裸 QComboBox 上样式，
+# 将来谁再摆一个原生下拉会立刻看出"没被设计"，而不是悄悄混进设计体系里。
+#
+# 箭头**不在 QSS 里画**。``::down-arrow`` 只认 ``image:``（本仓库不引位图
+# 资源，与齿轮用「⚙」字符同一条路线）；用 border 拼 CSS 三角那套写法在 Qt
+# 里会渲染成一个方块（实测截图验证过）。所以这里只把 ``::drop-down`` 区刷
+# 透明、别让原生下拉按钮在深色底上露出来，真正的三角形由 Python 侧自绘
+# （``main._LanguageCombo``）—— 尺寸跟着 ``SPACE_XL`` 走，与这里的宽度一致。
+_COMBO = Template("""
+QComboBox[role="language"] { background: $surface_2; color: $text;
+    border: 1px solid $border; border-radius: ${r_sm}px;
+    font-family: $font_ui; font-size: ${s_md}px;
+    padding: 0 ${sp_xl}px 0 ${sp_lg}px; }
+QComboBox[role="language"]:hover:enabled { border-color: $accent; }
+QComboBox[role="language"]:focus { border: 2px solid $accent; }
+QComboBox[role="language"]:disabled { background: $surface; color: $text_faint;
+    border-color: $surface; }
+QComboBox[role="language"]::drop-down { subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: ${sp_xl}px; border: none; background: transparent; }
+QComboBox[role="language"] QAbstractItemView { background: $surface_2;
+    color: $text; border: 1px solid $border; border-radius: ${r_sm}px;
+    selection-background-color: $accent; selection-color: $on_accent;
+    outline: 0; padding: ${sp_xs}px; }
+QComboBox[role="language"] QAbstractItemView::item { min-height: ${sp_xl}px;
+    padding: 0 ${sp_sm}px; border-radius: ${r_sm}px; }
+""")
+
+
 def app_stylesheet() -> str:
     """完整样式表。必须在 ``QApplication`` 之后调用（要用 QFontDatabase）。
 
-    ``_SLIDER`` 也必须过一遍 ``substitute``。第一版把它**直接拼上去**，于是
-    ``$track`` 这类占位符原样进了样式表 —— Qt 只打印一行 "Could not parse
-    application stylesheet"，不报位置、也不影响其余规则，所以整个自定义难度
-    弹窗静默地没有滑杆样式（滑杆照样能用，只是长回原生灰控件的样子）。
-    这正是本模块 docstring 里那条"用 ``substitute`` 而不是 ``safe_substitute``，
-    未定义的 key 当场 KeyError"要防的失败模式，绕过去一次就中一次。
+    ``_SLIDER`` 与 ``_COMBO`` 也必须过一遍 ``substitute``。第一版把 ``_SLIDER``
+    **直接拼上去**，于是 ``$track`` 这类占位符原样进了样式表 —— Qt 只打印一行
+    "Could not parse application stylesheet"，不报位置、也不影响其余规则，所以
+    整个自定义难度弹窗静默地没有滑杆样式（滑杆照样能用，只是长回原生灰控件
+    的样子）。这正是本模块 docstring 里那条"用 ``substitute`` 而不是
+    ``safe_substitute``，未定义的 key 当场 KeyError"要防的失败模式，绕过去
+    一次就中一次。
     """
     toks = _tokens()
     return (_BASE.substitute(toks) + _button_rules() + _card_rules()
-            + _ICON_BTN + Template(_SLIDER).substitute(toks))
+            + _ICON_BTN + Template(_SLIDER).substitute(toks)
+            + _COMBO.substitute(toks))
 
 
 # ==================== 安装 ====================
