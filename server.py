@@ -101,14 +101,37 @@ class RoomServer:
                            "message": "没有这个房间：%r" % (msg.get("room"),)})
                 room = None
                 return
-            seat_name = msg.get("seat")
-            stone = {"black": 1, "white": 2}.get(seat_name)
-            if stone is None:
+            seat_name = msg.get("seat") or "auto"
+            if seat_name in ("black", "white"):
+                stone = {"black": 1, "white": 2}[seat_name]
+                room.attach(stone, wire)
+            elif seat_name == "auto":
+                # 房主在开房时已经选过颜色，加入方不再选 —— 服务端把剩下
+                # 的那一席给他。两个 auto 同时进来时靠 `attach` 的
+                # `seat_taken` 再试下一席，不会把两个人塞进同一个座位。
+                candidates = room.free_remote_seats()
+                last = None
+                for cand in candidates:
+                    try:
+                        room.attach(cand, wire)
+                    except WireError as exc:
+                        last = exc
+                        continue
+                    stone = cand
+                    break
+                else:
+                    code = last.code if last else "room_full"
+                    message = last.message if last else "房间已满：两个席位都有人了"
+                    wire.send({"type": "error", "code": code,
+                               "message": message})
+                    room = None
+                    return
+                seat_name = "black" if stone == 1 else "white"
+            else:
                 wire.send({"type": "error", "code": "bad_seat",
-                           "message": "席位只能是 black / white"})
+                           "message": "席位只能是 black / white / auto"})
                 room = None
                 return
-            room.attach(stone, wire)
             wire.send({"type": "welcome", "proto": PROTO_VERSION,
                        "room": room.name, "seat": seat_name,
                        "seats": room.seats_json(),
