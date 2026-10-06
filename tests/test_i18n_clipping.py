@@ -108,12 +108,19 @@ def _clipped(root):
         if not txt:
             continue
         if w.wordWrap():
-            unit = _longest_unit(txt, QFontMetrics(w.font()))
+            fm = QFontMetrics(w.font())
+            unit = _longest_unit(txt, fm)
             if unit > w.width() + 1:
                 bad.append((w, "wrap-word", unit, w.width()))
-            elif w.heightForWidth(w.width()) > w.height() + 1:
-                bad.append((w, "wrap-height",
-                            w.heightForWidth(w.width()), w.height()))
+            else:
+                # 单行文字的 leading（lineSpacing - height）不是裁切：行距只
+                # 在多行之间起作用，而字形盒（ascent+descent）就是 height。
+                # Linux 字体普遍有 2px leading（Windows 也有），旧判据把
+                # "需要 17 / 实际 15" 当成缺一行，误报 6 处。
+                need = w.heightForWidth(w.width())
+                leading = max(0, fm.lineSpacing() - fm.height())
+                if need > w.height() + leading + 1:
+                    bad.append((w, "wrap-height", need, w.height()))
             continue
         if w.sizeHint().width() > w.width() + 1:
             bad.append((w, "single", w.sizeHint().width(), w.width()))
