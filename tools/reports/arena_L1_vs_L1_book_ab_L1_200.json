@@ -1,0 +1,145 @@
+{
+ "a_level": 1,
+ "b_level": 1,
+ "seed": 20260919,
+ "games": 200,
+ "results": [
+  {
+   "index": 0,
+   "swapped": false,
+   "a_side": "black",
+   "winner": "white",
+   "moves": 34,
+   "wall_ms": 37578.5,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  },
+  {
+   "index": 1,
+   "swapped": true,
+   "a_side": "white",
+   "winner": "white",
+   "moves": 34,
+   "wall_ms": 35940.0,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  },
+  {
+   "index": 2,
+   "swapped": false,
+   "a_side": "black",
+   "winner": "white",
+   "moves": 72,
+   "wall_ms": 108607.8,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  },
+  {
+   "index": 3,
+   "swapped": true,
+   "a_side": "white",
+   "winner": "white",
+   "moves": 50,
+   "wall_ms": 54819.0,
+   "error": "",
+   "book_hits": {
+    "a": 0,
+    "b": 0
+   }
+  },
+  {
+   "index": 4,
+   "swapped": false,
+   "a_side": "black",
+   "winner": "white",
+   "moves": 34,
+   "wall_ms": 33672.4,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  },
+  {
+   "index": 5,
+   "swapped": true,
+   "a_side": "white",
+   "winner": "black",
+   "moves": 23,
+   "wall_ms": 18702.8,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  },
+  {
+   "index": 6,
+   "swapped": false,
+   "a_side": "black",
+   "winner": "black",
+   "moves": 19,
+   "wall_ms": 17458.3,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  },
+  {
+   "index": 7,
+   "swapped": true,
+   "a_side": "white",
+   "winner": "black",
+   "moves": 25,
+   "wall_ms": 12245.6,
+   "error": "",
+   "book_hits": {
+    "a": 0,
+    "b": 0
+   }
+  },
+  {
+   "index": 8,
+   "swapped": false,
+   "a_side": "black",
+   "winner": "white",
+   "moves": 30,
+   "wall_ms": 19136.1,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  }
+ ],
+ "summary": {
+  "a_level": 1,
+  "b_level": 1,
+  "a_wins": 3,
+  "a_losses": 6,
+  "draws": 0,
+  "win_rate": 0.3333,
+  "illegal": 0,
+  "errors": 0,
+  "total_wall_s": 338.2,
+  "games_done": 9,
+  "games_planned": 200,
+  "partial": true,
+  "a_book": true,
+  "b_book": false,
+  "a_book_hits": 7,
+  "b_book_hits": 0,
+  "a_book_changed": 3,
+  "b_book_changed": 0
+ }
+}

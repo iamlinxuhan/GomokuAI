@@ -60,12 +60,19 @@ def main():
     ap.add_argument("--tag", default="", help="报告标签，写入文件名")
     ap.add_argument("--out", default="", help="报告输出路径（默认 tools/reports/…）")
     ap.add_argument("--no-swap", action="store_true", help="不交换先后手")
+    ap.add_argument("--a-no-book", action="store_true",
+                    help="A 方禁用开局库（两方仍使用同一个 Python 本地引擎）")
+    ap.add_argument("--b-no-book", action="store_true",
+                    help="B 方禁用开局库（两方仍使用同一个 Python 本地引擎）")
     ap.add_argument("--max-moves", type=int, default=225)
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
 
-    a_spec = PlayerSpec("ai", level=args.black_level)
-    b_spec = PlayerSpec("ai", level=args.white_level)
+    local_ab = args.a_no_book or args.b_no_book
+    a_spec = PlayerSpec("ai", level=args.black_level, book=not args.a_no_book,
+                        local=local_ab)
+    b_spec = PlayerSpec("ai", level=args.white_level, book=not args.b_no_book,
+                        local=local_ab)
     pairs = build_pairs(args.games, swap=not args.no_swap)
 
     out = args.out
@@ -84,6 +91,8 @@ def main():
     a_wins = a_losses = 0
     illegal = errors = 0
     total_ms = 0.0
+    a_book_hits = b_book_hits = 0
+    a_book_changed = b_book_changed = 0
     starts = time.monotonic()
 
     def dump():
@@ -98,6 +107,12 @@ def main():
             "games_done": len(report["results"]),
             "games_planned": len(pairs),
             "partial": len(report["results"]) < len(pairs),
+            "a_book": not args.a_no_book,
+            "b_book": not args.b_no_book,
+            "a_book_hits": a_book_hits,
+            "b_book_hits": b_book_hits,
+            "a_book_changed": a_book_changed,
+            "b_book_changed": b_book_changed,
         }
         with open(out, "w", encoding="utf-8") as fh:
             json.dump(report, fh, ensure_ascii=False, indent=1)
@@ -127,6 +142,40 @@ def main():
             "moves": result.moves, "wall_ms": round(wall_ms, 1),
             "error": result.error,
         }
+        a_book_hits += sum(
+            1 for _, _, stone, info in result.record
+            if ((stone == 1 and a_side == "black")
+                or (stone == 2 and a_side == "white"))
+            and info.get("reason") == "开局库")
+        b_book_hits += sum(
+            1 for _, _, stone, info in result.record
+            if ((stone == 1 and a_side == "white")
+                or (stone == 2 and a_side == "black"))
+            and info.get("reason") == "开局库")
+        a_book_changed += sum(
+            1 for _, _, stone, info in result.record
+            if ((stone == 1 and a_side == "black")
+                or (stone == 2 and a_side == "white"))
+            and info.get("reason") == "开局库"
+            and info.get("book_move_same_as_search") is False)
+        b_book_changed += sum(
+            1 for _, _, stone, info in result.record
+            if ((stone == 1 and a_side == "white")
+                or (stone == 2 and a_side == "black"))
+            and info.get("reason") == "开局库"
+            and info.get("book_move_same_as_search") is False)
+        st["book_hits"] = {
+            "a": sum(
+                1 for _, _, stone, info in result.record
+                if ((stone == 1 and a_side == "black")
+                    or (stone == 2 and a_side == "white"))
+                and info.get("reason") == "开局库"),
+            "b": sum(
+                1 for _, _, stone, info in result.record
+                if ((stone == 1 and a_side == "white")
+                    or (stone == 2 and a_side == "black"))
+                and info.get("reason") == "开局库"),
+        }
         report["results"].append(st)
 
         if result.error:
@@ -155,6 +204,8 @@ def main():
     print(f"A 胜率: {'n/a' if wr is None else f'{wr*100:.1f}%'}")
     print(f"非法走法 {illegal}   引擎异常 {errors}   "
           f"总耗时 {report['summary']['total_wall_s']}s")
+    print(f"开局库命中 A/B: {a_book_hits}/{b_book_hits}")
+    print(f"库手改变现场搜索 A/B: {a_book_changed}/{b_book_changed}")
     print(f"报告: {out}")
     print("=" * 64)
 

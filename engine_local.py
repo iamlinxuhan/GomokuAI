@@ -2123,7 +2123,7 @@ def win_line(board, player):
     return []
 
 
-def ai_move(board, ai_player, depth, cancel=None):
+def ai_move(board, ai_player, depth, cancel=None, use_book=True):
     """AI 主入口。``depth`` 是**难度档位**（1/2/3），与主界面三档对应。
 
     返回 ``(r, c, info)``。``info`` 含 reason / depth / actual_depth /
@@ -2150,11 +2150,12 @@ def ai_move(board, ai_player, depth, cancel=None):
 
     if bd.stone_count == 0:
         r, c = opening_move(board, ai_player)
-        info.update({'reason': '开局库', 'threat_detail': 'empty',
+        info.update({'reason': '开局库' if use_book else '开局规则',
+                     'threat_detail': 'empty',
                      'time_ms': (time.monotonic() - t0) * 1000.0})
         return (r, c, info)
 
-    hit = book_lookup(board, ai_player)
+    hit = book_lookup(board, ai_player) if use_book else None
     if hit is not None:
         idx, score, dep = hit
         r, c = divmod(idx, BOARD_SIZE)

@@ -17,6 +17,7 @@ import threading
 from dataclasses import dataclass
 
 import engine
+import engine_local
 
 #: 进程内 AI 互斥（见 tools/PLAN_SESSION.md 第 6 节）。
 #:
@@ -45,6 +46,8 @@ class PlayerSpec:
     kind: str = "human"
     name: str = ""
     level: int = 1
+    book: bool = True
+    local: bool = False
 
 
 def make_player(spec: PlayerSpec):
@@ -67,7 +70,29 @@ class AIPlayer:
 
     def choose_move(self, board, stone, cancel=None):
         with _AI_MUTEX:
-            return engine.ai_move(board, stone, self.spec.level, cancel=cancel)
+            if not self.spec.local:
+                return engine.ai_move(
+                    board, stone, self.spec.level, cancel=cancel)
+            # A/B experiments use the same local search implementation on both
+            # sides; only the opening-book switch differs.
+            if self.spec.book:
+                hit = engine_local.book_lookup(board, stone)
+                if hit is not None:
+                    book_r, book_c = divmod(hit[0], engine_local.BOARD_SIZE)
+                    search_r, search_c, _ = engine_local.ai_move(
+                        board, stone, self.spec.level, cancel=cancel,
+                        use_book=False)
+                    r, c, info = engine_local.ai_move(
+                        board, stone, self.spec.level, cancel=cancel,
+                        use_book=True)
+                    info["book_move"] = [int(book_r), int(book_c)]
+                    info["search_move"] = [int(search_r), int(search_c)]
+                    info["book_move_same_as_search"] = (
+                        (int(r), int(c)) == (int(search_r), int(search_c)))
+                    return r, c, info
+            return engine_local.ai_move(
+                board, stone, self.spec.level, cancel=cancel,
+                use_book=self.spec.book)
 
 
 class ScriptedPlayer:

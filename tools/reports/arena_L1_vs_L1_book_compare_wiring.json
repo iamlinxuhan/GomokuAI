@@ -1,0 +1,54 @@
+{
+ "a_level": 1,
+ "b_level": 1,
+ "seed": 20260919,
+ "games": 2,
+ "results": [
+  {
+   "index": 0,
+   "swapped": false,
+   "a_side": "black",
+   "winner": "white",
+   "moves": 34,
+   "wall_ms": 37827.3,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  },
+  {
+   "index": 1,
+   "swapped": true,
+   "a_side": "white",
+   "winner": "white",
+   "moves": 34,
+   "wall_ms": 36944.8,
+   "error": "",
+   "book_hits": {
+    "a": 1,
+    "b": 0
+   }
+  }
+ ],
+ "summary": {
+  "a_level": 1,
+  "b_level": 1,
+  "a_wins": 1,
+  "a_losses": 1,
+  "draws": 0,
+  "win_rate": 0.5,
+  "illegal": 0,
+  "errors": 0,
+  "total_wall_s": 74.8,
+  "games_done": 2,
+  "games_planned": 2,
+  "partial": false,
+  "a_book": true,
+  "b_book": false,
+  "a_book_hits": 2,
+  "b_book_hits": 0,
+  "a_book_changed": 0,
+  "b_book_changed": 0
+ }
+}

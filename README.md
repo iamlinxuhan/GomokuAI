@@ -649,6 +649,63 @@ the indicator is broken on that path; hence the public entry point
 `engine.note_book()`, with the two paths reporting the same value asserted
 directly by `tests/test_opening_book.py`.
 
+### Why the book was not expanded, and what the A/B actually measured
+
+A review proposed expanding the book (41 entries, ≤3 stones) to 6–8 moves,
+calling it "the most obvious ceiling on playing strength". We tested the premise
+before acting on it. The win-rate A/B turned out to be the wrong instrument here,
+and an offline probe settled the question in seconds.
+
+**The A/B first, because it is the part that failed.** `tools/arena.py` gained
+`--a-no-book` / `--b-no-book`. Passing either one also forces **both** sides onto
+the Python local engine, which removes the C++/Python routing as a confound:
+the book hit path goes to the local engine by design (`engine.py`'s gate), so
+without that, "book" and "no book" would differ in implementation as well as in
+treatment. Two runs:
+
+| Run | Games completed | Wall clock | Why it stopped |
+|---|---|---|---|
+| L5 vs L5, 200 games | 1 | 551 s for that one game | 200 games ≈ 31 h — the cost was the result |
+| L1 vs L1, 200 games | 8 | 319 s | abandoned, compute budget |
+
+Keep the L5 numbers as a cost measurement. They cannot settle anything about
+strength: **the book is that same engine's own output.** Its entries were
+searched offline at level 5 with a 20 s budget and stored at depth 8–9
+(`opening_book.py`'s `PROVENANCE`), so "book versus live search" at L5 asks
+whether a precomputed level-5 move beats a freshly computed level-5 move. That
+comparison starts out close to a null.
+
+**The offline probe.** The question worth asking before any win rate is whether
+the book changes the move at all. `ai_move(..., use_book=False)` answers it
+directly, for all 8 `OPENING_SECOND_MOVES`, in seconds:
+
+| Book side | Book hits | Move differs from live search | Real intervention |
+|---|---|---|---|
+| Black (move 3) | 8/8 | 5/8 | 5/8 |
+| White (move 4) | 4/8 | 2/8 | 2/8 |
+
+At level 1 — where the book should matter most — **56% of games have the book
+change nothing at all**. The hit counter added to `arena.py` confirms the
+arithmetic from the other end: 8 games produced 6 hits, and the bookless side
+produced 0.
+
+**The four misses at move 4 are structural.** The tree branches only on the
+opponent's turn, on the 4 replies picked by `neighbor_count` at build time —
+which is to say, the replies level 5 would play. A weak opponent goes off-tree on
+move 3, and the resulting position is no key for any entry. **The book helps
+least exactly where it is supposed to help most**, and more games cannot fix
+that: it is a property of the tree, per opening.
+
+**The lesson is the one already written above** in *A/B win rate: the criterion
+has to be measured at a budget where the treatment actually takes effect*: spend
+seconds on "does the treatment change the move" before spending hours on a win
+rate. A win rate taken over a sample where both arms played identical games
+converges on 50% and reads as "no effect", when the truth is that no effect was
+possible.
+
+**Decision: the experiment is not resumed.** The probe answers the question the
+31-hour run was meant to answer.
+
 ---
 
 ## 🧠 Engine design
