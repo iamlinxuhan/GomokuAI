@@ -138,6 +138,71 @@ jobs:
 
 
   # ============================================================
+  #  禁手引擎的两侧对账
+  #
+  #  **单起一个 job，而不是把 C++ 构建塞进上面那个 test。** 两条理由：
+  #
+  #    * 上面的 test 跑三个 Python 版本，而 C++ 构建与解释器版本无关，
+  #      塞进去等于把同一份编译做三遍；
+  #    * 更要紧的是，只要 `cpp/build/` 存在，`tests/test_engine_parity.py`
+  #      那类依赖二进制的用例就会**第一次在 CI 里开始执行** —— 那是另一件事，
+  #      该单独决定，不该顺手搭这趟车。
+  #
+  #  这里只跑禁手那五个文件。**它们的核心用例在缺少
+  #  `cpp/build/gomoku_engine_ban` 时会整体跳过**（见那两个模块的 fixture），
+  #  于是"两份实现必须逐点一致"这条本轮最贵的不变量，在 CI 里从来没被跑过。
+  #  跳过是给"只想跑 Python 的开发机"留的方便，在 CI 里它等于没测 —— 所以
+  #  下面那条显式断言**不能省**：`pytest` 的 skip 不改变退出码，构建若因为
+  #  target 改名之类的原因少产一个二进制，整个 job 会一片绿。
+  # ============================================================
+  test-ban:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.11
+
+      - name: Build both C++ engines
+        # 默认 target 就是 ALL，两个 `add_executable` 都会建；这里只显式跑一次
+        # 禁手版的自检 —— free 版的自检已经在下面的打包 job 里各跑一遍。
+        run: |
+          cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build cpp/build -j"$(nproc)"
+          ./cpp/build/gomoku_engine_ban --verify-tables --selftest
+
+      - name: Assert both engine binaries exist and are found
+        # 两个都要断言：`find_binary` 找不到时 `test_ban_parity` 会 skip，
+        # 而 skip 的退出码是 0 —— 少一个二进制，下面那片绿就什么也没证明。
+        # 用引号 heredoc：Python 源码走 stdin，缩进不受 shell 影响。
+        run: |
+          uv run --frozen python - <<'PY'
+          import config
+          for v in ("free", "ban"):
+              p = config.find_binary(v)
+              assert p, "变体 %s 的引擎没有构建出来" % v
+              print("%s -> %s" % (v, p))
+          PY
+
+      - name: Run the ban test suite
+        run: |
+          uv run --frozen pytest -q -m "not perf" \
+            tests/test_ban_rules.py tests/test_ban_engine.py \
+            tests/test_ban_fork_guard.py tests/test_ban_parity.py \
+            tests/test_ban_ui.py
+
+
+  # ============================================================
   #  Linux 矩阵的定义
   #
   #  **为什么单起一个 job 产出矩阵**，而不是让下面 `build-linux` 自己写
@@ -333,6 +398,10 @@ jobs:
           # 报 "The module 'cpp' could not be loaded"（这一步曾经编译失败时
           # 顺带暴露了它，两处都是第一次在这套流程上真跑）。
           .\cpp\build\Release\gomoku_engine.exe --verify-tables --selftest
+          # 禁手版同一批源码编第二遍，表与自检也要跑一遍 —— 它的 `--selftest`
+          # 少跑几段无禁手口径的比对（见 cpp/src/main.cpp 里 `#if !GOMOKU_BAN`
+          # 那一段），其余照旧，所以这里是一条独立门槛而不是重复。
+          .\cpp\build\Release\gomoku_engine_ban.exe --verify-tables --selftest
 
       - name: Assert the engine does not need the MSVC redistributable
         # 引擎必须静态链接 MSVC 运行库（见 cpp/CMakeLists.txt 里那段）。
@@ -349,14 +418,20 @@ jobs:
         # 命中即意味着它进了导入表。
         shell: pwsh
         run: |
-          $exe = "cpp\build\Release\gomoku_engine.exe"
-          $bytes = [IO.File]::ReadAllBytes($exe)
-          $text = [Text.Encoding]::GetEncoding(28591).GetString($bytes)
-          if ($text.Contains("MSVCP140.dll")) {
-            throw "gomoku_engine.exe 的导入表里有 MSVCP140.dll —— " +
-                  "运行库没静态链接，没装 VC++ Redist 的机器上会静默降级到本地 Python 引擎"
+          # 两个引擎都要扫。`CMAKE_MSVC_RUNTIME_LIBRARY` 是在 `add_executable`
+          # 之前设的，两个 target 都吃到同一条；正因为是"同一条"，改回去时两个
+          # 会一起出问题，扫一个也够 —— 但只扫 free 版就漏掉了"禁手版被单独
+          # 改了链接方式"这一种可能，而它在表现上一模一样：禁手局静默降级。
+          foreach ($exe in @("cpp\build\Release\gomoku_engine.exe",
+                             "cpp\build\Release\gomoku_engine_ban.exe")) {
+            $bytes = [IO.File]::ReadAllBytes($exe)
+            $text = [Text.Encoding]::GetEncoding(28591).GetString($bytes)
+            if ($text.Contains("MSVCP140.dll")) {
+              throw "$exe 的导入表里有 MSVCP140.dll —— " +
+                    "运行库没静态链接，没装 VC++ Redist 的机器上会静默降级到本地 Python 引擎"
+            }
+            Write-Host "$exe 不依赖 MSVC 运行库"
           }
-          Write-Host "引擎不依赖 MSVC 运行库"
 
       - name: Resolve version
         shell: pwsh
@@ -384,7 +459,8 @@ jobs:
             -Value 'FLAVOR = "play"' -Encoding ascii
           uv run --frozen pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
             --paths $flavorDir `
-            --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
+            --add-binary "cpp\build\Release\gomoku_engine.exe;." `
+            --add-binary "cpp\build\Release\gomoku_engine_ban.exe;." main.py
 
       - name: "Build portable (onefile: debug + play)"
         shell: pwsh
@@ -397,8 +473,30 @@ jobs:
               -Value "FLAVOR = `"$f`"" -Encoding ascii
             uv run --frozen pyinstaller --onefile --windowed --icon="五子棋.ico" --name $exe `
               --paths $flavorDir `
-              --add-binary "cpp\build\Release\gomoku_engine.exe;." main.py
+              --add-binary "cpp\build\Release\gomoku_engine.exe;." `
+              --add-binary "cpp\build\Release\gomoku_engine_ban.exe;." main.py
             if (-not (Test-Path "dist\$exe.exe")) { throw "PyInstaller 没有产出 $exe.exe" }
+          }
+
+      - name: Assert both engines got bundled
+        # 与 Linux 侧 `build_in_container.sh` 里那条断言同构，理由也一样：
+        # `--add-binary` 漏一个**不报错**，只在用户那边表现为"某个模式下的 AI
+        # 明显变弱"（禁手局退回本地 Python 实现）。两份产物、两个引擎，四个
+        # 组合都得在 —— 这里查 onedir 那棵树就够了，onefile 用的是同一批
+        # `--add-binary` 行，且指向不存在的文件时 PyInstaller 会硬错。
+        #
+        # **不用写死路径**：PyInstaller 6 把二进制放在 `_internal\` 下，写死
+        # 等于把 CI 绑在某个打包器版本上（升级打包器那天会红在这条与本意无关
+        # 的断言上）。`-Recurse` 找名字即可。
+        shell: pwsh
+        run: |
+          foreach ($n in @("gomoku_engine.exe", "gomoku_engine_ban.exe")) {
+            $found = Get-ChildItem "dist\GomokuAI" -Recurse -Filter $n |
+                     Select-Object -First 1
+            if (-not $found) {
+              throw "$n 没有进包 —— 检查 --add-binary"
+            }
+            Write-Host "$n 已进包：$($found.FullName)"
           }
 
       - name: Assert the flavor module got bundled
@@ -474,8 +572,13 @@ jobs:
     # `test` 必须在这里 —— 否则测试挂了照样能发版（four build job 都不依赖它，
     # 而 `softprops/action-gh-release` 也不看测试结果）。CI 跑的是
     # `-m "not perf"`，所以这条闸门不受 runner 快慢影响。
+    #
+    # `test-ban` 同理：它跑的是**要两个引擎都在才跑得起来的那批用例**，而下面
+    # 两个 build job 各自也会把 `gomoku_engine_ban` 打进包里。少了这条闸门，
+    # 禁手引擎编译不过、或者两侧对账挂了，Release 照发。
     needs:
       - test
+      - test-ban
       - build-linux
       - windows
     if: startsWith(github.ref, 'refs/tags/')

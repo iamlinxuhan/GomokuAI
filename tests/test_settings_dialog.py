@@ -107,6 +107,20 @@ def _pump(qapp, n=5):
         qapp.processEvents()
 
 
+def _goto_game(win, qapp):
+    """本地双人一路走到对局页：模式 → 规则 → 开局。
+
+    2026-10-14 起三种模式后面都插了一页规则选择（用户要求"放在选择对战模式
+    之后"），所以"选本地双人就到了对局页"这句话不再成立 —— 这些用例原本借
+    "一步到对局页"省事，现在必须把那一步补上，否则它们断言的是**规则页**上
+    的弹窗行为，而那是另一件事。
+    """
+    win._on_mode_selected(1)
+    _pump(qapp)
+    win._on_rules_selected(0)
+    _pump(qapp)
+
+
 def _card_text(card):
     """卡片上的主文案。
 
@@ -124,8 +138,7 @@ def _card_text(card):
 
 def test_open_settings_dialog_keeps_the_underlying_page(win, qapp):
     """开弹窗**不切页**，关掉之后底下还是原来那一页。"""
-    win._on_mode_selected(1)          # 本地双人 → 直接进对局页（绕过难度页）
-    _pump(qapp)
+    _goto_game(win, qapp)             # 本地双人 → 规则 → 对局页
     page = win.central.currentWidget()
     assert page is win.game_widget
 
@@ -152,8 +165,7 @@ def test_settings_dialog_exposes_the_same_signals(win, qapp):
 
 def test_scale_change_rebuilds_the_page_on_close(win, qapp):
     """弹窗里换档 → 关窗时底下那一页按新度量重建，且当前页指向新对象。"""
-    win._on_mode_selected(1)
-    _pump(qapp)
+    _goto_game(win, qapp)
     old_page = win.central.currentWidget()
 
     win._open_settings_dialog()
@@ -172,8 +184,7 @@ def test_scale_change_rebuilds_the_page_on_close(win, qapp):
 
 def test_close_without_scale_change_keeps_the_same_page(win, qapp):
     """没换档就不该重建 —— 重建会打断对局的动画与图表序列。"""
-    win._on_mode_selected(1)
-    _pump(qapp)
+    _goto_game(win, qapp)
     old_page = win.central.currentWidget()
 
     win._open_settings_dialog()
@@ -190,6 +201,8 @@ def test_gear_is_hidden_only_on_the_loading_screen(win, qapp):
     assert not win.settings_btn.isVisible()
 
     win._on_mode_selected(1)
+    _pump(qapp)
+    win._on_rules_selected(0)
     _pump(qapp)
     assert win.settings_btn.isVisible()
 

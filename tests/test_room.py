@@ -546,3 +546,91 @@ def test_auto_seat_fills_the_free_side(server):
         for w in (w1, w2, w3):
             if w is not None:
                 w.close()
+
+
+# ==================== 禁手局：game_over 的 reason（2026-10-14）===========
+#
+# `session` 把禁手负报成 outcome="forbidden"，`room` 再把它翻成 game_over 的
+# `reason="forbidden"`。这一段测的是**翻译那一步**：两边分开报不是洁癖 ——
+# 五连与禁手负的赢家都是对手，客户端分不出来就会把黑方的长连负写成"对方五连
+# 获胜"，而那正是用户开了禁手才想看到的区别。
+
+#: 黑四子摆成双活三，黑再落天元即三三点禁手。坐标与
+#: `tests/test_ban_parity.py` 的「双活三（黑）」是同一形，那边已钉死天元判禁。
+_BAN_BLACK = [(9, 8), (9, 10), (8, 9), (10, 9)]
+_BAN_WHITE = [(0, 0), (0, 1), (0, 2), (0, 3)]
+_BAN_FINAL = (9, 9)
+
+
+#: 黑五手（前四手摆形）+ 白四手 = 九手；最后一手是黑的天元三三点。
+_BAN_TOTAL = len(_BAN_BLACK) + len(_BAN_WHITE) + 1
+
+
+def test_ban_game_reports_a_forbidden_move_as_forbidden():
+    """禁手局里黑方落禁手点 → `game_over.reason == "forbidden"`，白方胜。"""
+    cfg = RoomConfig(rules="ban")
+    srv, room, port = _room_server(SeatSpec("remote"), SeatSpec("remote"),
+                                   config=cfg)
+    black = white = None
+    try:
+        black = _ScriptedClient(port, "black", _BAN_BLACK + [_BAN_FINAL])
+        white = _ScriptedClient(port, "white", _BAN_WHITE)
+        black.start()
+        white.start()
+        assert room.done.wait(10), "禁手负没有在时限内结束对局"
+        black.join(5)
+        white.join(5)
+        assert black.error is None and white.error is None
+        assert room.session.rules == "ban", "房间的 rules 没有传到会话上"
+
+        # 赢家是白（=2）：禁手是黑自己判负，不是白连成五。
+        assert room.result == {"winner": 2, "reason": "forbidden",
+                               "moves": _BAN_TOTAL}
+        final = next(e for e in white.events if e.get("type") == "game_over")
+        assert final["reason"] == "forbidden", \
+            "禁手负被报成了五连负，客户端就分不出这两件事"
+        assert final["winner"] == 2
+
+        # 这一手仍然广播出去了（盘上要看得见那颗黑子），只是它同时终结了对局
+        last = [e for e in white.events if e.get("type") == "move"][-1]
+        assert (last["r"], last["c"]) == _BAN_FINAL and last["stone"] == 1
+        assert room.session.board[_BAN_FINAL[0]][_BAN_FINAL[1]] == 1
+    finally:
+        for cli in (black, white):
+            if cli is not None:
+                cli.join(5)
+        srv.stop()
+
+
+def test_the_same_move_is_legal_in_a_free_game():
+    """同一个点、同一串着法，无禁手局里照样能下 —— 对照片。
+
+    少了这一条，上面那条在"房间把每一局都报成 forbidden"的实现上也会绿。
+    """
+    srv, room, port = _room_server(SeatSpec("remote"), SeatSpec("remote"),
+                                   config=RoomConfig(rules="free"))
+    black = white = None
+    try:
+        black = _ScriptedClient(port, "black", _BAN_BLACK + [_BAN_FINAL])
+        white = _ScriptedClient(port, "white", _BAN_WHITE)
+        black.start()
+        white.start()
+        # 无禁手局里这一手是普通着法：它必须落得下去，而且不终结对局。
+        # 脚本用完之后两个客户端都会断线，房间随后**会**以 `_finish_aborted`
+        # 收尾（`done` 因此迟早被置位）—— 所以这里等的是"第九手已经落定"，
+        # 而不是"done 还没置位"：后者在断线竞态下会时红时绿。
+        assert _wait(lambda: room.session.move_count == _BAN_TOTAL), \
+            "这一手在无禁手局里没能落下"
+        assert room.session.game_over is False, "无禁手局不该因这一点终结"
+        assert room.session.board[_BAN_FINAL[0]][_BAN_FINAL[1]] == 1
+        assert not [e for e in white.events
+                    if e.get("type") == "game_over"], "无禁手局不该有 game_over"
+        assert not [e for e in white.events
+                    if e.get("type") == "error"
+                    and e.get("code") != "aborted"], \
+            "无禁手局把这一手当成了非法着法"
+    finally:
+        for cli in (black, white):
+            if cli is not None:
+                cli.join(5)
+        srv.stop()

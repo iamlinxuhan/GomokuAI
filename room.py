@@ -43,6 +43,11 @@ class RoomConfig:
     allow_review: bool = True
     allow_restart: bool = True
     show_ai_scores: bool = True
+    #: 规则变体（``"free"`` / ``"ban"``）。**属于房间而不属于席位** —— 一局棋
+    #: 只能有一套规则，两个席位各选一个不构成对局。房间把它注入 Session（判
+    #: 胜/判负）与每个 AI 席位（搜索用哪台引擎），两处同源，见 ``Room.__init__``
+    #: 与 ``Room._await_move``。
+    rules: str = "free"
 
     def to_json(self) -> dict:
         return {
@@ -51,6 +56,7 @@ class RoomConfig:
             "allow_review": self.allow_review,
             "allow_restart": self.allow_restart,
             "show_ai_scores": self.show_ai_scores,
+            "rules": self.rules,
         }
 
 
@@ -73,10 +79,11 @@ class Room:
                  *, auto_consent: bool = False, config: RoomConfig | None = None):
         self.name = name
         self.specs = {1: black, 2: white}
-        self.session = Session()
-        self.session.configure("pvp")   # 无人类席位：不记复盘快照
-        self.session.reset()
         self.config = config if config is not None else RoomConfig()
+        self.session = Session()
+        # 规则在开赛前就定死（本局的判胜/判负口径），席位在它之后才定胜负。
+        self.session.configure("pvp", rules=self.config.rules)   # 无人类席位：不记复盘快照
+        self.session.reset()
         self.result = None              # {"winner","reason","moves"}
         self.started = False
         self.done = threading.Event()
@@ -295,6 +302,10 @@ class Room:
         self.session.output = int(self.config.undo_limit)
         self.broadcast({"type": "state", **self.state_payload()})
 
+        #: 终结这一局的那个 ``MoveResult``（平局/中止时为 None）。用来把
+        #: ``game_over`` 的 reason 说准：五连、禁手负、还是满盘和棋。
+        last_result = None
+
         while (not self.session.game_over) and (not self._stop.is_set()):
             stone = 1 if self.session.move_count % 2 == 0 else 2
             self.broadcast({"type": "turn", "stone": stone})
@@ -321,13 +332,16 @@ class Room:
                 current = 1 if self.session.move_count % 2 == 0 else 2
                 if current != stone:
                     continue        # 悔棋改掉了轮次：这一手作废
-                if self.session.apply_stone(r, c, stone) is None:
+                res = self.session.apply_stone(r, c, stone)
+                if res is None:
                     # 非法着法不打翻整局：明确回错，等这一席重发（人类
-                    # 客户端的一次误点不该终结对局）。
+                    # 客户端的一次误点不该终结对局）。**禁手点不走这条路** ——
+                    # 按 RIF 它是合法着法，落下去就输，见 session._place。
                     self.send_to(stone, {"type": "error",
                                          "code": "illegal_move",
                                          "message": "非法走法 (%d,%d)" % (r, c)})
                     continue
+                last_result = res
                 self.broadcast({"type": "move", "r": r, "c": c,
                                 "stone": stone,
                                 "move_no": self.session.move_count,
@@ -335,7 +349,16 @@ class Room:
                 self.broadcast({"type": "state", **self.state_payload()})
 
         if self.session.game_over:
-            reason = "draw" if self.session.gamerule == 0 else "five"
+            if self.session.gamerule == 0:
+                reason = "draw"
+            elif (last_result is not None
+                  and last_result.outcome == "forbidden"):
+                # 禁手负。**必须与"五连"分开报**：两者的赢家都是对手，客户端
+                # 分不出来就会把黑方的长连负写成"对方五连获胜"，而那恰好是用户
+                # 开了禁手才想看到的区别。
+                reason = "forbidden"
+            else:
+                reason = "five"
             self.result = {"winner": self.session.winner, "reason": reason,
                            "moves": self.session.move_count}
             self.broadcast({"type": "game_over", "winner": self.session.winner,
@@ -358,7 +381,10 @@ class Room:
                     continue
                 # 快照必须在协商结束后重取：同意的悔棋会改棋盘。
                 board = self.session.board.copy()
-                player = AIPlayer(PlayerSpec("ai", level=spec.level))
+                # 规则跟着房间走，不跟着席位：本局用禁手，AI 就按禁手搜索
+                # （否则它会算出无禁手规则下最好的那一手，而那手可能是禁手）。
+                player = AIPlayer(PlayerSpec("ai", level=spec.level,
+                                             variant=self.config.rules))
                 # 把房间的中止信号作为**协作取消**传下去（与旧 AIWorker 同一条
                 # 协议）：重开/退出时连接断开 → detach → `_stop` 置位 → 搜索在
                 # 下一次节点轮询就退出，而不是跑满时间预算后还占着进程内的 AI

@@ -147,12 +147,16 @@ def _show(widget, qapp, size=None):
 
 # ==================== 1. 选择页卡片 ====================
 
-@pytest.mark.parametrize("mode", ["mode", "color", "difficulty", "review"])
+@pytest.mark.parametrize("mode", ["mode", "color", "rules", "difficulty", "review"])
 def test_selection_cards_fit_in_russian(mode, qapp):
     """卡片标题/副标题在俄语下完整显示（单词不裁、折行高度够）。
 
     曾经：「Гроссмейстер」在 149px 的难度卡里被切掉一截；修法是按单词宽
     放大卡片并在放不下时折行（``_fit_card_row``）。
+
+    ``rules``（禁手选择）与 ``color`` 一样只有两张卡，但它新出现的两段文案
+    （「Запрещённые ходы」/「двойная тройка…」）比原来的长，没被点过名就等于
+    没测过 —— 新页面一律进这张参数表。
     """
     i18n.set_language("ru")
     page = M.SelectionScreen(mode=mode, min_level=3)

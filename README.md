@@ -25,7 +25,7 @@ reference for A/B comparisons.
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-4.0.1-brightgreen)
+![Version](https://img.shields.io/badge/version-4.1.0-brightgreen)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
 ---
@@ -84,6 +84,11 @@ reference for A/B comparisons.
   stone colours (`Black wins` / `White wins` / `Draw`), and its endgame overlay
   offers no review: with no AI there is no algorithm to review against. LAN play
   has its own section below
+- **Optional ban rules**: every mode is followed by a rules page (free / ban).
+  Ban applies only to the game that selected it, and binds **black only** — a
+  double three, double four or overline loses. Forbidden points are drawn as a
+  ring with a cross in it (a geometric marker, not a character), hovering one
+  explains it, and playing one asks for confirmation first
 - **Post-game algorithmic review**: after losing to the AI you can pick a
   strength no lower than the one you played and have the engine re-compute each
   move in turn. **Every move gets a row** — the good ones marked green and
@@ -185,6 +190,12 @@ Dependencies are managed with **uv** (`pyproject.toml` + a committed
    vertically or diagonally wins
 3. Players alternate, and a point cannot be played twice
 
+**Optional RIF ban rules.** The mode screen is followed by a rules page; choosing
+**ban** binds **black only** — making a double three, a double four or an
+overline (six or more) loses on the spot. **Exactly five in a row still wins and
+outranks every foul**, an overline included. White is never restricted, and the
+free game remains the default.
+
 ---
 
 ## 🌐 LAN play
@@ -193,10 +204,6 @@ Two copies of the program on the same network can play each other. This is the
 **third card** on the mode screen and it involves no AI at all, which is why it
 gets a section of its own. (It is LAN only — crossing NAT, i.e. playing someone
 outside your network, is **not** implemented.)
-
-> **Not in a release yet.** The newest package on the Releases page is v3.0.8,
-> which predates all of this; LAN play currently exists on `main` and when
-> running from source.
 
 ### Sessions, players and rooms
 
@@ -210,6 +217,7 @@ renders and forwards intent.
 | `session.py` | The single source of truth for the rules. Single-player, LAN and the dedicated server all run through the same `Session` — there is no second win check anywhere |
 | `players.py` | A seat is a `PlayerSpec`; `HumanLocal` and `AIPlayer` implement it, and `AIPlayer` simply wraps the existing `engine.ai_move`. **The C++ engine, silent degradation and cooperative cancellation are untouched by this refactor** |
 | `match.py` | Headless `Match`: black-first alternating play, opening prefix, cooperative cancel. Zero Qt — the room reuses it |
+| `ban_rules.py` | The RIF ban rules, in one place. `Session` asks it **before** the stone is placed — every predicate assumes the point is still empty. Zero Qt, no search: it is a pure function of the position, which is what makes the parity suite possible |
 | `room.py` | One room = one `Session` + the seats. An `ai` seat is computed server-side; a `remote` seat is driven by whatever connection attaches. **An illegal move is answered with an error and re-asked — it never ends the game** |
 | `wire.py` | JSON + `\n` line protocol, `PROTO_VERSION = 1`, two-way `hello` version check. "It connects" is not the same as "it is our program" — the lesson `engine.py` had already learned |
 | `server.py` | `RoomServer`: listen, room registry, connection lifecycle. Default port **48900**, kept clear of the engine's port pool (49001–49093) |
@@ -773,10 +781,12 @@ GomokuAI/
 ├── client.py          # RoomClient (reader thread) + LocalRoom (in-process room)
 ├── engine.py          # engine façade: TCP client + silent degradation (**no algorithms**)
 ├── engine_local.py    # the AI engine proper: bitboard / eval / search / VCF (no Qt, numpy only, unit-testable standalone)
+├── ban_rules.py       # RIF ban rules: the single implementation of forbidden-point detection (pure predicates)
+├── engine_ban.py      # engine_local.py forked with the ban check wired into the search (the ban fallback when C++ is unavailable)
 ├── opening_book.py    # generated opening table (do not edit by hand; see tools/build_book.py)
 ├── config.py          # locating the C++ binary and connection parameters (path resolution only, no IO)
 ├── cpp/               # C++17 compute core (zero third-party deps, CMake)
-│   └── src/           # board / evaluate / search / vcf / opening / tcp_server + json_util
+│   └── src/           # board / evaluate / search / vcf / opening / ban / tcp_server + json_util
 ├── analysis.py        # score -> win-rate conversion, symlog mapping, readout formatting (pure functions, no Qt)
 ├── charts.py          # the two self-drawn charts on the panel (line / grid / markers)
 ├── anim.py            # UI transition animations (fade/slide), stopped explicitly on page teardown
@@ -839,6 +849,15 @@ C++↔Python parity on the pinned positions (`test_engine_parity`) — the
 agreement the `enhanced == 0` guarantee rests on. The UI's font-scale thresholds
 and theme rules have their own guards (`test_ui_scale` / `test_theme`).
 
+**The ban rules carry a parity suite of their own** (`test_ban_rules` /
+`test_ban_engine` / `test_ban_parity` / `test_ban_fork_guard` / `test_ban_ui`):
+the predicates, the session outcome, the **Python↔C++ agreement over hand-made
+and fixed-seed random positions** (asked through `bancheck`, which is answered
+without searching so the comparison is reproducible at all), and a fork guard
+that pins `engine_ban` to `engine_local` **move for move and score for score on
+positions where no foul can occur** — the mechanical proof that the ban fork
+changed nothing else.
+
 There is also `tools/gui_smoke.py` (headless UI smoke test, testing **wiring**)
 and `tools/ui_e2e.py` (**actually plays one full game at each of the five
 levels**, through the real click paths). The human side in the latter is a
@@ -891,6 +910,7 @@ needs an API migration (`pyqtSignal` → `Signal`, `pyqtSlot` → `Slot`, and so
 
 | Version | Date | Contents |
 |---|---|---|
+| **v4.1.0** | 2026-10-14 | **Optional RIF ban rules for black, enforced by a second C++ engine behind the same protocol.** A new rules page follows the mode screen (no-ban / ban). Ban binds **only black**: a double three, a double four or an overline loses immediately, while **exactly five in a row wins and outranks every foul** (RIF 9.2, an overline included). The rule set exists once, in `ban_rules.py`; the session consults it *before* placing the stone, because each predicate assumes the point is still empty. The C++ side is the same sources built a second time — `cpp/src/ban.h` is header-only behind `#if GOMOKU_BAN` and the free build gets empty implementations, so its search is untouched (a normalised per-symbol disassembly diff of the two builds shows an identical instruction stream; the only new code is the protocol handler). Three protocol additions are deliberately *not* behind the guard: `hello` carries `rules`, `compute`/`analyze` **validate** it — a client claiming "free" against the ban server is refused rather than silently answered, because the two engines' score scales differ and mixing them would quietly ruin the stored charts — and a new **`bancheck`** returns a position's forbidden points. `bancheck` is answered in place in the reader loop: it searches nothing and never touches the transposition table, which is what makes the Python↔C++ reconciliation reproducible at all (the engine's search is wall-clock-bounded with a TT kept across positions, so two search results were never comparable). Forbidden points are drawn as a **geometric marker** — a ring with a cross over a translucent fill, cached per cell size and device pixel ratio — never as a character, which renders differently on every system; hovering one explains it and playing one asks for confirmation first. The side panel gained a rules row, the endgame overlay says 禁手判负 and rings the losing line, and the eleven new user-visible strings are translated into all five languages. 85 tests: the predicates, the session outcome, the fork guard, the UI, and the parity itself over 11 hand-made positions (each aimed at one predicate — double three, same-line double four, five beating an overline, edges, corners) plus 120 fixed-seed random ones |
 | **v4.0.1** | 2026-10-07 | **The language picker is one dropdown now, and "follow system" is always written in the system language.** The seven choices went from a two-column button grid to a dropdown, freeing four rows in the settings dialog; the option text is still each language's autonym (someone who reads only Japanese has to recognise 日本語). "Follow system" no longer follows the in-app language — it describes the system side, so its label is written in the **system** language: on a Chinese system, picking Russian leaves it reading 跟随系统 (the bug reported on 2026-10-07 was that it turned into Как в системе). The arrow is self-drawn in Python (QSS `::down-arrow` only accepts an image and this repo ships no bitmap assets); the first version passed points to `drawPolygon` in a form that corrupted memory and crashed later chart painting — an explicit `QPolygonF` fixed it |
 | **v4.0.0** | 2026-10-06 | **Settings became a modal dialog, custom difficulty became sliders, and the UI now speaks six languages.** Settings moved from a full page to a modal dialog: the page underneath never moves while it is open (entering and leaving settings no longer means switching pages back and forth), every choice takes effect and is persisted immediately, and the page underneath is rebuilt on close only if the font size or language changed. A new **Language** row offers Simplified Chinese / Traditional Chinese / English / Russian / Japanese / Korean / follow-system — keys are the Chinese source strings themselves and a missing entry falls back to Chinese rather than crashing; log lines and the engine-reported `reason` stay Chinese (they are diagnostics that historical logs and docs quote verbatim). **Custom difficulty became sliders**: time 10–60 s, depth cap 2–40, quiescence 2–24 plies, all step 1 — the previous version turned these continuous parameters into six buttons, and a user immediately found "you can only pick 1/3/7/15/20/30 seconds, not 12"; a slider is the shape they always had. VCF budget and enhanced search remain switches. **Long-language clipping is fixed across the board**: cards / side panel / review list / LAN screen / endgame overlay now derive their widths from the current language and font metrics (panel width is preheated over the runtime value range, `width=` on buttons is a floor, cards grow to their longest unbreakable word and wrap to extra rows when a row no longer fits) — the Simplified Chinese layout is unchanged, pixel for pixel |
 | **v4.0.0** (architecture &amp; LAN) | 2026-10-06 | **Three modes now, and one authoritative session behind all of them.** The mode screen gained a third card, **LAN play**: one player creates a room — the app binds a real `RoomServer` and shows `local IP:port` while waiting — and the other joins by typing that address; the two then play over plain TCP. A failed create/join is reported **in place** (the UI is Chinese-only) as `seat_taken` / `no_room` / `proto_mismatch` … and can be retried without leaving the page. **Underneath, the game state machine was lifted out of the UI** (M1–M4): rules, undo policy and review snapshots now live in an authoritative `Session` with **no Qt and no sockets**; `Player` abstracts a seat (human-local or AI, the latter just wrapping `engine.ai_move`); a `Room` holds one `Session` plus its seats and owns the game thread. **Single-player was rewired to be a built-in room** — the UI no longer drives `AIWorker` directly (the class survives for its own test; the main flow does not reference it), it attaches a `RoomClient` to an in-process room, so single-player and LAN run the *same* protocol path — Minecraft's "single-player is the built-in server". The line protocol is JSON + newline with a two-way `hello` check and a **hard version refusal** (no best-effort compatibility); the default room port is **48900**, kept clear of the engine's port pool. **`RoomConfig` travels down with `welcome` and its defaults are exactly the old single-player behaviour**, so a room can switch off undo / review / restart or hide the score charts, and the client greys out exactly those entries. **Undo across a network is a negotiation** (`undo_proposed` / `undo_response`) and **the game is frozen while one is pending** — a remote move arriving in that window is held, not dropped; a same-process opponent keeps the old "applies immediately" behaviour. An illegal move gets an error and a re-ask, never a dead game. There is also a headless dedicated server (`python server.py --port 48900 --room demo --black ai --white remote`) and a network bot client, so an AI on one machine can sit down against an AI on another. **Still not implemented**: reconnect / resume (a dropped connection ends the game), spectators, and joining the dedicated server from the UI. Separately, the licence moved from GPL-2.0 to **GPL-3.0-or-later** — the old text carried no "or later" clause, reading as GPL-2.0-only, which is incompatible with the GPLv3 PyQt5 the UI links against (see "Why GPLv3") |

@@ -538,6 +538,10 @@ def do_local_battle(app):
 
     w._on_mode_selected(1)               # 1 = 本地对战
     pump(120, app)
+    check(w.selection_rules is not None, "选完模式进入规则页")
+    check(w.selection_color is None, "规则页上没有同时建出颜色页")
+    w._on_rules_selected(0)              # 0 = 无禁手
+    pump(120, app)
     check(w.playmode == 1, "本地对战的 playmode=1")
     check(w.gamemode == 0, "本地对战固定黑先（gamemode=0）")
     check(w.gamemode == 0 and int(np.count_nonzero(w.board)) == 0,
@@ -764,6 +768,9 @@ def do_review(app):
     w._on_loading_finished()
     pump(40, app)
     w._on_mode_selected(0)               # 挑战 AI
+    pump(40, app)
+    check(w.selection_rules is not None, "挑战AI 也先过规则页")
+    w._on_rules_selected(0)
     pump(40, app)
     check(w.selection_color is not None, "挑战AI 仍走原来的颜色页")
     w._on_color_selected(0)
@@ -993,6 +1000,8 @@ def do_review_finish(app):
     pump(40, app)
     w._on_mode_selected(0)
     pump(40, app)
+    w._on_rules_selected(0)
+    pump(40, app)
     w._on_color_selected(0)
     pump(40, app)
     w._on_difficulty_selected(1)
@@ -1042,6 +1051,8 @@ def do_review_cancel(app):
     w._on_loading_finished()
     pump(40, app)
     w._on_mode_selected(0)
+    pump(40, app)
+    w._on_rules_selected(0)
     pump(40, app)
     w._on_color_selected(0)
     pump(40, app)
@@ -1182,6 +1193,8 @@ def do_settings(app):
     theme.set_scale("normal", persist=False)
     w.selection_mode.mode_selected.emit(0)          # 挑战 AI
     pump(40, app)
+    w.selection_rules.rules_selected.emit(0)        # 无禁手
+    pump(40, app)
     w.selection_color.color_selected.emit(0)        # 执黑
     pump(40, app)
     if not check(w.selection_difficulty is not None, "设置用例：进入难度页"):
@@ -1283,6 +1296,8 @@ def do_custom_difficulty(app):
     pump(40, app)
 
     w.selection_mode.mode_selected.emit(0)          # 挑战 AI
+    pump(40, app)
+    w.selection_rules.rules_selected.emit(0)        # 无禁手
     pump(40, app)
     w.selection_color.color_selected.emit(0)        # 执黑
     pump(40, app)

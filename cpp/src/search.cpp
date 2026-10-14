@@ -5,6 +5,10 @@
 #include <cmath>
 #include <utility>
 
+#if GOMOKU_BAN
+#include "ban.h"
+#endif
+
 namespace gomoku {
 namespace {
 
@@ -350,10 +354,20 @@ int32_t Engine::quiesce(Board& bd, int32_t alpha, int32_t beta, int me, int ply,
     const Bits361 myBits = bd.bitsOf(me);
     const Bits361 opBits = bd.bitsOf(opp);
 
+#if GOMOKU_BAN
+    // 黑方的"成五点"要先剔掉长连点（`ban::fivesFor`，对应 `_fives_for`）：那种
+    // 点补上是六连，既赢不了也拦不住，当成"一手成五"会凭空造出一手胜着。
+    const Bits361 myFive = ban::fivesFor(bd, fivePoints(myBits, opBits), me);
+#else
     const Bits361 myFive = fivePoints(myBits, opBits);
+#endif
     if (myFive.any()) return WIN_SCORE - ply;      // 轮到我，且我能一步成五
 
+#if GOMOKU_BAN
+    const Bits361 oppFive = ban::fivesFor(bd, fivePoints(opBits, myBits), opp);
+#else
     const Bits361 oppFive = fivePoints(opBits, myBits);
+#endif
     Bits361 cand;
     int32_t best;
     if (oppFive.any()) {
@@ -382,6 +396,21 @@ int32_t Engine::quiesce(Board& bd, int32_t alpha, int32_t beta, int me, int ply,
             const int mv = (wi << 6) + bit;
             int32_t val;
             const bool five = bd.make(mv, me);
+#if GOMOKU_BAN
+            // 黑方禁手：当场判负、不展开子树（结论与深度无关）。自败值
+            // `-(WIN_SCORE - ply)` 比"挡不住的杀"更负一档。见 engine_ban._quiesce。
+            if (me == 1) {
+                const ban::Outcome o = ban::classify(bd, mv, five);
+                if (o != ban::Outcome::OK) {
+                    bd.unmake(mv, me);
+                    val = (o == ban::Outcome::WIN) ? (WIN_SCORE - ply)
+                                                   : -(WIN_SCORE - ply);
+                } else {
+                    val = -quiesce(bd, -beta, -alpha, opp, ply + 1, qleft - 1);
+                    bd.unmake(mv, me);
+                }
+            } else
+#endif
             if (five) {
                 bd.unmake(mv, me);
                 val = WIN_SCORE - ply;
@@ -427,7 +456,30 @@ int32_t Engine::negamax(Board& bd, int depth, int32_t alpha, int32_t beta,
     int bestMove = moves[0];
     for (int i = 0; i < ord.n; ++i) {
         const int mv = moves[i];
-        if (bd.make(mv, me)) {
+        bool made = bd.make(mv, me);
+#if GOMOKU_BAN
+        if (me == 1) {
+            const ban::Outcome o = ban::classify(bd, mv, made);
+            if (o == ban::Outcome::LOSE) {
+                // 黑方禁手：当场判负、**不展开子树**（结论与深度无关）。对应
+                // engine_ban._negamax。
+                bd.unmake(mv, me);
+                const int32_t v = -(WIN_SCORE - ply);
+                if (v > best) {
+                    best = v;
+                    bestMove = mv;
+                }
+                if (v > alpha) alpha = v;
+                if (alpha >= beta) {
+                    recordCutoff(me, mv, ply, depth);
+                    break;
+                }
+                continue;
+            }
+            made = (o == ban::Outcome::WIN);
+        }
+#endif
+        if (made) {
             bd.unmake(mv, me);
             best = WIN_SCORE - ply;       // 一步成五，不可能更好
             bestMove = mv;
@@ -516,13 +568,40 @@ void Engine::root(Board& bd, int me, int depth, int firstMove, int32_t alpha,
     // 原样，正常着法路径一字不动，因此低档与参考实现的逐字一致不受影响
     // （`engine_local._root` 同款）。必胜时不做这个偏好是刻意的 —— 那时并列的
     // 几手本来就都能赢，改成防守只会让人疑惑"你怎么不直接赢"。
+#if GOMOKU_BAN
+    const Bits361 oppFive =
+        ban::fivesFor(bd, fivePoints(bd.bitsOf(nxt), bd.bitsOf(me)), nxt);
+#else
     const Bits361 oppFive = fivePoints(bd.bitsOf(nxt), bd.bitsOf(me));
+#endif
     const Bits361 oppHot = hotPoints(bd.bitsOf(nxt), bd.bitsOf(me));
     int bestRank = -1;
 
     for (int i = 0; i < ord.n; ++i) {
         const int mv = moves[i];
-        if (bd.make(mv, me)) {
+        bool made = bd.make(mv, me);
+#if GOMOKU_BAN
+        if (me == 1) {
+            const ban::Outcome o = ban::classify(bd, mv, made);
+            if (o == ban::Outcome::LOSE) {
+                // 黑方自败。根层的"立刻赢"写的是 WIN_SCORE（根不着色于 ply），
+                // 所以自败对应 -WIN_SCORE。对应 engine_ban._root。
+                bd.unmake(mv, me);
+                const int32_t v = -WIN_SCORE;
+                if (collect != nullptr) collect->push_back({mv, v});
+                if (v > best) {
+                    best = v;
+                    bestMove = mv;
+                    bestRank = 0;
+                }
+                if (v > alpha) alpha = v;
+                if (alpha >= beta) break;
+                continue;
+            }
+            made = (o == ban::Outcome::WIN);
+        }
+#endif
+        if (made) {
             bd.unmake(mv, me);
             if (collect != nullptr) collect->push_back({mv, WIN_SCORE});
             *outMove = mv;
@@ -594,14 +673,25 @@ VcfResult Engine::vcfRec(Board& bd, int me, int ply, int left) {
     const Bits361 myBits = bd.bitsOf(me);
     const Bits361 opBits = bd.bitsOf(opp);
 
+#if GOMOKU_BAN
+    // 黑方的长连点不是成五点（`ban::fivesFor`，对应 engine_ban._vcf）。
+    const Bits361 myFive = ban::fivesFor(bd, fivePoints(myBits, opBits), me);
+#else
     const Bits361 myFive = fivePoints(myBits, opBits);
+#endif
     if (myFive.any()) {
         // 我这一手就成五。dist=1 与「再走一手落子」的字面意思一致。
         return VcfResult{VCF_WIN, myFive.lowestIndex(), 1};
     }
     // **进攻方节点上一旦对手有成五点，本节点立即 NO_WIN**，因为四压不住五
     // —— 我下一手做四，对手直接成五。这是"进攻方假必胜"唯一需要的一行判定。
+#if GOMOKU_BAN
+    if (ban::fivesFor(bd, fivePoints(opBits, myBits), opp).any()) {
+        return VcfResult{VCF_NO_WIN, -1, 0};
+    }
+#else
     if (fivePoints(opBits, myBits).any()) return VcfResult{VCF_NO_WIN, -1, 0};
+#endif
 
     const Bits361 cand = hotPoints(myBits, opBits);
     if (cand.none()) return VcfResult{VCF_NO_WIN, -1, 0};  // 连四都做不出来
@@ -614,11 +704,25 @@ VcfResult Engine::vcfRec(Board& bd, int me, int ply, int left) {
             m &= m - 1;
             const int mv = (wi << 6) + bit;
 
-            const bool five = bd.make(mv, me);
+            bool made = bd.make(mv, me);
             Unmaker outer{&bd, mv, me};
-            if (five) return VcfResult{VCF_WIN, mv, 1};
+#if GOMOKU_BAN
+            if (me == 1) {
+                // 黑方的禁手不是 VCF 着法 —— 它根本不"冲"，是直接送掉。跳过
+                // 这一手（`outer` 出作用域时 unmake），与 engine_ban._vcf 一致。
+                const ban::Outcome o = ban::classify(bd, mv, made);
+                if (o == ban::Outcome::LOSE) continue;
+                made = (o == ban::Outcome::WIN);
+            }
+#endif
+            if (made) return VcfResult{VCF_WIN, mv, 1};
 
+#if GOMOKU_BAN
+            const Bits361 f =
+                ban::fivesFor(bd, fivePoints(bd.bitsOf(me), bd.bitsOf(opp)), me);
+#else
             const Bits361 f = fivePoints(bd.bitsOf(me), bd.bitsOf(opp));
+#endif
             if (f.count() >= 2) {
                 // 活四 / 双四：两个成五点，对手只能堵一个。距离是 3 ——
                 // 我(ply)成四，他(ply+1)堵一个，我(ply+2)成五。
@@ -628,6 +732,10 @@ VcfResult Engine::vcfRec(Board& bd, int me, int ply, int left) {
                 // 恰有一个成五点 ⇒ 对手的应手是**唯一**的（不堵就输），
                 // 所以这里对"所有应手"的 AND 只剩一项。
                 const int bidx = f.lowestIndex();
+                // 对手的挡点。**这里不查禁手**（返回值被丢弃）：`opp` 可能是
+                // 黑方，但黑方挡在这里若是禁手，则是"黑方无论如何都输"，那条线
+                // 的 VCF 结论（进攻方赢）不变；`me` 是黑方时 `opp` 是白方，白方
+                // 无禁手。故与 engine_ban._vcf 一致地不查。
                 bd.make(bidx, opp);
                 int st = VCF_NO_WIN;
                 int sub = 0;
@@ -666,7 +774,15 @@ int Engine::vcfDefence(Board& bd, int me, int opp, double deadline) {
             m &= m - 1;
             const int mv = (wi << 6) + bit;
             if (nowSec() >= deadline) return VCF_DEFENCE_UNKNOWN;
+#if GOMOKU_BAN
+            const bool made = bd.make(mv, me);
+            if (me == 1 && ban::classify(bd, mv, made) == ban::Outcome::LOSE) {
+                bd.unmake(mv, me);
+                continue;         // 禁手挡不住任何东西 —— 黑方自己先没了
+            }
+#else
             bd.make(mv, me);
+#endif
             int st;
             {
                 Unmaker um{&bd, mv, me};

@@ -13,6 +13,11 @@ human_stone/ai_stone、悔棋上限 3、human_moves 快照）。行为契约见
 后续里程碑：M2 把 mode/石色升级为 Player 席位，M3+ 由 Room 持有 Session。
 所以本文件现在刻意**不大改语义** —— 纯抽取，不顺手"修"任何现状（包括
 ``tools/PLAN_SESSION.md`` 标为疑似缺陷的 C11）。
+
+**禁手（``rules="ban"``）只改了 ``_place`` 里的两条判定**，其余一行未动：
+禁手是"这一手合不合法"的问题，它落在判胜的同一个位置上，不需要贯穿整个状态机。
+判定本身不在本文件里 —— 唯一实现是 ``ban_rules.py``，这里只用它的输出。**不要
+在 UI 或房间层再判一次**，否则两处迟早给出不同的答案。
 """
 
 from __future__ import annotations
@@ -21,20 +26,43 @@ from dataclasses import dataclass
 
 import numpy as np
 
+import ban_rules as _ban
 from engine_local import BOARD_SIZE, check_win, win_line
 
 #: 悔棋次数上限。原 ``main.py`` 的 ``self.output = 3``。
 UNDO_LIMIT = 3
 
+#: 规则变体。与 ``engine.VARIANTS`` 同一套名字 —— 那边的变体选的是**算这手棋
+#: 用哪台引擎**，这边选的是**这一手棋合不合法**，两者必须同步，所以名字一样。
+RULES = ("free", "ban")
+
+
+def _rules_name(rules: str) -> str:
+    """规范化规则名。**拼错就抛**，不静默回到无禁手。
+
+    静默回退在这里的后果比别处严重：用户选了禁手、界面上也写着禁手，实际却按
+    无禁手判胜 —— 一整局下完才发现规则不是自己选的那个。
+    """
+    if rules not in RULES:
+        raise ValueError("未知规则: %r（只有 'free' / 'ban'）" % (rules,))
+    return rules
+
 
 @dataclass
 class MoveResult:
-    """一次落子的结果。``outcome`` ∈ {"continue", "win", "draw"}。"""
+    """一次落子的结果。``outcome`` ∈ {"continue", "win", "draw", "forbidden"}。
+
+    ``forbidden`` 是**禁手负**：黑方这一手构成三三/四四/长连，按 RIF 判负。
+    此时 ``stone`` 仍是落下那一子的一方，``winner`` 是**对手** —— 违规的是
+    落子的人，赢的是对面。``foul`` 给出 ``ban_rules.FOUL_*`` 的种类，供界面
+    把那句话说完（「长连禁手」而不是笼统的「禁手」）。
+    """
 
     stone: int
     outcome: str
     winner: int = 0
     line: tuple = ()
+    foul: int = 0
 
 
 @dataclass
@@ -54,21 +82,27 @@ class Session:
     * ``"ai"``  —— 人机：``human_stone`` / ``ai_stone`` 固定，玩家按自己的
       石色落子（旧 ``playmode=0``）；
     * ``"pvp"`` —— 本地双人：按手数奇偶换色（旧 ``playmode=1``）。
+
+    ``rules``：``"free"``（无禁手，五连与长连都算胜）或 ``"ban"``（RIF 禁手，
+    只有黑方受禁 —— 三三 / 四四 / 长连判负）。**判胜与判负都在这一个类里**，
+    界面与房间都不得自己再判一次。
     """
 
     def __init__(self) -> None:
         self.mode = "pvp"
         self.human_stone = 0
         self.ai_stone = 0
+        self.rules = "free"
         self.reset()
 
     # ------------------------------------------------------------ 生命周期
 
     def configure(self, mode: str, human_stone: int = 0,
-                  ai_stone: int = 0) -> None:
+                  ai_stone: int = 0, rules: str = "free") -> None:
         self.mode = mode
         self.human_stone = int(human_stone)
         self.ai_stone = int(ai_stone)
+        self.rules = _rules_name(rules)
 
     def reset(self) -> None:
         self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
@@ -131,10 +165,33 @@ class Session:
         })
 
     def _place(self, r: int, c: int, stone: int) -> MoveResult:
+        # 禁手判定必须在落子**之前**：``ban_rules`` 的每个接口都假设那个点还是
+        # 空的（``foul_kind`` 对已占点直接返回 ``FOUL_NONE``）。写成落子之后
+        # 再判，这条分支永远不会触发，而"禁手规则没生效"是**静默**的。
+        foul = (_ban.foul_kind(self.board, r, c, stone)
+                if self.rules == "ban" else 0)
+
         self.board[r][c] = stone
         self.last_move = (r, c, stone)
         self.move_count += 1
         self.move_history.append(self.board.copy())
+
+        if foul:
+            # 黑方禁手 = 这一手判负、对手胜。排在判胜**之前**：``foul_kind``
+            # 对"恰好五连"返回 ``FOUL_NONE``（RIF 9.2：成五优先于全部禁手，
+            # 长连也不例外），两者不会同时成立；这个顺序只是让"禁手负"这个
+            # 结论不被后面的胜利分支改写。
+            #
+            # ``line`` 取 ``win_line`` 是为了**长连**：那一段 ≥6 连正好是界面
+            # 要标出来的东西。三三/四四没有这样的线，返回空元组。
+            self.game_over = True
+            self.winner = 3 - stone
+            if self.mode == "ai":
+                self.gamerule = 2 if self.winner == self.human_stone else 1
+            else:
+                self.gamerule = 2
+            return MoveResult(stone, "forbidden", self.winner,
+                              tuple(win_line(self.board, stone)), int(foul))
 
         if check_win(self.board, stone):
             self.game_over = True

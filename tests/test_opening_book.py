@@ -27,6 +27,12 @@ from tools.selfplay import CENTER, OPENING_SECOND_MOVES
 BOARD_SIZE = 19
 BLACK, WHITE = 1, 2
 
+#: ``engine._ENGINE_ACTIVE`` 的"什么都没跑过"状态，**逐变体**一份。
+#: 它曾经是一个裸的 ``None``；引擎分成无禁手/禁手两套之后，"上一手是谁算的"
+#: 也必须按变体分开记（同一台机器上两份构建、两个端口池，合成一个值就分不清
+#: 是哪一套在算）。这些用例靠 monkeypatch 把它清回去，形状改了就得跟着改。
+_NO_BACKEND_YET = {"free": None, "ban": None}
+
 
 def _board(*stones):
     m = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=np.uint8)
@@ -142,13 +148,13 @@ def test_engine_row_says_book_while_the_book_is_driving(monkeypatch):
     「C++」）—— 那正是需要它挡住的两件事。
     """
     _require_book()
-    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", None)
+    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", dict(_NO_BACKEND_YET))
 
     engine.ai_move(_board(), BLACK, 1)
     assert engine.engine_label() == "开局库", \
         "空盘天元也是查表得出的，面板不该报 %r" % (engine.engine_label(),)
 
-    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", None)
+    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", dict(_NO_BACKEND_YET))
     engine.ai_move(_board((9, 9, 1)), WHITE, 1)
     assert engine.engine_label() == "开局库"
 
@@ -161,11 +167,11 @@ def test_note_book_agrees_with_the_book_branches(monkeypatch):
     忘了另一处，症状是同一个开局库里的一手时而在面板上叫「开局库」、时而叫
     别的 —— 而这两处相隔几百行，没有任何编译期检查会拦下它。
     """
-    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", None)
+    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", dict(_NO_BACKEND_YET))
     engine.note_book()
     via_note = engine.engine_label()
 
-    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", None)
+    monkeypatch.setattr(engine, "_ENGINE_ACTIVE", dict(_NO_BACKEND_YET))
     engine.ai_move(_board(), BLACK, 1)
     assert engine.engine_label() == via_note
 

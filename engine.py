@@ -101,6 +101,7 @@ __all__ = [
     "difficulty_name",
     "CUSTOM_LEVEL", "custom_config", "custom_defaults",
     "set_custom_config", "reset_custom_config",
+    "VARIANTS",
 ]
 
 
@@ -301,14 +302,18 @@ def reset_custom_config() -> None:
     _CUSTOM_CFG = dict(_CUSTOM_DEFAULT)
 
 
-def binary_path():
-    """C++ 可执行文件的路径；这台机器上找不到则返回 ``None``。
+def binary_path(variant: str = "free"):
+    """该变体的 C++ 可执行文件路径；这台机器上找不到则返回 ``None``。
 
     给日志与手工排查用。它答的是"**能不能**走 C++"，不是"这次实际用了谁" ——
     后者要等第一次搜索之后才有答案（见 ``engine_label``）。两者刻意分开：在
     开局那一刻，"这次用谁"这个问题在物理上还没有答案。
+
+    ``variant`` 必须跟着本局规则走：禁手局要找的是 ``gomoku_engine_ban``，而
+    两个可执行文件**各自独立存在**。按默认值问一遍，禁手局的日志会写上一份
+    与本局无关的文件的路径 —— 它存在的意义正是"事后唯一说得清现场"。
     """
-    return config.find_binary()
+    return config.find_binary(variant)
 
 
 def difficulty_name(level: int) -> str:
@@ -341,6 +346,15 @@ def _cfg_for(level: int) -> dict:
 # 3. 引擎状态指示
 # ---------------------------------------------------------------------------
 
+#: 两种规则变体。**顺序有意义**：``free`` 在前，它是默认值、也是"没选过规则"
+#: 时该落到的那个（既有存档与工具都按无禁手跑）。
+#:
+#: 变体是**并列的两套引擎**，不是一个引擎的开关：各自一份可执行文件、各自一个
+#: 端口池、各自一套本地回退实现。名字取自 RIF 规则文档对"禁手"的叫法（foul /
+#: forbidden），但这里用 ``ban`` 是因为 ``ban_rules`` 已经是全项目对这件事的
+#: 唯一称呼。
+VARIANTS = ("free", "ban")
+
 #: UI 面板上那一行显示什么。由玩家层在每次**搜索**之后更新 —— 它记录的是
 #: "上一次搜索实际用的是谁"，而不是"谁能用"。写它的是 AI 子线程，读它的是
 #: UI 线程：一个字符串的赋值在 CPython 里是原子的，不需要锁。
@@ -348,25 +362,41 @@ def _cfg_for(level: int) -> dict:
 #: 初值是 ``None`` 而不是 ``"local"``：**"还没搜过"与"降级了"是两件事。**
 #: 一局棋在第一次搜索发生之前，这个问题在物理上没有答案，此时报"Python
 #: (本地)"会让用户以为已经降级 —— 而实际上 C++ 完全正常。
-_ENGINE_ACTIVE = None
+#:
+#: **按变体分治。** 一局无禁手棋与一局禁手棋各自有自己那台"上次用了谁"——
+#: 它们连的甚至不是同一个服务端（见 `_CLIENT` / `_CLIENT_BAN`）。共用一个
+#: 全局量会让面板在禁手局里报出上一个无禁手局的状态。
+_ENGINE_ACTIVE = {"free": None, "ban": None}
 
 #: ``"book"`` 是**开局库**：那一手是查表得来的，既没进过搜索、也没走过 TCP。
 #: 标成 ``C++`` 或 ``Python (本地)`` 都是假话 —— 而这两个当中的一个恰好是
 #: 用户最需要区分的（"是不是降级了"），拿它去盖住一次查表会让面板失去意义。
-_LABELS = {"cpp": "C++", "local": "Python (本地)", "book": "开局库"}
+#:
+#: 禁手那两个标签多带一个后缀：面板上"C++"与"C++ (禁手)"必须能分开看 ——
+#: 同一台机器上两份构建产物、两个端口池，用户没有别的办法分辨这一手是谁算的。
+#:
+#: ``"book"`` 那一格在两个变体里**文字不同**，因为它们说的不是同一件事：
+#: 无禁手下是查开局库，禁手下是"空盘走天元"这条固定规则（禁手引擎里开局库
+#: 整体是关的，见 ``LocalAIPlayer.ai_move``）。同键不同文，是因为"这一手不是
+#: 搜索来的"这个状态是共用的，而它具体是什么，只有变体知道。
+_LABELS = {
+    "free": {"cpp": "C++", "local": "Python (本地)", "book": "开局库"},
+    "ban": {"cpp": "C++ (禁手)", "local": "Python (本地·禁手)",
+            "book": "开局规则"},
+}
 
 #: 还没发生过搜索时的占位符。留着这个状态而不是猜一个答案。
 _UNKNOWN = "—"
 
 
-def current_port():
+def current_port(variant: str = "free"):
     """当前这条 TCP 连接用的服务端端口；**没有连接时返回 ``None``**。
 
     与 `engine_label` 一样**不探测**：只读已经建立的那条连接。连接是惰性的
     （第一次真正的远程搜索才建立），所以开局头几手这里必然是 ``None`` ——
     那一刻确实还没有端口，报一个"还在池子里"的号就是编。
     """
-    sock = _CLIENT._sock
+    sock = _client(variant)._sock
     if sock is None:
         return None
     try:
@@ -375,17 +405,18 @@ def current_port():
         return None
 
 
-def engine_label() -> str:
-    """当前引擎的显示名。UI 用它渲染面板上的"引擎"一行。
+def engine_label(variant: str = "free") -> str:
+    """该变体当前引擎的显示名。UI 用它渲染面板上的"引擎"一行。
 
     **不做探测。** 这里不主动去连服务端 —— 那会在 UI 主线程上引入一次可能
     超时的网络调用，而这一行只是给用户一个提示。真实状态由 ``ai_move`` 在
     后台线程里更新，UI 下一帧刷新时自然读到新值。
     """
-    return _LABELS.get(_ENGINE_ACTIVE, _UNKNOWN)
+    return _LABELS[config.variant_of(variant)].get(
+        _ENGINE_ACTIVE[config.variant_of(variant)], _UNKNOWN)
 
 
-def note_book() -> None:
+def note_book(variant: str = "free") -> None:
     """把面板上那一行标成「开局库」。
 
     **给 `main.py` 的 AI 先手第一着用**：那一手由 `opening_move` 直接给出
@@ -393,20 +424,20 @@ def note_book() -> None:
     在这里是断的。它同样是查表、同样没走过 TCP，因此和 `ai_move` 里那两条
     开局库分支报同一个值。
     """
-    _note("book")
+    _note("book", variant=variant)
 
 
-def _note(active: str, exc: BaseException = None) -> None:
+def _note(active: str, exc: BaseException = None, variant: str = "free") -> None:
     """切换指示器；失败时在 stderr 上留一行**限流**的原因。
 
     限流不是洁癖：降级之后每一步都会失败一次，一局 40 手就是 40 行 —— 而
     它们说的是同一件事。只报第一次，之后静音，用户想看细节时看第一次就够。
     """
-    global _ENGINE_ACTIVE
-    if active != _ENGINE_ACTIVE:
+    key = config.variant_of(variant)
+    if active != _ENGINE_ACTIVE[key]:
         if active == "local" and exc is not None:
             _warn_once(f"[引擎] 降级到本地 Python 引擎：{type(exc).__name__}: {exc}")
-        _ENGINE_ACTIVE = active
+        _ENGINE_ACTIVE[key] = active
 
 
 _warned = False
@@ -434,8 +465,8 @@ class _RemoteError(RuntimeError):
     """
 
 
-def _port_candidates() -> list:
-    """按顺序给出候选端口：显式覆盖（``config.PORT``）**或**端口池 —— 二者互斥。
+def _port_candidates(variant: str = "free") -> list:
+    """按顺序给出该变体的候选端口：显式覆盖（``config.PORT``）**或**端口池 —— 二者互斥。
 
     * **设了 ``config.PORT``** —— 调用方（``tools/ab_enhance.py``、
       ``tools/build_book.py``、测试）要的是"一个**独享**的服务端"。所以只给
@@ -449,10 +480,16 @@ def _port_candidates() -> list:
 
     两种模式都不做去重之外的加工：池子里 15 个都是写死的常量，没有随机数，
     因此"这一次用的端口"在下一次运行时仍然会被先试到。
+
+    **池子按变体分开**（``config.VARIANT_PORT_POOL``）。禁手引擎与无禁手引擎
+    是两个独立进程、两块置换表，共用一个池的实际后果是同机器上开两个窗口
+    （一个禁手一个无禁手）会互抢端口 —— 详见 ``config.PORT_POOL_BAN`` 的注释。
+    ``config.PORT`` 的显式覆盖**不分变体**：它服务的是测试与工具，那些调用方
+    一次只关心一个变体，给它们两个端口只是多一个要填的参数。
     """
     if config.PORT:
         return [int(config.PORT)]
-    return list(config.PORT_POOL)
+    return list(config.VARIANT_PORT_POOL[config.variant_of(variant)])
 
 
 def _connect_to(port):
@@ -523,9 +560,15 @@ class _ServerClient:
     连接在**每次请求内自愈**：``_request`` 失败一次就丢掉连接、重连、再试
     一次，仍失败才向上抛。这一步是必要的：服务端可能被上一次运行的残留进程
     占着、也可能被另一个窗口顶掉（C++ 侧"最后连接的客户端胜出"）。
+
+    **一个实例只认一个变体**（``"free"`` / ``"ban"``）。变体决定了三件事：
+    拉哪个可执行文件、试哪个端口池、hello 里必须回哪个 ``rules``。它们是一个
+    整体 —— 拆成三个可分别设置的参数就能拼出"用禁手的端口去连无禁手的引擎"
+    这种半对半的错配（见 ``config.VARIANT_BINARY_STEM``）。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, variant: str = "free") -> None:
+        self._variant = config.variant_of(variant)
         self._sock = None
         self._proc = None
         self._desc = ""            # 已连上的服务端版本信息，供日志/排查
@@ -535,6 +578,12 @@ class _ServerClient:
         self._read_buf = b""
 
     # ---- 生命周期 ----
+
+    @property
+    def variant(self) -> str:
+        """本连接认的变体（``"free"`` / ``"ban"``）。只读 —— 建连之后它就是
+        这个实例的身份，改它等于换一台服务端。"""
+        return self._variant
 
     def mark_reset_needed(self) -> None:
         """请求下一次搜索前先清空服务端的跨局面状态。**不发送、不阻塞。**"""
@@ -579,7 +628,7 @@ class _ServerClient:
         """
         # ① 端口池逐个试（顺序见 config.PORT_POOL）。每个端口都是"先看有没有
         #    人在监听，再决定是复用还是自己拉"，见 `_try_port`。
-        for port in _port_candidates():
+        for port in _port_candidates(self._variant):
             sock = self._try_port(port)
             if sock is not None:
                 return sock
@@ -661,10 +710,10 @@ class _ServerClient:
         hello 校验，校验不过的那一份要由调用方收拾掉，也不该让 ``atexit``
         的 ``shutdown`` 以后还惦记着它。
         """
-        path = config.find_binary()
+        path = config.find_binary(self._variant)
         if path is None:
             raise _RemoteError("找不到 %s（先跑 cmake --build cpp/build）"
-                               % config.binary_name())
+                               % config.binary_name(self._variant))
         try:
             proc = subprocess.Popen(
                 [path, "--host", config.HOST, "--port", str(port)],
@@ -708,11 +757,13 @@ class _ServerClient:
             return sock, proc
 
     def _handshake(self, sock) -> None:
-        """``hello`` 校验：确认对面是同一套刻度和同一个棋盘。
+        """``hello`` 校验：确认对面是同一套刻度、同一个棋盘、同一套规则。
 
         **这是唯一"宁可不连"的检查。** 分值刻度不一致时接上会静默污染右栏
         那两张图（``analysis.py`` 的胜率锚点直接钉在 ``STATIC_MAX`` 上），
-        比慢一点糟得多；棋盘尺寸不一致更会直接算错。
+        比慢一点糟得多；棋盘尺寸不一致更会直接算错。``rules`` 是同一类错误：
+        接上另一套规则的引擎，它给出的着法在本局里可能是禁手 —— 静默、且
+        恰好是用户开了禁手才想避免的那件事。
         """
         rep = self._exchange(sock, {"type": "hello"}, config.CONNECT_TIMEOUT)
         if rep.get("type") != "hello":
@@ -726,7 +777,18 @@ class _ServerClient:
         if int(rep.get("static_max", 0)) != STATIC_MAX:
             raise _RemoteError("分值刻度不一致: STATIC_MAX %r != %d"
                                % (rep.get("static_max"), STATIC_MAX))
-        self._desc = "%s v%s" % (config.binary_name(), rep.get("version", "?"))
+        # 老版引擎（无禁手那版在加 rules 之前）不回这个字段，此时 ``None``。
+        # **只在它确实报了的时候才比** —— 否则会把一份能用的正常引擎拒掉，
+        # 而那正是端口池/自愈机制存在的理由。禁手变体反过来：它必须自报
+        # ``ban`` 才认，因为禁手是净新增的构建产物，没有"老版本"要兼容。
+        rules = rep.get("rules")
+        if rules is not None and rules != self._variant:
+            raise _RemoteError("规则不一致: 服务端是 %r，本连接要 %r（接错引擎？）"
+                               % (rules, self._variant))
+        if rules is None and self._variant != "free":
+            raise _RemoteError("服务端没有 rules 字段，不能用于 %r" % (self._variant,))
+        self._desc = "%s v%s" % (config.binary_name(self._variant),
+                                 rep.get("version", "?"))
 
     def _ensure(self):
         """返回可用连接；已连上的直接返回。**调用方不能持有 ``_conn_mu``。**"""
@@ -833,6 +895,11 @@ class _ServerClient:
             "max_depth": int(cfg["max_depth"]),
             "vcf_budget": max(0.0, float(cfg["vcf_budget"])),
             "qply": int(cfg["qply"]),
+            # 规则。**每条请求都带**，不只是握手时对一次：服务端可能被另一个
+            # 窗口顶掉然后自愈重连（见 `_request` 的重试），而重连拿到的未必
+            # 还是原来那一个。老版无禁手引擎忽略这个未知键（C++ 侧只按已知键
+            # 取值，见 `readConfig`），所以下发它不会让任何可用引擎失配。
+            "rules": self._variant,
         }
         bias = cfg.get("bias")
         if bias:
@@ -892,6 +959,23 @@ class _ServerClient:
         raw = rep.get("cands")
         cands = [] if not raw else [(int(d["i"]), int(d["v"])) for d in raw]
         return int(rep.get("idx", -1)), _info_from_reply(rep), cands
+
+    def bancheck(self, board, player: int = 1):
+        """问服务端要这个盘面上 ``player`` 的禁手点，返回 ``[(r, c), ...]``。
+
+        **只读诊断，不搜索、不动置换表**（服务端就地应答，与 ``hello`` 同一
+        路径）。它是"两侧同一套规则"的唯一机械证据：``ban_rules.py`` 与
+        ``cpp/src/ban.h`` 是两份实现，靠 ``tests/test_ban_parity.py`` 在同一批
+        局面上逐点比对。
+
+        **无禁手版的服务端恒回空表**（``ban.h`` 在 free 编译下是空实现），所以
+        这条只有在 ban 引擎上才问得出东西 —— 拿 free 的结果当"没有禁手点"读，
+        是这个接口唯一会被用错的方式。
+        """
+        req = {"type": "bancheck", "board": _board_to_json(board),
+               "player": int(player), "rules": self._variant}
+        rep = self._request(req, config.CONNECT_TIMEOUT)
+        return [(int(rc[0]), int(rc[1])) for rc in rep.get("forbidden") or ()]
 
 
 def _kill(proc) -> None:
@@ -1003,13 +1087,42 @@ def _info_from_reply(rep: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 
+_BAN_MODULE = None
+
+
+def _local_engine(variant: str = "free"):
+    """取该变体的本地 Python 引擎模块。
+
+    ``free`` 就是模块顶部导入的 ``engine_local``；``ban`` 是 ``engine_ban``，
+    **延迟导入**。延迟不是为了省几毫秒的解释器工作，而是为了把那 115ms 的
+    冷启动（导入期建线表）留给真的要用禁手的人 —— 一局无禁手棋没有任何理由
+    为一份它不用的引擎付启动成本，而 ``main.py`` 的启动路径就调本模块。
+    """
+    global _BAN_MODULE
+    if config.variant_of(variant) == "free":
+        return _local
+    if _BAN_MODULE is None:
+        import engine_ban as mod
+        _BAN_MODULE = mod
+    return _BAN_MODULE
+
+
 class LocalAIPlayer:
     """本地 Python 引擎。**永远是可用答案**，也是降级的目标。"""
 
     name = "local"
 
+    def __init__(self, variant: str = "free") -> None:
+        self._variant = config.variant_of(variant)
+
     def ai_move(self, board, me, level, cancel=None):
-        return _local.ai_move(board, me, level, cancel=cancel)
+        # ``use_book`` 跟着变体走：禁手引擎里开局库整体是关的
+        # （``engine_ban.USE_OPENING_BOOK``，那张表是在无禁手规则下生成的，
+        # 它的合法性没有被验证过）。传 False 之后那一手的 ``reason`` 从
+        # 「开局库」变成「开局规则」—— 面板上不能让一次没发生的查表冒充成
+        # 发生过的。
+        return _local_engine(self._variant).ai_move(
+            board, me, level, cancel=cancel, use_book=(self._variant == "free"))
 
 
 class RemoteAIPlayer:
@@ -1022,6 +1135,7 @@ class RemoteAIPlayer:
 
     def __init__(self, client: _ServerClient) -> None:
         self._client = client
+        self._variant = client.variant
 
     def ai_move(self, board, me, level, cancel=None):
         cfg = _cfg_for(level)
@@ -1030,16 +1144,28 @@ class RemoteAIPlayer:
             # 服务端返回了"没有合法着法"。本地引擎在同样情形下会退到
             # ``bd.candidates()[0]``，这里也照做 —— 让调用方永远拿到一个
             # 走法，而不是一个需要它自己判断的 -1。
-            fallback = _local.Board.from_array(board).candidates()[0]
+            fallback = _local_engine(self._variant).Board.from_array(
+                board).candidates()[0]
             return (fallback // BOARD_SIZE, fallback % BOARD_SIZE, info)
         return (idx // BOARD_SIZE, idx % BOARD_SIZE, info)
 
 
 _LOCAL_PLAYER = LocalAIPlayer()
+_LOCAL_PLAYER_BAN = LocalAIPlayer("ban")
 _CLIENT = _ServerClient()
+_CLIENT_BAN = _ServerClient("ban")
 _REMOTE_PLAYER = RemoteAIPlayer(_CLIENT)
+_REMOTE_PLAYER_BAN = RemoteAIPlayer(_CLIENT_BAN)
 
 atexit.register(_CLIENT.shutdown)
+atexit.register(_CLIENT_BAN.shutdown)
+
+
+def _client(variant: str = "free") -> _ServerClient:
+    """该变体的连接。**变体名不合法就抛**（``config.variant_of``），不静默取
+    默认的那一个 —— 一个拼错的变体名接到无禁手引擎上，症状是"禁手开关没
+    生效"，而那一头隔着整个搜索。"""
+    return _CLIENT_BAN if config.variant_of(variant) == "ban" else _CLIENT
 
 
 # ---------------------------------------------------------------------------
@@ -1055,18 +1181,22 @@ def _has_stones(board) -> bool:
     return any(v for row in board for v in row)
 
 
-def ai_move(board, ai_player, depth, cancel=None):
+def ai_move(board, ai_player, depth, cancel=None, *, variant="free"):
     """搜索一步。
 
     签名与重构前**逐字相同**（``cancel`` 是第 4 个位置参数，非 keyword-only），
     返回 ``(r, c, info)``。``depth`` 的语义是**难度档位 1..5**，不是搜索深度。
+    ``variant`` 选规则：``"free"`` 无禁手 / ``"ban"`` 禁手（跑 RIF 三三、四四、
+    长连禁手，只有黑方受禁）。它是 keyword-only 的**新增**参数，位置参数一个
+    没动 —— 所有既有调用方（``main.py``、``tools/``、测试）不受影响。
 
     路由规则只有两条：
 
     1. **空盘与开局库命中走本地。** 开局是唯一必须零延迟的一手（用户点
        "开始"之后立刻要看到落子），一次网络往返换不来任何东西；而且
        ``reason='开局库'`` 只有本地能产出，挪到服务端会让日志里出现一个
-       服务端没有的理由。
+       服务端没有的理由。禁手变体下第二条闸门直接不成立（那张表是**无禁手**
+       规则下生成的，见 ``engine_ban.USE_OPENING_BOOK``）。
     2. **其余走远程，失败即降级。** 降级是**静默**的：不弹窗、不抛异常，
        只在 stderr 留一行原因，面板上那一行改成「Python (本地)」。
 
@@ -1076,33 +1206,42 @@ def ai_move(board, ai_player, depth, cancel=None):
     从不搜索，于是对手第一手下在非标准位置（比如角上）时，白方会从一个固定
     偏移里挑一手，而不是搜索。那是**降智**，而且旧版 `_OPENING_BOOK` 正因为
     键格式不匹配从未走到过那里，所以它今天不是现有行为。
+
+    **禁手变体不是另一条代码路径，而是同一条路径换了一套引擎。** 两种变体都
+    走"空盘本地 → 开局库本地 → 远程 → 降级本地"这四段，差别全在
+    ``_local_engine`` / ``_client`` 取到的那一对实现上。
     """
+    eng = _local_engine(variant)
     if not _has_stones(board):
-        # 面板上记「开局库」，**不记 "Python (本地)"**：查表不是降级，标成
-        # Python 会让面板在整局第一步就报出一个假警。它也不走 C++ —— 开局是
-        # 唯一必须零延迟的一手，一次网络往返换不来任何东西。
-        _note("book")
-        return _local.ai_move(board, ai_player, depth, cancel=cancel)
-    if _local.book_lookup(board, ai_player) is not None:
+        # 面板上记「开局库」（禁手变体下这一格显示的是「开局规则」），**不记
+        # "Python (本地)"**：查表不是降级，标成 Python 会让面板在整局第一步就
+        # 报出一个假警。它也不走 C++ —— 开局是唯一必须零延迟的一手，一次网络
+        # 往返换不来任何东西。
+        _note("book", variant=variant)
+        return eng.ai_move(board, ai_player, depth, cancel=cancel,
+                           use_book=(variant == "free"))
+    if variant == "free" and _local.book_lookup(board, ai_player) is not None:
         # 同上：查表不是降级，也不是 C++，报「开局库」。
-        _note("book")
-        return _local.ai_move(board, ai_player, depth, cancel=cancel)
+        _note("book", variant=variant)
+        return eng.ai_move(board, ai_player, depth, cancel=cancel)
 
     try:
-        out = _REMOTE_PLAYER.ai_move(board, ai_player, depth, cancel)
+        out = (_REMOTE_PLAYER_BAN if config.variant_of(variant) == "ban"
+               else _REMOTE_PLAYER).ai_move(board, ai_player, depth, cancel)
     except Exception as exc:
         # 兜住所有 Exception：这一层是纯粹的性能优化，没有资格让一局棋中断。
         # BaseException（KeyboardInterrupt / SystemExit）不在此列，照常穿透。
-        _note("local", exc)
-        return _local.ai_move(board, ai_player, depth, cancel=cancel)
-    _note("cpp")
+        _note("local", exc, variant=variant)
+        return eng.ai_move(board, ai_player, depth, cancel=cancel,
+                           use_book=(variant == "free"))
+    _note("cpp", variant=variant)
     return out
 
 
 _analyze_warned = False
 
 
-def analyze(board, me, level, cancel=None, cfg=None):
+def analyze(board, me, level, cancel=None, cfg=None, variant="free"):
     """逐候选分析一个局面（战后复盘用）。返回 ``(best_idx, best_val, cands, info)``。
 
     ``cands`` 是 ``[(idx, val), ...]``，``best_idx`` 是引擎在本局面会走的着法
@@ -1121,6 +1260,10 @@ def analyze(board, me, level, cancel=None, cfg=None):
     "开局那一刻快照的参数"交给复盘 —— 否则用户打完棋之后再打开自定义弹窗改几个
     数字，这一局的复盘结果就跟着变了。默认 ``None`` 时仍走 ``_cfg_for(level)``，
     所以五档的行为一个字都没变。
+
+    ``variant`` 选规则，与 ``ai_move`` 同一个含义。**复盘必须用本局那一套规则**：
+    禁手局里黑方的一手值多少分，只有按禁手规则算出来的那个数才有意义 —— 用无禁手
+    的刻度去评一盘禁手棋，被禁的着法会被算成好棋。
     """
     global _analyze_warned
     if not _has_stones(board):
@@ -1128,7 +1271,7 @@ def analyze(board, me, level, cancel=None, cfg=None):
     if cfg is None:
         cfg = _cfg_for(level)
     try:
-        idx, info, cands = _CLIENT.analyze(board, me, cfg, cancel)
+        idx, info, cands = _client(variant).analyze(board, me, cfg, cancel)
     except Exception as exc:
         # 与 `ai_move` 同一条兜底哲学：这一层是性能优化，没有资格让复盘中断。
         # BaseException 照常穿透。
@@ -1136,8 +1279,8 @@ def analyze(board, me, level, cancel=None, cfg=None):
             _analyze_warned = True
             print(f"[复盘] 降级到本地 Python 引擎：{type(exc).__name__}: {exc}",
                   file=sys.stderr)
-        return _local.analyze(board, me, level, cancel=cancel,
-                              time_limit=float(cfg["time"]))
+        return _local_engine(variant).analyze(
+            board, me, level, cancel=cancel, time_limit=float(cfg["time"]))
     if not cands:
         # 与 `engine_local.analyze` 同一条归一：没有可比的最优解（空盘 /
         # 满盘 / 一轮都没跑完）。判据是"表空"而不是"idx < 0" —— 空盘时
@@ -1157,6 +1300,14 @@ def new_game():
     调用它 —— 那是启动路径的一部分（``main.py:126`` 记了启动成本），一次连接
     超时就是一次肉眼可见的界面卡顿。真正的 ``reset`` 由下一次 ``ai_move`` 在
     子线程里补发，服务端按 FIFO 处理，语义与"先 reset 再 compute"完全一致。
+
+    **两个变体都清。** 只清这一局用的那一个，上一局留下的跨局面状态就会在下次
+    切到另一套规则时接着生效。
     """
     _local.new_game()
+    if _BAN_MODULE is not None:
+        # 没导入过就说明从没开过禁手局，那个模块里也就没有任何状态要清 ——
+        # 而 import 它是 115ms 冷启动，走的是 UI 主线程的启动路径。
+        _BAN_MODULE.new_game()
     _CLIENT.mark_reset_needed()
+    _CLIENT_BAN.mark_reset_needed()

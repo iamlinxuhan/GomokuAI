@@ -175,6 +175,78 @@ def stone_sprite(player: int, d: float, dpr: float) -> QPixmap:
     return pm
 
 
+# ------------------------------------------------------------------ 禁手标记
+
+# 标记的画布倍数：比棋子 sprite 小。标记要"嵌在空点里"，外扩太多就会压到
+# 相邻的棋子，看上去像是那一格的棋子而不是那一格的**禁令**。
+_MARKER_SCALE = 1.25
+
+_marker_cache: dict = {}
+
+
+def forbidden_marker(d: float, dpr: float) -> QPixmap:
+    """禁手点标记：半透明红圆 + 红环 + 红叉，**全部是几何图形**。
+
+    ``d`` 是棋子直径 —— 标记按棋子尺寸缩放，两者在不同棋盘尺寸下始终成比例。
+
+    ## 为什么不用字符
+
+    画一个 ``❌`` / ``⛔`` 只要一行 ``drawText``，但那要求运行环境里有那个字形。
+    棋盘是哪怕整个 UI 字体链全部回退也必须能读的一层，而缺字形时 Qt 画的是豆腐
+    块（方框），恰好和"禁手"完全无关。叉与环都是两条直线和一个圆，用不着字体。
+
+    ## 为什么是"衬底 + 亮芯"画两遍
+
+    这支红是 ``theme.FORBIDDEN``，也就是终局那条连五红线用的同一支深红 —— 它
+    落在橙金木盘上的亮度对比只有 2.30–3.10:1，低于图形可辨阈值的下沿。所以环
+    与叉都先用深棕压粗一遍，再压红色细芯；这与最后一手环的"深色衬 + 亮色芯"
+    是同一套recipe（``main.py`` 里那圈环的注释有这笔账）。
+    """
+    key = (round(d, 1), round(dpr, 2))
+    hit = _marker_cache.get(key)
+    if hit is not None:
+        return hit
+
+    s = d * _MARKER_SCALE
+    pm = _new_layer(s, s, dpr)
+    p = QPainter(pm)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    p.translate(s / 2.0, s / 2.0)
+
+    r = d / 2.0
+    ring_r = r * 0.80                    # 环半径：比棋子小一圈，留出木色呼吸
+    line_w = max(1.4, r * 0.20)          # 红线宽
+    back_w = line_w + max(1.0, r * 0.14)  # 衬底比芯宽出一点点
+
+    # ① 半透明红圆：⭕ **内部**的颜色。压在网格线之上、环与叉之下 —— 它负责
+    #    说"这一格是红的"，不负责说"这是个叉"，所以刻意压得很淡（alpha 46），
+    #    淡到透过它仍然看得清底下的星位与网格。
+    fill = QColor(theme.FORBIDDEN)
+    fill.setAlpha(theme.FORBIDDEN_FILL_ALPHA)
+    p.setPen(Qt.NoPen)
+    p.setBrush(fill)
+    p.drawEllipse(QPointF(0.0, 0.0), ring_r, ring_r)
+
+    # 叉的半臂长：0.50 倍环半径，于是叉的四端离环还有约两成半径的空隙 ——
+    # 顶到环上会连成一个"米"字，读起来更像禁行标志而不是禁手点。
+    a = ring_r * 0.50
+    edge = QColor(*theme.FORBIDDEN_EDGE)
+    core = QColor(theme.FORBIDDEN)
+
+    p.setBrush(Qt.NoBrush)
+    for col, width in ((edge, back_w), (core, line_w)):
+        p.setPen(QPen(col, width, Qt.SolidLine, Qt.RoundCap))
+        # ② 环
+        p.drawEllipse(QPointF(0.0, 0.0), ring_r, ring_r)
+        # ③ 叉（↘ 与 ↗ 两条对角线）
+        p.drawLine(QPointF(-a, -a), QPointF(a, a))
+        p.drawLine(QPointF(-a, a), QPointF(a, -a))
+
+    p.end()
+    _marker_cache[key] = pm
+    return pm
+
+
 # ------------------------------------------------------------------ 品牌标记
 
 # 标记上的网格线数（4 条 = 3 格）。**不是 19**：19 条线缩到一百来像素，

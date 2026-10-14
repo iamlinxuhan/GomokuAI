@@ -16,10 +16,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "ban.h"
 #include "board.h"
 #include "constants.h"
 #include "evaluate.h"
@@ -277,12 +279,16 @@ void testFive() {
         check(bd.hasFive(1), "hasFive 与 make 返回值一致");
         check(!bd.hasFive(2), "对手不成五");
     }
-    // 六连（长连）也算成五。
+    // 六连（长连）也算成五 —— 这是**无禁手引擎**的口径（`Board::make` 把 ≥5
+    // 一律当五）。禁手版里长连是"长连禁手负"（见 testBan），所以这里分叉：
+    // ban 版不跑这一段，否则同一次 `--selftest` 的输出会自相矛盾。
+#if !GOMOKU_BAN
     Board bd;
     for (int k = 0; k < 5; ++k) {
         bd.make((9 * BOARD_SIZE) + 3 + k, 1);
     }
     check(bd.make(9 * BOARD_SIZE + 8, 1), "长连也判成五");
+#endif
 }
 
 //: 棋型判定的暴力比对。
@@ -292,6 +298,10 @@ void testFive() {
 //: 一行的子当成同一窗口的位移错误，长得和正确版本一模一样。这里用最笨的定义
 //: 逐格比对：五点 = "落子即成五"，四子连窗 = "落子后存在一个含 ≥4 颗己方子
 //: 的 5 连窗口"。
+//:
+//: **禁手版不编译它**：它拿"长连也算五"（`hasFiveBits`）当五点的判据，那是无
+//: 禁手口径（见 `main` 里 `testBan` 的说明）。
+#if !GOMOKU_BAN
 void testPatterns() {
     section("棋型判定（暴力比对）");
     using namespace gomoku;
@@ -398,6 +408,151 @@ void testPatterns() {
                                 : "Board::make 的返回值与成五判定一致");
     check(fiveBad2 == 0, "对方无五连时其五点集为空（对称性）");
 }
+#endif  // !GOMOKU_BAN
+
+#if GOMOKU_BAN
+//: 禁手规则的固定局面表 —— 直接对应 `tests/test_ban_rules.py`。
+//:
+//: 每条都是**手工推演过**的局面（不是"跑一遍记下输出"）：恰好五连优先、长连、
+//: 同线双四、活四只算一个四、假活三…… 判错一格的后果（合法的一手被判负 /
+//: 禁手被放过）只在特定棋形下才显形，所以刻意做成小局面。
+void testBan() {
+    section("禁手规则（RIF）");
+    using namespace gomoku;
+
+    struct St {
+        int r, c, p;
+    };
+    auto blk = [](int r, int c) { return St{r, c, 1}; };
+    auto wht = [](int r, int c) { return St{r, c, 2}; };
+    auto mk = [](std::initializer_list<St> stones) {
+        Board bd;
+        for (const St& s : stones) {
+            bd.make(s.r * BOARD_SIZE + s.c, s.p);
+        }
+        return bd;
+    };
+    //: 线性格索引，省得每处都写 `r * BOARD_SIZE + c`。
+    auto at = [](int r, int c) { return r * BOARD_SIZE + c; };
+
+    // ---------------------------------------------------------- 五连优先
+    {
+        Board b = mk({blk(9, 5), blk(9, 6), blk(9, 7), blk(9, 8)});
+        check(ban::fiveAt(b, at(9, 9), 1), "恰好五连：fiveAt 为真");
+        check(ban::foulKind(b, at(9, 9)) == ban::Kind::NONE,
+              "恰好五连是胜不是禁手");
+    }
+    {
+        // 六连 = 长连禁手。无禁手引擎把它当五，禁手模式必须分开。
+        Board b = mk({blk(9, 5), blk(9, 6), blk(9, 7), blk(9, 8), blk(9, 10)});
+        check(!ban::fiveAt(b, at(9, 9), 1), "六连的补点不是恰好五连");
+        check(ban::foulKind(b, at(9, 9)) == ban::Kind::OVERLINE,
+              "六连是长连禁手");
+    }
+    {
+        // 一手同时造出六连（横）与五连（竖）—— 五连优先，黑胜。
+        Board b = mk({blk(9, 5), blk(9, 6), blk(9, 7), blk(9, 8), blk(9, 10),
+                      blk(5, 9), blk(6, 9), blk(7, 9), blk(8, 9)});
+        check(ban::foulKind(b, at(9, 9)) == ban::Kind::NONE,
+              "一手同时成五与成六 → 五连优先，黑胜");
+    }
+    {
+        // 贴墙的长连照样是长连 —— 线端就是墙。
+        Board b = mk({blk(0, 0), blk(0, 1), blk(0, 2), blk(0, 3), blk(0, 4)});
+        check(ban::foulKind(b, at(0, 5)) == ban::Kind::OVERLINE,
+              "贴墙的长连仍是长连");
+    }
+    {
+        Board b = mk({blk(0, 0), blk(0, 1), blk(0, 2), blk(0, 3)});
+        check(ban::foulKind(b, at(0, 4)) == ban::Kind::NONE,
+              "贴墙的恰好五连是胜");
+    }
+
+    // ---------------------------------------------------------- 四四
+    {
+        // 横一条冲四 + 竖一条冲四。
+        Board b = mk({blk(9, 2), blk(9, 3), blk(9, 4), blk(5, 5), blk(6, 5),
+                      blk(7, 5), wht(9, 6)});
+        check(!ban::fiveAt(b, at(9, 5), 1), "四四局面未成五");
+        check(ban::foulKind(b, at(9, 5)) == ban::Kind::DOUBLE_FOUR,
+              "跨两条线的四四禁手");
+    }
+    {
+        // **同线双四**（变形四四）：{0,2,3,4} 与 {2,3,4,6} 两组子不同。
+        Board b = mk({blk(9, 0), blk(9, 2), blk(9, 4), blk(9, 6)});
+        check(ban::foulKind(b, at(9, 3)) == ban::Kind::DOUBLE_FOUR,
+              "同线双四是禁手（变形四四）");
+        // 走 (9,1) 只补出 {0,1,2,4} 一个四 → 合法。
+        check(ban::foulKind(b, at(9, 1)) == ban::Kind::NONE,
+              "同线双四的另一点只补出一个四，合法");
+    }
+    {
+        // 活四 `_XXXX_` 两个成五点，仍是**一个**四。
+        Board b = mk({blk(9, 3), blk(9, 4), blk(9, 5)});
+        check(ban::foulKind(b, at(9, 6)) == ban::Kind::NONE,
+              "活四只算一个四（不是四四）");
+    }
+    {
+        // 补成五会变长连的那个"四"不成立。
+        Board b = mk({blk(9, 1), blk(9, 2), blk(9, 3), blk(9, 4)});
+        check(ban::foulKind(b, at(9, 6)) == ban::Kind::NONE,
+              "补成五会变长连的那个四不算四");
+    }
+    {
+        // 四三 —— 黑方的正常胜形。
+        Board b = mk({blk(9, 2), blk(9, 3), blk(9, 4), blk(6, 5), blk(7, 5),
+                      wht(9, 6)});
+        check(ban::foulKind(b, at(9, 5)) == ban::Kind::NONE, "四三是合法胜形");
+    }
+
+    // ---------------------------------------------------------- 三三
+    {
+        Board b = mk({blk(9, 3), blk(9, 4), blk(6, 5), blk(7, 5)});
+        check(ban::foulKind(b, at(9, 5)) == ban::Kind::DOUBLE_THREE,
+              "跨两条线的三三禁手");
+    }
+    {
+        // `_XXX_` 补左补右是**同一组 3 颗子** ⇒ 一个活三。
+        Board b = mk({blk(9, 3), blk(9, 4)});
+        check(ban::foulKind(b, at(9, 5)) == ban::Kind::NONE,
+              "同一组 3 子只算一个活三");
+    }
+    {
+        // 假活三：补出来的"活四"一端补五是长连 ⇒ 不算活三。
+        Board b = mk({blk(9, 0), blk(9, 2), blk(9, 3), blk(6, 5), blk(7, 5)});
+        check(ban::foulKind(b, at(9, 5)) == ban::Kind::NONE,
+              "假活三不算（补出来的活四补不出五）");
+    }
+
+    // ---------------------------------------------------------- 白方与边界
+    {
+        Board b = mk({blk(9, 2), blk(9, 3), blk(9, 4), blk(5, 5), blk(6, 5),
+                      blk(7, 5), wht(9, 6)});
+        check(ban::foulKind(b, at(9, 5), 2) == ban::Kind::NONE, "白方无禁手");
+    }
+    {
+        Board b = mk({blk(9, 3), blk(9, 4), blk(9, 5), blk(9, 6)});
+        check(ban::foulKind(b, at(9, 5)) == ban::Kind::NONE, "已占点不判");
+    }
+    {
+        Board b;
+        check(ban::forbiddenPoints(b).empty(), "空盘无禁手点");
+        Board b1 = mk({blk(9, 9)});
+        check(ban::foulKind(b1, at(9, 10)) == ban::Kind::NONE,
+              "单子旁边不是禁手");
+    }
+    {
+        // forbiddenPoints 就是逐点 foulKind 的汇总。
+        Board b = mk({blk(9, 3), blk(9, 4), blk(6, 5), blk(7, 5)});
+        const std::vector<int> pts = ban::forbiddenPoints(b);
+        bool has = false;
+        for (const int idx : pts) {
+            if (idx == at(9, 5)) has = true;
+        }
+        check(has, "forbiddenPoints 列出三三禁手点 (9,5)");
+    }
+}
+#endif  // GOMOKU_BAN
 
 void testEvaluate() {
     section("评估");
@@ -828,7 +983,15 @@ int main(int argc, char** argv) {
         if (selftest) {
             testIncremental();
             testFive();
+#if GOMOKU_BAN
+            // ban 版不跑 `testPatterns`：它拿"长连也算五"（`hasFiveBits`）当
+            // 五点的判据，那是无禁手口径 —— 在禁手 `--selftest` 里会与
+            // `testBan` 的"六连是长连负"自相矛盾。五点/四窗的位运算本身在
+            // free 版的 `--selftest` 里已全覆盖（同一份源码）。
+            testBan();
+#else
             testPatterns();
+#endif
             testEvaluate();
             testOpening();
             testMateTruth();

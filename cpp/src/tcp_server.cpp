@@ -19,6 +19,16 @@
 #include "opening.h"
 #include "search.h"
 #include "tables.h"
+#include "ban.h"
+
+//: `GOMOKU_BAN` 未定义（free 版）时按 0 处理 —— 协议层要据此报告 `rules`
+//: 与校验，所以它在两个版本里都必须有一个确定值。
+#ifndef GOMOKU_BAN
+#define GOMOKU_BAN 0
+#endif
+
+//: 本进程的规则名。`hello` 应答与 `compute`/`analyze` 的 `rules` 校验都用它。
+constexpr const char* kRules = GOMOKU_BAN ? "ban" : "free";
 
 #ifdef _WIN32
 #include <winsock2.h>
@@ -142,6 +152,34 @@ void writeError(Shared& sh, const json::Value& req, const std::string& msg) {
     w.str("error", msg);
     w.close();
     sendLine(sh, buf);
+}
+
+//: `{"type":"bancheck","ok":true,"forbidden":[[r,c],...]}` —— 只读对账诊断。
+//:
+//: 响应形状是嵌套数组，`ObjWriter` 没有通用数组出口（它的每个出口都是平铺键
+//: 形状，加一套数组状态机要动全部现有报文的写入路径），所以这一条手工拼
+//: —— 字段都是定值或整数，无需转义。
+void writeBancheck(Shared& sh, const json::Value& req,
+                   const std::vector<int>& pts) {
+    std::string out = "{\"type\":\"bancheck\"";
+    const json::Value* id = req.find("id");
+    if (id != nullptr && id->isNum()) {
+        out += ",\"id\":";
+        out += std::to_string(id->intOr(-1));
+    }
+    out += ",\"ok\":true,\"forbidden\":[";
+    bool first = true;
+    for (const int idx : pts) {
+        if (!first) out.push_back(',');
+        first = false;
+        out.push_back('[');
+        out += std::to_string(idx / BOARD_SIZE);
+        out.push_back(',');
+        out += std::to_string(idx % BOARD_SIZE);
+        out.push_back(']');
+    }
+    out += "]}";
+    sendLine(sh, out);
 }
 
 //: `{"type":"ok"}` —— 给那些**没有结果、但需要回执**的请求（`reset` /
@@ -324,6 +362,20 @@ void handleJob(Shared& sh, const json::Value& req) {
         writeError(sh, req, "未知的 type: " + type);
         return;
     }
+    // 请求里可能带 `"rules":"free"|"ban"`。**带且与服务端不符 → error**（沿用
+    // 现有 type:"error"，不新造响应类型）；**不带则不校验**（老客户端兼容）。
+    // 这一条写在 `readConfig` **之外** —— `readConfig` 保持"只读搜索参数"。
+    {
+        const json::Value* rv = req.find("rules");
+        if (rv != nullptr) {
+            const std::string want = rv->strOr("");
+            if (want != kRules) {
+                writeError(sh, req,
+                           "rules 不匹配：服务端是 " + std::string(kRules));
+                return;
+            }
+        }
+    }
 
     std::vector<uint8_t> cells(CELLS, 0);
     std::string err;
@@ -435,6 +487,7 @@ void readerLoop(Shared& sh) {
                 json::ObjWriter w(&out);
                 w.str("type", "hello");
                 w.str("version", kVersion);
+                w.str("rules", kRules);
                 w.i32("board_size", BOARD_SIZE);
                 w.i32("n_lines", N_LINES);
                 w.i32("win_score", WIN_SCORE);
@@ -442,6 +495,28 @@ void readerLoop(Shared& sh) {
                 w.i32("vcf_node_cap", static_cast<int>(VCF_NODE_CAP));
                 w.close();
                 sendLine(sh, out);
+                continue;
+            }
+            if (type == "bancheck") {
+                // **只读诊断，不排队、不进工作线程**（像 `hello` 那样就地应答）：
+                // 它不碰 Engine 的置换表/历史表，也不需要那把锁。对应
+                // tests/test_ban_parity.py —— 逐点比对 C++ 与 Python 的
+                // forbidden_points，是两侧"同一套规则"的唯一机械证据。
+                std::vector<uint8_t> cells(CELLS, 0);
+                std::string err;
+                const json::Value* bv = v.find("board");
+                if (bv == nullptr || !parseBoard(*bv, cells.data(), &err)) {
+                    writeError(sh, v, err.empty() ? "缺少 board" : err);
+                    continue;
+                }
+                const json::Value* pv = v.find("player");
+                const int64_t player = pv != nullptr ? pv->intOr(1) : 1;
+                std::vector<int> pts;
+                if (player == 1) {
+                    const Board bd = Board::fromArray(cells.data());
+                    pts = ban::forbiddenPoints(bd);
+                }
+                writeBancheck(sh, v, pts);
                 continue;
             }
 

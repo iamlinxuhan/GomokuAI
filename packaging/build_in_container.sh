@@ -103,6 +103,11 @@ cmake --build cpp/build -j"$(nproc)"
 ./cpp/build/gomoku_engine --verify-tables --selftest
 file cpp/build/gomoku_engine
 
+# 禁手版是同一批源码编第二遍（`GOMOKU_BAN=1`），照旧要过表自检与自检 ——
+# 它的 `--selftest` 少跑几段无禁手口径的比对，其余相同，所以这是一条独立的门槛。
+./cpp/build/gomoku_engine_ban --verify-tables --selftest
+file cpp/build/gomoku_engine_ban
+
 # ---------------------------------------------------------------------------
 # ③ Python 侧
 #
@@ -197,6 +202,13 @@ done
 # 正是 _candidates() 第一个去找的位置。三份都要带：onedir 是安装包的原料，
 # 两个 onefile 是免安装裸文件，少了引擎那一份就是"AI 明显变弱"而没有别的症状。
 #
+# **禁手版（`gomoku_engine_ban`）同样要带，而且三份都要。** 两个引擎各自独立
+# 存在，只带 free 版的话，包里的禁手局会退回 `engine_ban.py` 那份本地 Python
+# 实现 —— 后果不只是慢：本机 `test_ban_fork_guard` 钉的是"两条实现同着同分"，
+# 而一旦用户装了包，实际跑的是没被那份护栏覆盖过的第三条路（包里的
+# `engine_ban.py`），面板还会如实写着"Python (本地·禁手)"。用户看到的是
+# "选了禁手之后 AI 突然变笨"，与 v3.0.8 那次 MSVCP140 是同一类静默退化。
+#
 # `--add-data "${ICON_OUT}/gomoku-ai.png:."` 同理，落点也是包的根，由
 # main.py 的 `_icon_candidates()` 第一个去找。**三份同样都要带**：漏了它
 # 窗口就没有图标（X11 上退回 X.Org 的兜底 logo），而构建与运行都不报错 ——
@@ -221,6 +233,7 @@ pyi_onefile() {
     .venv-build/bin/pyinstaller --onefile --windowed --name "$2" \
         --paths "${FLAVOR_DIR}" \
         --add-binary "cpp/build/gomoku_engine:." \
+        --add-binary "cpp/build/gomoku_engine_ban:." \
         --add-data "${ICON_OUT}/${APP_ICON_NAME}:." main.py
 }
 
@@ -229,6 +242,7 @@ printf 'FLAVOR = "play"\n' > "${FLAVOR_DIR}/_build_flavor.py"
 .venv-build/bin/pyinstaller --onedir --windowed --name "gomoku-ai" \
     --paths "${FLAVOR_DIR}" \
     --add-binary "cpp/build/gomoku_engine:." \
+    --add-binary "cpp/build/gomoku_engine_ban:." \
     --add-data "${ICON_OUT}/${APP_ICON_NAME}:." main.py
 
 echo "---- PyInstaller: onefile debug（裸文件，写日志）----"
@@ -272,11 +286,16 @@ echo "两个变体都带上了 _build_flavor"
 # `pipefail` 于是把整条管道判成失败，`if !` 随之翻转为"引擎没进包"并 `exit 1`：
 # 一个**假警报**把已经成功的构建判死。（实测这条 find 的输出只有一行、
 # 写完即退，所以侥幸没炸过 —— 但"侥幸"不是能留在 CI 里的东西。）
-if ! find dist/gomoku-ai -type f -name gomoku_engine -print -quit | grep -q .; then
-    echo "!! C++ 引擎没有进包 —— 检查 --add-binary" >&2
-    exit 1
-fi
-echo "引擎已进包：$(find dist/gomoku-ai -type f -name gomoku_engine)"
+# **两个名字都验。** `-name gomoku_engine` 是精确匹配，匹配不到
+# `gomoku_engine_ban`：只验 free 版的话，禁手引擎漏进包时这条断言照样绿，
+# 用户选中禁手之后才发现 AI 退回本地 Python 实现。
+for engine in gomoku_engine gomoku_engine_ban; do
+    if ! find dist/gomoku-ai -type f -name "${engine}" -print -quit | grep -q .; then
+        echo "!! C++ 引擎 ${engine} 没有进包 —— 检查 --add-binary" >&2
+        exit 1
+    fi
+    echo "引擎已进包：$(find dist/gomoku-ai -type f -name "${engine}")"
+done
 
 # 断言窗口图标同样进了包 —— 用的还是上面那条 `--add-data`，三份产物共用，
 # 所以验 onedir 这一份就够。**这是"标题栏与任务栏仍然没有图标"唯一会静默

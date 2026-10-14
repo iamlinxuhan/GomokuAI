@@ -142,7 +142,13 @@ def _board():
 
 
 class _FakeClient:
-    """顶掉 TCP 客户端，把拼好的请求截下来。"""
+    """顶掉 TCP 客户端，把拼好的请求截下来。
+
+    ``variant`` 是 ``_ServerClient`` 的公开属性（``RemoteAIPlayer`` 从它读
+    这一连接按哪套规则搜索），假客户端要顶替它就得不出来这个属性也说得通。
+    """
+
+    variant = "free"
 
     def __init__(self):
         self.seen = []

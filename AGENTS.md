@@ -44,14 +44,15 @@ cmake --build cpp/build -j
 ## 测试与测量
 
 - `tests/conftest.py` 自动设置 offscreen Qt 并处理非 ASCII 路径下的插件定位，跑测试不需要显示器。
-- 只有 `tests/test_remote_client.py` 需要真实 C++ 二进制：`config.find_binary()` 找不到时自动 skip；CI 的 test job 不建 C++。
+- 只有 `tests/test_remote_client.py`（free）与 `tests/test_ban_parity.py`（free + ban）需要真实 C++ 二进制，`config.find_binary()` 找不到时自动 skip。CI 的 `test` job 不建 C++；`test-ban` job 建两个引擎后只跑 `tests/test_ban_*.py`，所以 `test_remote_client.py` 在 CI 里仍是跳过的（本机跑全套才算数）。
 - 改算法后按顺序验证：`tools/positions.py` 题库（必须全过）→ `tools/bench.py`（与 `tools/BASELINE.md` 的基线对照）→ `tools/selfplay.py`（对旧引擎 A/B 胜率）。UI 接线用 `tools/gui_smoke.py`，端到端真下一局用 `tools/ui_e2e.py`。
 - 测量带时间预算的搜索时机器上不要跑别的负载（`tools/BASELINE.md` 里有一条被推翻的假设正来自这个错误）。
 - `tools/ab_enhance.py` 靠**逐字字符串锚点**打补丁复刻 `engine.py`；改动 `engine.py` 的 import 段或 `compute()` 下发增强开关那段后，必须同步该脚本的 `_ANCHOR_*`（锚点匹配不上它会故意退出）。
 
 ## CI 与发布
 
-- `.github/workflows/build.yml` 只在 tag `v*`、PR、手动 dispatch 时触发；`test` job（`uv sync --frozen` + `uv run --frozen pytest -m "not perf"`）是 `release` 的 `needs`。
+- `.github/workflows/build.yml` 只在 tag `v*`、PR、手动 dispatch 时触发；`test`（`uv sync --frozen` + `uv run --frozen pytest -m "not perf"`）与 `test-ban`（建两个 C++ 引擎后只跑 `tests/test_ban_*.py`）都是 `release` 的 `needs`。
 - 发布固定 15 个资产（Linux 四架构 + Windows，各 1 安装包 + run_debug + run_play），release job 会逐个比对文件名与数量。
+- **两个引擎都要进包**：`--add-binary` 在 `build_in_container.sh` 与 `build.yml` 的 windows job 里各有两处，`gomoku_engine_ban` 漏一个不报错，只在用户那边表现为"禁手局的 AI 明显变弱"。两边各有一条打包后的存在性断言守着。
 - Linux 四架构共用 `packaging/build_in_container.sh`，在目标架构的 Debian bookworm 容器里构建（PyInstaller 不能交叉编译），**不读 `uv.lock`**（i386 / armhf 没有 PyPI 的 PyQt5 wheel，用 apt 提供）；Windows 打包走 uv（`uv sync --frozen --python 3.11` + `uv run --frozen pyinstaller`）。
 - debug/play 变体由构建期注入的 `_build_flavor.py` 决定，**不要按文件名倒推**；debug 写 `game_log_*.txt`，play 与安装包不写。

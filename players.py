@@ -41,6 +41,12 @@ class PlayerSpec:
     ``kind``：``"human"`` | ``"ai"``；``level`` 仅对 AI 有意义（难度档位
     1..5，与 ``engine.DIFFICULTY`` 同源）。``name`` 是显示名，空则由工厂
     生成（如 ``AI-3``）。
+
+    ``variant``：这一席按哪套规则搜索（``"free"`` / ``"ban"``）。**它描述的是
+    席位怎么算，而不是这一局怎么判** —— 判规则在 ``Session.rules`` / 房间的
+    ``RoomConfig.rules`` 里。同一局的两席取不同的值不构成对局（黑方按禁手算、
+    白方按无禁手算，判出来的胜负对不上），所以调用方必须把同一套规则发给两席；
+    ``Room`` 就是这么做的（从 ``RoomConfig.rules`` 统一注入）。
     """
 
     kind: str = "human"
@@ -48,6 +54,7 @@ class PlayerSpec:
     level: int = 1
     book: bool = True
     local: bool = False
+    variant: str = "free"
 
 
 def make_player(spec: PlayerSpec):
@@ -55,6 +62,15 @@ def make_player(spec: PlayerSpec):
     if spec.kind == "ai":
         return AIPlayer(spec)
     raise ValueError("本地人类玩家由 UI 驱动；无头对局只支持 AI 席位")
+
+
+def _local_module(variant: str):
+    """该变体的本地引擎模块。**延迟导入** —— 与 ``engine._local_engine`` 同一
+    条理由：不跑禁手的人不该为它付一次冷启动。"""
+    if variant == "ban":
+        import engine_ban
+        return engine_ban
+    return engine_local
 
 
 class AIPlayer:
@@ -72,17 +88,23 @@ class AIPlayer:
         with _AI_MUTEX:
             if not self.spec.local:
                 return engine.ai_move(
-                    board, stone, self.spec.level, cancel=cancel)
+                    board, stone, self.spec.level, cancel=cancel,
+                    variant=self.spec.variant)
+            mod = _local_module(self.spec.variant)
+            # 开局库在禁手侧整体是关的（``engine_ban.USE_OPENING_BOOK``：那张表
+            # 是在无禁手规则下生成的）。下面的 book/search 对照探针因此只在无禁手
+            # 那一侧成立 —— 禁手侧直接走搜索，不下发 book 开关。
+            book = self.spec.book and self.spec.variant == "free"
             # A/B experiments use the same local search implementation on both
             # sides; only the opening-book switch differs.
-            if self.spec.book:
-                hit = engine_local.book_lookup(board, stone)
+            if book:
+                hit = mod.book_lookup(board, stone)
                 if hit is not None:
-                    book_r, book_c = divmod(hit[0], engine_local.BOARD_SIZE)
-                    search_r, search_c, _ = engine_local.ai_move(
+                    book_r, book_c = divmod(hit[0], mod.BOARD_SIZE)
+                    search_r, search_c, _ = mod.ai_move(
                         board, stone, self.spec.level, cancel=cancel,
                         use_book=False)
-                    r, c, info = engine_local.ai_move(
+                    r, c, info = mod.ai_move(
                         board, stone, self.spec.level, cancel=cancel,
                         use_book=True)
                     info["book_move"] = [int(book_r), int(book_c)]
@@ -90,9 +112,8 @@ class AIPlayer:
                     info["book_move_same_as_search"] = (
                         (int(r), int(c)) == (int(search_r), int(search_c)))
                     return r, c, info
-            return engine_local.ai_move(
-                board, stone, self.spec.level, cancel=cancel,
-                use_book=self.spec.book)
+            return mod.ai_move(
+                board, stone, self.spec.level, cancel=cancel, use_book=book)
 
 
 class ScriptedPlayer:

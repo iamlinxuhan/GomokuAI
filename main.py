@@ -39,8 +39,8 @@ from client import LocalRoom, RoomClient, local_ip
 from engine import (BOARD_SIZE, Board, evaluate, is_mate,
                     new_game, win_line)
 from gamelog import GameLogger
-from room import SeatSpec
-from session import Session
+from room import RoomConfig, SeatSpec
+from session import RULES as RULE_NAMES, Session
 from ui_kit import (BrandMark, InfoRow, QuestionMark, Screen, StoneFace,
                     TurnIndicator,
                     button as _ui_button, card_button as _ui_card_button,
@@ -1415,6 +1415,9 @@ class BoardWidget(QWidget):
         self._anim_cell = None        # (r, c, player)
         self.win_cells = []           # 终局五连 [(r, c), ...]
         self.win_player = 0
+        # 禁手点 [(r, c), ...]。**只在禁手局非空**，且是一张"落子即判负"的
+        # 禁入名单 —— 无禁手局这里恒为空表，绘制路径整个不存在。
+        self.forbidden_cells = []
         # 复盘标记 ``(best_rc, played_rc, played_player)``。默认 None ——
         # 正常对局这条分支整个不存在，绘制路径零影响（见 ``paintEvent``）。
         self.review_marker = None
@@ -1472,6 +1475,18 @@ class BoardWidget(QWidget):
         """
         self.win_cells = list(cells) if cells else []
         self.win_player = player
+        self.update()
+
+    def set_forbidden(self, cells):
+        """禁手点标记（``cells`` 来自 ``engine_ban.forbidden_points``）。
+
+        传空表即清空 —— 无禁手局与每次 ``new_game`` 都靠它把上一局的标记抹掉，
+        不必让调用方记住"这局是不是禁手局"。
+        """
+        new = [(int(r), int(c)) for r, c in cells] if cells else []
+        if new == self.forbidden_cells:
+            return
+        self.forbidden_cells = new
         self.update()
 
     # ---- 落子动画 ----
@@ -1568,12 +1583,25 @@ class BoardWidget(QWidget):
         if cell == self.hover_pos:
             return
         old, self.hover_pos = self.hover_pos, cell
+        self._sync_hover_tip()
         self._repaint_cell(old)
         self._repaint_cell(cell)
 
     def leaveEvent(self, event):
         old, self.hover_pos = self.hover_pos, None
+        self._sync_hover_tip()
         self._repaint_cell(old)
+
+    def _sync_hover_tip(self):
+        """悬停在禁手点上时挂一句说明。
+
+        标记本身只说"这一点红着"，说不清红着是什么意思（禁入？推荐？还是标记
+        某一手？）。鼠标停在上面时补一句，读取成本为零。
+        """
+        hit = self.hover_pos is not None and self.hover_pos in self.forbidden_cells
+        tip = i18n.t("禁手点：黑方落子即判负") if hit else ""
+        if tip != self.toolTip():
+            self.setToolTip(tip)
 
     def paintEvent(self, event):
         self._ensure_cache()
@@ -1704,6 +1732,18 @@ class BoardWidget(QWidget):
             painter.setPen(QPen(QColor(theme.GRID), max(1.0, r * 0.12)))
             painter.setBrush(QBrush(ghost))
             painter.drawEllipse(QPointF(x, y), r, r)
+
+        # 禁手点：红圈 + 半透明红底 + 红叉。**画在悬停幽灵之上** —— 悬停的正是
+        # 禁手点时，幽灵子先铺底、标记再压上去，用户看到的是"这颗子会被画上
+        # 叉"，而不是叉被一颗半透明棋子盖住。图形全部来自 board_render 的
+        # sprite（几何画法，不用字符，理由见 forbidden_marker 的文档串）。
+        if self.forbidden_cells:
+            d = r * 2.0
+            sprite = board_render.forbidden_marker(d, self.devicePixelRatioF())
+            half = d * board_render._MARKER_SCALE / 2.0
+            for fr, fc in self.forbidden_cells:
+                fx, fy = self.geom.px(fr, fc)
+                painter.drawPixmap(QPointF(fx - half, fy - half), sprite)
 
         painter.end()
 
@@ -1960,6 +2000,10 @@ class GamePanel(QFrame):
         # 段 3：信息
         info = QVBoxLayout()
         info.setSpacing(theme.SPACE_SM)
+        # 规则排在**最前**：它是这一局判胜负的口径，比"AI 想多深"更靠上。
+        # 禁手局里棋盘上会挂红叉，但那些叉只说明"这些点黑方不能下"，说不清
+        # 这一局到底是不是禁手局、白方受不受约束 —— 这一行是唯一的常驻答案。
+        self.rules_row = InfoRow("规则", "—")
         self.difficulty_row = InfoRow("AI 难度", "—")
         # 这一行是**诊断**用途，不是玩法信息：C++ 服务端没编译/没启动/中途挂了
         # 时棋局照常继续（静默降级到本地引擎），用户唯一的感知就是 AI 变慢、
@@ -1978,7 +2022,8 @@ class GamePanel(QFrame):
         self.undo_row = InfoRow("悔棋次数", "3")
         self.moves_row = InfoRow("步数", "0")
         self.time_row = InfoRow("用时", "00:00")
-        for row in (self.difficulty_row, self.engine_row, self.port_row,
+        for row in (self.rules_row, self.difficulty_row, self.engine_row,
+                    self.port_row,
                     self.undo_row, self.moves_row, self.time_row):
             info.addWidget(row)
         layout.addLayout(info)
@@ -2041,10 +2086,20 @@ class GamePanel(QFrame):
         # 信息行：标签（wrap 后） + 值域最宽值 + 行距。值域来自各行的
         # 真实产出点（engine.DIFFICULTY / engine._LABELS / 端口上限等）。
         pools = (
+            # 规则只有两个值，两个都试穿一遍 —— 中文下它不比「宗师」宽，但
+            # 外文里「Запрещённые ходы」是这一列里最长的值之一。
+            (self.rules_row, [i18n.t(_rules_value("free")),
+                              i18n.t(_rules_value("ban"))]),
             (self.difficulty_row,
              [i18n.t(engine.difficulty_name(lv))
               for lv in list(engine.DIFFICULTY) + [engine.CUSTOM_LEVEL]]),
-            (self.engine_row, list(engine._LABELS.values()) + ["—"]),
+            # 引擎名的值域 = **两个变体**的全部标签（``_LABELS`` 是
+            # ``{变体: {后端: 名字}}``）。面板这一行显示哪一支要看本局的规则，
+            # 但宽度预算必须按最宽的那一支留 —— 按当前规则挑窄的算，切到禁手
+            # 局时这一行就会被裁。「C++ (禁手)」正是最长的那一个。
+            (self.engine_row,
+             [name for per_variant in engine._LABELS.values()
+              for name in per_variant.values()] + ["—"]),
             (self.port_row, ["—", "65535"]),
             (self.undo_row, ["3"]),
             (self.moves_row, ["361"]),
@@ -2148,8 +2203,12 @@ class GamePanel(QFrame):
     # ---- 状态更新 ----
 
     def update_info(self, turn, difficulty, status, undo_count, move_count,
-                    human=1, local=False):
+                    human=1, local=False, rules="free"):
         players = {1: "黑棋 ●", 2: "白棋 ○"}
+        # 规则与"本地/远程"无关，两种局都要报：无禁手局也如实写「无禁手」，
+        # 而不是留一个"—"。空缺会被读成"信息还没到"，而这里的信息从一开始
+        # 就是确定的。
+        self.rules_row.set_value(i18n.t(_rules_value(rules)))
         # 本地对战没有 AI：难度/引擎/端口三行如实写"—"，而不是把上一局的档位
         # 留在那里（面板上那三个数是"这一局用什么引擎在算"，本地局没有答案）。
         if local:
@@ -2167,8 +2226,8 @@ class GamePanel(QFrame):
                 i18n.t(engine.difficulty_name(difficulty)))
             # 引擎名（"C++ 引擎" / "Python (本地)"）**不翻** —— 它与日志里的
             # 写法必须一致，用户拿这个字符串去搜日志时要能搜到。
-            self.engine_row.set_value(engine.engine_label())
-            port = engine.current_port()
+            self.engine_row.set_value(engine.engine_label(rules))
+            port = engine.current_port(rules)
             self.port_row.set_value(str(port) if port else "—")
         self.undo_row.set_value(str(undo_count))
         self.moves_row.set_value(str(move_count))
@@ -2344,10 +2403,28 @@ def _fit_card_row(cards, gap):
     return holder
 
 
-class SelectionScreen(Screen):
-    """对战模式 / 执棋颜色 / AI难度 / 复盘强度 选择。
+def _rules_value(rules: str) -> str:
+    """面板「规则」那一行的值。**取待翻译的中文原文**（``i18n.t`` 由调用方做，
+    与 ``difficulty_name`` 那一行的口径一致）。"""
+    return "禁手" if rules == "ban" else "无禁手"
 
-    四个模式共用 ``Screen`` 的骨架与节奏，差异只剩标题文案与卡片行 —— 历史上
+
+def _rules_log_text(rules: str) -> str:
+    """规则在日志里怎么写。
+
+    日志**不翻译**（见 ``i18n`` 的模块文档串：诊断产物要保持中文，README 与
+    已发布的 bug 报告都在逐字引用它们）。禁手那一行把三条禁手点名写全 ——
+    「禁手」两个字不含"哪三种"的信息量，而日志是事后唯一说得清现场的东西。
+    """
+    if rules == "ban":
+        return "禁手（RIF：黑方三三 / 四四 / 长连判负）"
+    return "无禁手（自由五子棋）"
+
+
+class SelectionScreen(Screen):
+    """对战模式 / 禁手规则 / 执棋颜色 / AI难度 / 复盘强度 选择。
+
+    五个模式共用 ``Screen`` 的骨架与节奏，差异只剩标题文案与卡片行 —— 历史上
     两条分支各自抄了一份 stretch/spacing（一个 30 一个 25，没有理由）。
     """
 
@@ -2355,10 +2432,12 @@ class SelectionScreen(Screen):
     difficulty_selected = pyqtSignal(int)  # 档位 1-5，对应 engine.DIFFICULTY
     mode_selected = pyqtSignal(int)  # 0=挑战AI, 1=本地对战, 2=局域网联机
     review_level_selected = pyqtSignal(int)  # 复盘强度，档位 1-5
+    rules_selected = pyqtSignal(int)  # 0=无禁手, 1=禁手（RIF）
 
-    #: 四个模式的标题/副标题，与 ``setup_ui`` 里的卡片分支一一对应。
+    #: 五个模式的标题/副标题，与 ``setup_ui`` 里的卡片分支一一对应。
     _TITLES = {
         "mode": ("选择对战模式", "挑战 AI、与身边人对坐，或局域网联机"),
+        "rules": ("选择规则", "禁手规则只约束黑方：三三、四四、长连判负"),
         "color": ("选择执棋颜色", "黑棋为先手，白棋为后手"),
         "difficulty": ("选择 AI 难度", "难度越高，AI 思考越深入"),
         "review": ("选择复盘强度",
@@ -2399,6 +2478,22 @@ class SelectionScreen(Screen):
                                   index=f"{i + 1:02d}", size=size)
                 btn.clicked.connect(lambda _=False, v=value:
                                     self.mode_selected.emit(v))
+                self._cards.append(btn)
+        elif self.mode == "rules":
+            size = _card_fit_size(2, gap)
+            # 两张卡都**不给卡面图形**：这一页的区分全在文字里（难度页同样
+            # 没有 face，见 ui_kit.card_button 的注释）。给禁手那张配一枚红叉
+            # 看着挺贴切，但那样无禁手那张就只剩文字，两张卡的重量不对等 ——
+            # 而"没有标记"这件事本来就没有图形可画。
+            #
+            # 配色用 danger 标禁手：与棋盘上那枚红叉同一个语义色。
+            cards = [("无禁手", "ghost", 0, "五连即胜，无额外限制"),
+                     ("禁手", "danger", 1, "黑方三三、四四、长连判负")]
+            for i, (text, tone, value, sub) in enumerate(cards):
+                btn = card_button(text, tone, sub=sub,
+                                  index=f"{i + 1:02d}", size=size)
+                btn.clicked.connect(lambda _=False, v=value:
+                                    self.rules_selected.emit(v))
                 self._cards.append(btn)
         elif self.mode == "color":
             size = _card_fit_size(2, gap)
@@ -2914,6 +3009,10 @@ class GomokuGame(QMainWindow):
         self.gamekunnan = 1
         self.playmode = 0  # 0=挑战AI, 1=本地双人对战, 2=局域网联机
         self.ai_thinking = False
+        # 本局的规则（``"free"`` / ``"ban"``，取值来自 ``session.RULES``）。
+        # 规则页写它，开局时随 ``RoomConfig`` 发给房间；判据始终在房间的
+        # Session 里，这里只用来（a）画禁手标点（b）写日志/面板（c）弹确认框。
+        self.game_rules = "free"
 
         # AI Worker
         self.ai_worker = None       # M4c 起主流程不再启动；保留字段兼容冒烟脚本
@@ -2926,6 +3025,11 @@ class GomokuGame(QMainWindow):
         self._room_bridge = None    # _RoomBridge 或 None
         self._room_clients = {}     # stone -> RoomClient（本 UI 持有的席位）
         self._room_finished = False  # game_over 只收尾一次（双客户端会收到两份）
+        #: game_over 事件里的 ``reason``（``"five"`` / ``"forbidden"`` /
+        #: ``"draw"``，见 room.py）。房间把"五连"与"禁手负"分开报 —— 客户端
+        #: 不分开就会把黑方的长连负写成"对方五连获胜"，而那恰好是用户开了
+        #: 禁手才想看到的区别。新局在 ``_close_room`` 里清掉。
+        self._game_reason = ""
         self._last_undo = None      # (by, move_no)，undo_applied 去重
         self._move_in_flight = False  # 已发着法、等回显，防止连点重复提交
         # 人类回合开始时（turn 事件）的棋盘快照：复盘 human_moves 的
@@ -2936,6 +3040,8 @@ class GomokuGame(QMainWindow):
         self._room_config = None
         # 颜色页选完之后去哪：单机走难度页，LAN 开房走开监听 + 等待对手。
         self._color_next = "difficulty"
+        # 规则页选完之后去哪：挑战 AI 走颜色页、本地对战直接开局、LAN 进岔路口。
+        self._rules_next = "color"
 
         # 复盘 Worker（与 AI Worker 同一套收尾方式，见 ``_cancel_review``）
         self.review_worker = None
@@ -3150,7 +3256,8 @@ class GomokuGame(QMainWindow):
         # 定时器若还活着，回调会在 game_widget 已销毁、``self._stack`` 已被置
         # None 之后醒来 —— 那是 AttributeError，在 Qt 槽里抛就是直接崩。
         self._game_over_timer.stop()
-        for attr in ("loading_screen", "selection_mode", "selection_color",
+        for attr in ("loading_screen", "selection_mode", "selection_rules",
+                     "selection_color",
                      "selection_difficulty", "game_widget", "lan_menu",
                      "lan_join", "review_strength",
                      "review_progress", "review_list", "review_board"):
@@ -3163,7 +3270,8 @@ class GomokuGame(QMainWindow):
                 page.deleteLater()
         # board_widget / game_panel / overlay / lan_wait 是 game_widget 的子控件，
         # 随父一起销毁，不需要（也不能）单独 removeWidget。
-        for attr in ("loading_screen", "selection_mode", "selection_color",
+        for attr in ("loading_screen", "selection_mode", "selection_rules",
+                     "selection_color",
                      "selection_difficulty", "game_widget", "board_widget",
                      "game_panel", "game_over_overlay", "_stack", "_game_row",
                      "lan_menu", "lan_join", "lan_wait",
@@ -3490,12 +3598,46 @@ class GomokuGame(QMainWindow):
         return self.game_widget
 
     def _on_mode_selected(self, mode):
-        """选择了对战模式：0=挑战AI（走原来的颜色/难度两步），1=本地对战，
-        2=局域网联机（开房 / 加入，M4d）。"""
+        """选择了对战模式：0=挑战AI（走颜色/难度两步），1=本地对战，
+        2=局域网联机（开房 / 加入，M4d）。
+
+        三种模式**都要先过规则页**（2026-10-14 用户点名："该选择放在选择对战
+        模式之后"）。规则属于这一局，而"这一局跟谁下"先定了才有"这一局是什么
+        局"—— 反过来把规则放在最前面，局域网加入方还会看到一个自己无权决定
+        的选项（加入方的规则由房主定，见 ``_apply_room_config``）。
+        """
         self.playmode = int(mode)
         if self.playmode == 1:
-            self._start_local_game()
+            self._show_rules_selection("local")
         elif self.playmode == 2:
+            self._show_rules_selection("lan_menu")
+        else:
+            self._show_rules_selection("color")
+
+    def _show_rules_selection(self, next_step):
+        """显示禁手规则选择。
+
+        ``next_step``：选完去 —— 挑战 AI 走颜色页；本地对战直接开局；局域网
+        进创建/加入的岔路口页。
+        """
+        self._rules_next = next_step
+        self._drop_pages()
+        self.selection_rules = SelectionScreen(mode="rules")
+        self.selection_rules.rules_selected.connect(self._on_rules_selected)
+        self._switch_page(self.selection_rules)
+
+    def _on_rules_selected(self, rules):
+        """选择了规则：写进本局并分流。
+
+        值存成 ``self.game_rules``（``"free"`` / ``"ban"``）—— 它是**本局的**
+        规则，开局时发给房间（``RoomConfig.rules``），房间的 Session 才是判的
+        那一方（见 room.py 的文档串）。
+        """
+        self.game_rules = RULE_NAMES[int(rules)]
+        nxt = self._rules_next
+        if nxt == "local":
+            self._start_local_game()
+        elif nxt == "lan_menu":
             self._show_lan_menu()
         else:
             self._show_color_selection()
@@ -3613,6 +3755,10 @@ class GomokuGame(QMainWindow):
         # "刚才那局为什么 AI 又慢又弱"的静态信息 —— 一份日志事后翻出来，用时
         # 一列 0.5 秒和 7 秒的差别只能靠它解释。注意措辞：这一行说的是"能不能
         # 用 C++"，而不是"实际用了谁"（那要等第一次搜索之后才有答案）。
+        # 规则是这一局**判**的口径，与"AI 想多深"完全是两件事，所以单独一行。
+        # 禁手那一行把三条禁手点名写全（三三/四四/长连）：日志是事后唯一说得清
+        # 现场的东西，而"禁手"两个字本身不含这三条的信息量。
+        self.logger.f.write("  规则: %s\n" % _rules_log_text(self.game_rules))
         self.logger.f.write(f"  难度: {engine.difficulty_name(self.gamekunnan)}\n")
         if self.gamekunnan == engine.CUSTOM_LEVEL:
             # 只写"自定义"是不够的 —— 事后翻日志要能回答"这一局到底按什么参数
@@ -3624,19 +3770,22 @@ class GomokuGame(QMainWindow):
                 "增强 %s\n" % (float(c["time"]), int(c["max_depth"]),
                               float(c["vcf_budget"]), int(c["qply"]),
                               "开" if c.get("enhance") else "关"))
-        self.logger.f.write(f"  引擎: {engine.binary_path() or 'C++ 不可用，将用本地 Python 引擎'}\n\n")
+        self.logger.f.write("  引擎: %s\n\n" % (
+            engine.binary_path(self.game_rules)
+            or "C++ 不可用，将用本地 Python 引擎"))
         self.logger.f.flush()
 
         # 配置本局会话（模式 + 石色）与两个席位。这里的 session 是 UI 侧的
         # **镜像**：规则真源在房间的 Session 里，本会话只保存由事件回放出来的
         # 状态，供渲染与复盘读取（字段级兼容垫片也指向它）。
         if self.playmode == 1:
-            self.session.configure("pvp")
+            self.session.configure("pvp", rules=self.game_rules)
             black_spec = SeatSpec("remote")
             white_spec = SeatSpec("remote")
         else:
             human = 1 if self.gamemode == 0 else 2
-            self.session.configure("ai", human_stone=human, ai_stone=3 - human)
+            self.session.configure("ai", human_stone=human, ai_stone=3 - human,
+                                   rules=self.game_rules)
             if self.gamemode == 0:
                 black_spec, white_spec = SeatSpec("remote"), \
                     SeatSpec("ai", level=self.gamekunnan)
@@ -3673,7 +3822,11 @@ class GomokuGame(QMainWindow):
         # 两个席位都是 remote，于是两条 RoomClient 从同一进程接入 —— 恰好也
         # 走一遍"两个客户端坐进一个房间"的联机路径。
         try:
-            room = LocalRoom(black_spec, white_spec)
+            # 规则随 RoomConfig 进房间：判据在房间的 Session 里，UI 侧那份
+            # 只是回放出来的镜像。两个席位共用同一个 ``rules`` —— 这就是
+            # RoomConfig 的文档串里说的"规则属于房间"。
+            room = LocalRoom(black_spec, white_spec,
+                             config=RoomConfig(rules=self.game_rules))
             if self.playmode == 1:
                 specs = [("black", 1), ("white", 2)]
             else:
@@ -3703,12 +3856,19 @@ class GomokuGame(QMainWindow):
         stone = 1 if gamemode == 0 else 2
         seat = "black" if stone == 1 else "white"
         self._prepare_lan_game("局域网联机（房主，执%s）"
-                               % ("黑" if stone == 1 else "白"))
+                               % ("黑" if stone == 1 else "白"),
+                               rules=self.game_rules)
         self.session.human_stone = stone
+        if self.logger:
+            # 房主是规则的决定者，这一刻的值就是权威值。
+            self.logger.f.write("  规则: %s\n"
+                                % _rules_log_text(self.game_rules))
+            self.logger.f.flush()
         try:
             room = LocalRoom(SeatSpec("remote"), SeatSpec("remote"),
                              name=LAN_ROOM_NAME, host="0.0.0.0",
-                             auto_consent=False)
+                             auto_consent=False,
+                             config=RoomConfig(rules=self.game_rules))
             # 同机客户端不能连 0.0.0.0（那是监听地址，不是可连接地址）。
             self._attach_room(room, [(seat, stone)], host="127.0.0.1")
         except Exception as exc:                    # noqa: BLE001
@@ -3745,6 +3905,11 @@ class GomokuGame(QMainWindow):
             self._lan_join_error(_lan_join_error_text(exc))
             return
         if self.logger:
+            # 规则是**房主**定的，这一刻已经从 welcome 的 config 里读回来了
+            # （见 ``_apply_room_config``），所以这一行记的是房里真实生效的口径，
+            # 而不是加入方本地那份（可能还停在上局的默认值）。
+            self.logger.f.write("  规则: %s\n"
+                                % _rules_log_text(self.game_rules))
             self.logger.f.write("  我方执: %s\n"
                                 % ("黑" if self.session.human_stone == 1 else "白"))
             self.logger.f.flush()
@@ -3755,26 +3920,35 @@ class GomokuGame(QMainWindow):
         self._close_room()
         self._open_lan_join(error=text)
 
-    def _prepare_lan_game(self, mode_text):
+    def _prepare_lan_game(self, mode_text, rules=None):
         """LAN 开房 / 加入共用的开局准备。
 
         与单机 ``_start_game`` 的差别只有日志模式行与席位来源：拆旧局、
         开日志、复位 UI 镜像、建棋盘都在这里，事件处理、渲染、悔棋、终局
         全部走同一条 ``_on_room_event`` 路径 —— 不复制第二套对局逻辑。
+
+        ``rules``：房主传自己选的那套；**加入方传 None**，因为他还没见过房间里
+        的口径，真实值要等 welcome 里的 config 回来（``_apply_room_config``）。
+        这里先落一个"无禁手"，免得上一局的禁手标点在等握手的那几十毫秒里
+        还挂在空盘上。
         """
         self._close_room()
+        # 规则先定下来再写日志：下面那行「引擎」问的是**本变体**的可执行文件，
+        # 两份二进制各自独立存在，问错了会在日志里留下一份与本局无关的路径。
+        self.game_rules = rules if rules in RULE_NAMES else "free"
         if self.logger:
             self.logger.close()
         self.logger = GameLogger()
         self.logger.f.write(f"  模式: {mode_text}\n")
         self.logger.f.write("  难度: 无（玩家对战）\n")
-        self.logger.f.write(
-            f"  引擎: {engine.binary_path() or 'C++ 不可用，将用本地 Python 引擎'}\n\n")
+        self.logger.f.write("  引擎: %s\n\n" % (
+            engine.binary_path(self.game_rules)
+            or "C++ 不可用，将用本地 Python 引擎"))
         self.logger.f.flush()
 
         # LAN 双方都是 remote 人类席位；规则真源仍在房间的 Session 里，
         # 这里的 session 只是事件回放出来的 UI 镜像（与人机/本地对战一致）。
-        self.session.configure("pvp")
+        self.session.configure("pvp", rules=self.game_rules)
         self.session.reset()
         self.ai_thinking = False
         self.review_records = []
@@ -3955,6 +4129,19 @@ class GomokuGame(QMainWindow):
         if client is None:
             return                  # 房间没起来：别在假对局上继续操作
 
+        # 禁手点：**先问再下**。房间那边照判不误（落下去就是判负），所以这里
+        # 拦的不是"规则"，而是"误触"—— 棋盘上的叉已经说明了后果，但误点一下
+        # 就等于直接输棋，这个代价太大，值得一次明确的确认。
+        # 默认按钮取 No：回车键不该是"我认输"。
+        if (self.game_rules == "ban"
+                and (r, c) in self.board_widget.forbidden_cells):
+            ok = QMessageBox.question(
+                self, i18n.t("禁手点"),
+                i18n.t("这一点是禁手点，落子即判负。确定要下在这里吗？"),
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if ok != QMessageBox.Yes:
+                return
+
         # 先置在途标记再发送：回显到达前连点会被开头那个检查拦住，不会把
         # 同一手重复提交给房间。
         self._move_in_flight = True
@@ -4050,6 +4237,7 @@ class GomokuGame(QMainWindow):
                 self.session.gamerule = 2
 
         self.board_widget.set_board(self.board)
+        self._sync_forbidden()
         self._move_in_flight = False
         self._update_panel()
 
@@ -4069,6 +4257,7 @@ class GomokuGame(QMainWindow):
         self._move_in_flight = False
 
         self.board_widget.set_board(self.board)
+        self._sync_forbidden()
         self.board_widget.set_last_move(r, c, stone)
 
         if self.playmode in (1, 2) or stone == self.session.human_stone:
@@ -4137,6 +4326,10 @@ class GomokuGame(QMainWindow):
             return
         self._room_finished = True
         winner = int(ev.get("winner", 0))
+        # 房间把"五连"与"禁手负"分开报（见 room.py 里 reason 那一段）。两者的
+        # 赢家都是对手，客户端不分开就会把黑方的长连负写成"对方五连获胜"——
+        # 而那恰好是用户开了禁手才想看到的区别。
+        self._game_reason = str(ev.get("reason", ""))
         self.session.winner = winner
         self.session.game_over = True
         if winner == 0:
@@ -4151,10 +4344,20 @@ class GomokuGame(QMainWindow):
         else:
             self.session.gamerule = 2
 
+        # 终局收掉禁手标点：胜负已定，红叉不再有任何可操作性，留着只会和
+        # 连五那条红线抢注意力。
+        self._sync_forbidden()
+
         if winner:
             # 连五高亮 + 延迟遮罩（面板立刻停表，见 _finish_win_or_lose）。
-            cells = win_line(self.board, winner)
-            self.board_widget.set_win_cells(cells, winner)
+            #
+            # 禁手负时高亮的对象换成**输的那一方**：赢家（对面）根本没连五，
+            # 拿 ``winner`` 去取会得到一张空表 —— 屏幕上什么都不标，而用户最
+            # 需要看到的恰恰是"黑方这一串六颗子就是那一手输掉的地方"。
+            # 三三 / 四四 这类没有一条线可标的禁手，两个口径都返回空表，不必特判。
+            line_owner = (3 - winner) if self._game_reason == "forbidden" else winner
+            cells = win_line(self.board, line_owner)
+            self.board_widget.set_win_cells(cells, line_owner)
             self._finish_win_or_lose()
         else:
             # 平局没有连五可看，不套 GAME_OVER_DELAY_MS（与旧行为一致）。
@@ -4219,6 +4422,13 @@ class GomokuGame(QMainWindow):
         """
         if self.game_panel is None:
             return
+        # 规则以**房间下发的**为准：加入方自己那页选到的值不算数（他根本没选
+        # 过这一项 —— 规则属于房间，房主定）。UI 镜像的 session 也一并校准，
+        # 免得"画标点用的是 ban、镜像里写着 free"这种两处不一。
+        rules = (self._room_config or {}).get("rules")
+        if rules in RULE_NAMES:
+            self.game_rules = rules
+            self.session.rules = rules
         self.game_panel.undo_btn.setEnabled(
             self._cfg("allow_undo") and not self.ai_thinking)
         self.game_panel.restart_btn.setEnabled(self._cfg("allow_restart"))
@@ -4226,6 +4436,32 @@ class GomokuGame(QMainWindow):
         if limit is not None:
             # 面板显示的剩余次数与房间同源（房间在 _run 里把额度设为 config）。
             self.session.output = int(limit)
+
+    def _sync_forbidden(self):
+        """刷新棋盘上的禁手标点。**每手之后调一次。**
+
+        三条口径，都是刻意的：
+
+        * **只在禁手局画。** 无禁手局 ``forbidden_cells`` 恒空，整条绘制路径
+          不存在（``BoardWidget`` 那一段有守卫）。
+        * **只在轮到黑方时画。** 叉的意思是"**轮到的一方**不能下这里" ——
+          白方的回合画上去，白方会以为这些点是自己的禁区，而它们恰恰是白方
+          随便下、黑方碰不得的点。反过来说错了。
+        * **终局不画。** 胜负已定，禁手点不再有任何可操作性。
+
+        禁手点本身不在这里判定：``engine_ban`` 与对局层用的是同一份
+        ``ban_rules``，这里只是把"黑方现在不能下哪些点"问一遍。
+        """
+        if self.board_widget is None:
+            return
+        cells = []
+        if (self.game_rules == "ban" and not self.session.game_over
+                and self.move_count % 2 == 0):
+            # 延迟导入：与 ``engine._local_engine`` / ``players._local_module``
+            # 同一条理由 —— 不下禁手棋的人不该为它付一次模块加载。
+            import engine_ban
+            cells = engine_ban.forbidden_points(self.session.board)
+        self.board_widget.set_forbidden(cells)
 
     def _record_score(self, info=None):
         """把一个分值挂进面板的两张图。**三个 `move_history.append` 各调一次。**
@@ -4329,6 +4565,7 @@ class GomokuGame(QMainWindow):
         self._move_in_flight = False
         self._pending_snapshot = None
         self._room_finished = False
+        self._game_reason = ""
         self._last_undo = None
         self._room_config = None
 
@@ -4556,7 +4793,7 @@ class GomokuGame(QMainWindow):
         human = 1 if self.gamemode == 0 else 2
         self.game_panel.update_info(turn, self.gamekunnan, status,
                                     self.output, self.move_count, human=human,
-                                    local=local or lan)
+                                    local=local or lan, rules=self.game_rules)
 
         # 悬停幽灵子只在**轮到你**时出现，且用你的颜色：AI 思考中还给预览、
         # 或玩家执白却预览黑子，都是在骗人。本地对战与 LAN 两边都是人，
@@ -4639,6 +4876,17 @@ class GomokuGame(QMainWindow):
             text = "平局！"
             is_win = False
             winner_str = "draw"
+
+        if self._game_reason == "forbidden" and self.winner:
+            # 禁手负：赢家仍是对手，但**为什么输**必须说出来。理由有二：
+            # 棋盘上只有一条划过（长连是六颗子的）红线，看着与"对面连了五个"
+            # 一模一样；而"自己下了一手好棋却输了"是禁手规则最反直觉的地方，
+            # 不解释就等于让用户以为程序判错了。
+            #
+            # 只加一个后缀、不重写整句：后缀接在既有的四种胜负文案后面都读得通
+            # （会输只可能是因为**落子方**禁手），而重写四种说法就是四倍的
+            # 翻译量，还得为每种语言维护四句。
+            text += i18n.t("（禁手判负）")
 
         # 记录对局结果到日志
         if record and self.logger:

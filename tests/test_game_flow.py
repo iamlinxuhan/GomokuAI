@@ -165,15 +165,19 @@ def _build(monkeypatch, qapp, *, mode=0, color=0, level=1, ai=None):
     queue 是同一个列表：用例可以用 ``not queue`` 判断 AI 是否已把着法
     全部走完（例如"悔棋导致 AI 重下"这类局面相同、只能靠调用次数区分的
     断言）。
+
+    **中间那一页规则**（2026-10-14 加）：三种模式选完都先过规则页，所以这里
+    也要补上 ``_on_rules_selected(0)``。不补的话后面这些点击发生在**规则页**
+    上 —— `_on_board_click` 那些路径一个都不会跑到，而用例会因为等超时变红，
+    症状看起来像"落子没反应"。
     """
     monkeypatch.setattr(M, "GameLogger", _DummyLogger)
     queue = _scripted_ai(monkeypatch, ai) if ai is not None else None
     win = M.GomokuGame()
     win.show()
-    if mode == 1:
-        win._on_mode_selected(1)
-    else:
-        win._on_mode_selected(0)
+    win._on_mode_selected(1 if mode == 1 else 0)
+    win._on_rules_selected(0)
+    if mode != 1:
         win._on_color_selected(color)
         win._on_difficulty_selected(level)
     if ai is not None and color == 1 and mode == 0:
@@ -458,6 +462,8 @@ def test_lan_mode_opens_menu_and_join_screen(monkeypatch, qapp):
     try:
         win._on_mode_selected(2)
         qapp.processEvents()
+        win._on_rules_selected(0)     # 规则页：局域网也先选规则
+        qapp.processEvents()
         assert win.playmode == 2
         assert win.lan_menu is not None
         assert win.central.currentWidget() is win.lan_menu
@@ -496,6 +502,8 @@ def test_lan_join_room_full_shows_error(monkeypatch, qapp):
     try:
         win._on_mode_selected(2)
         qapp.processEvents()
+        win._on_rules_selected(0)     # 规则页：局域网也先选规则
+        qapp.processEvents()
         win._on_lan_join_requested("127.0.0.1", str(local.port))
         qapp.processEvents()
         assert win.lan_join is not None
@@ -516,6 +524,8 @@ def test_lan_host_waits_then_guest_joins_and_plays(monkeypatch, qapp):
     guest = RoomClient()
     try:
         win._on_mode_selected(2)
+        qapp.processEvents()
+        win._on_rules_selected(0)     # 规则页：局域网也先选规则
         qapp.processEvents()
         win._on_lan_create()
         qapp.processEvents()
@@ -634,6 +644,8 @@ def test_lan_join_auto_assigns_remaining_color(monkeypatch, qapp):
     win.show()
     try:
         win._on_mode_selected(2)
+        qapp.processEvents()
+        win._on_rules_selected(0)     # 规则页：局域网也先选规则
         qapp.processEvents()
         win._on_lan_join_requested("127.0.0.1", str(local.port))
         qapp.processEvents()

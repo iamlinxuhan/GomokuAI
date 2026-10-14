@@ -98,6 +98,14 @@ def play_one(app, level, wait_s):
     w = M.GomokuGame()
     w.show()
     pump(app, 100)
+    # 走真实点击路径：模式 → 规则 → 颜色 → 难度。规则页（2026-10-14 加）夹在
+    # 模式与颜色之间，这里选无禁手 —— 本工具量的是五档棋力与开局库命中，
+    # 禁手改的是判负条件，混进来会让这张表失去可比性（禁手局的胜负另由
+    # tests/test_ban_* 覆盖）。
+    w._on_mode_selected(0)           # 0 = 挑战 AI
+    pump(app, 100)
+    w._on_rules_selected(0)          # 0 = 无禁手
+    pump(app, 100)
     w._on_color_selected(0)          # 0 = 玩家执黑先行
     pump(app, 60)
     w._on_difficulty_selected(level)

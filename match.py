@@ -37,7 +37,7 @@ class Match:
     """
 
     def __init__(self, black, white, *, start_moves=(), cancel=None,
-                 max_moves: int = BOARD_SIZE * BOARD_SIZE):
+                 max_moves: int = BOARD_SIZE * BOARD_SIZE, rules: str = "free"):
         self.black = black
         self.white = white
         self.cancel = cancel
@@ -45,7 +45,11 @@ class Match:
         self.session = Session()
         # 无人类席位：不记复盘快照、赢了也不区分"你/对方"——但 winner 仍然
         # 给出子色。模式语义只在 UI 层有差别，规则层公用。
-        self.session.configure("pvp")
+        #
+        # ``rules`` 只定**判**的口径。两位玩家按什么规则**算**，由各自的
+        # ``PlayerSpec.variant`` 决定 —— 基准要能跑"禁手引擎 vs 无禁手引擎"
+        # 这类不对称对局，所以这两件事不能合成一个参数。
+        self.session.configure("pvp", rules=rules)
         self.session.reset()
         for r, c, stone in start_moves:
             if self.session.apply_stone(r, c, int(stone)) is None:
