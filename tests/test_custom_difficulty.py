@@ -42,10 +42,10 @@ CUSTOM_KEYS = ("time", "max_depth", "vcf_budget", "qply", "enhance")
 # --------------------------------------------------------------- 哨兵档位本身
 
 def test_custom_level_is_not_in_difficulty_table():
-    """``DIFFICULTY`` 保持五档，且不含哨兵号。"""
+    """``DIFFICULTY`` 只装预设档，且不含哨兵号。"""
     assert engine.CUSTOM_LEVEL not in engine.DIFFICULTY
-    assert sorted(engine.DIFFICULTY) == [1, 2, 3, 4, 5]
-    assert max(engine.DIFFICULTY) == 5
+    assert sorted(engine.DIFFICULTY) == [1, 2, 3, 4, 5, 6]
+    assert max(engine.DIFFICULTY) == 6
 
 
 def test_difficulty_name_for_custom_level():

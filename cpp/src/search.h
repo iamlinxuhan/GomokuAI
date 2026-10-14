@@ -67,6 +67,18 @@ struct SearchConfig {
     double biasDefence = 0.0;
     double biasTolerance = 0.0;
 
+    // 留给回传与 UI 的余量，单位**秒**。0 = 沿用 `RESERVE` 比例（历史行为）。
+    //
+    // 只有「Gomocup」档（300 秒）下发它。那条路线要的是**固定 20 秒**：同一个
+    // 比例套在 300 秒上要留 45 秒，而 300 秒的盘外开销并不随预算增长 —— 回传
+    // 一个 JSON、UI 落一手棋，都是毫秒级。余量按比例给在大预算上纯属浪费。
+    //
+    // **默认 0.0 是这套设计的核心**，与下面 `enhanced` 那一段同一个道理：
+    // 0 时预算算法逐位等于 `timeLimit * (1 - RESERVE)`，低档与 Python 参考
+    // 引擎的逐字一致（`tools/positions.py`）因此一字不动。唯一消费者是
+    // `search.cpp` 的 `searchBudget()`，两个时间消费点都走它。
+    double reserveSec = 0.0;
+
     // ---- 增强搜索（只有高级/宗师两档下发 1） ----
     //
     // **默认全 0 是这套设计的核心。** `enhanced == 0` 时下面的每一条代码路径

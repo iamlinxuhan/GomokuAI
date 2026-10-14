@@ -379,16 +379,16 @@ def main():
                        type(w.central.currentWidget()).__name__))
 
         # ---- 5d. 自定义难度弹窗 ----
-        # 六张卡的那一页 + 配置弹窗各一张：前者的第 6 张卡是本轮新增的可见
-        # 元素，后者是它打开的东西。
+        # 七张卡的那一页 + 配置弹窗各一张。这一页本轮从 6 张变 7 张（多了
+        # 「Gomocup」），顺带从一行挤满改成 4+3 折行 —— 截图看的就是这个。
         print("[5d/6] 自定义难度")
         w.selection_difficulty = M.SelectionScreen(mode="difficulty")
         w.central.addWidget(w.selection_difficulty)
         w.central.setCurrentWidget(w.selection_difficulty)
         pump(app, 200)
         save(w.grab(), args.out, "10_difficulty.png")
-        probes.append(("难度页有六张卡",
-                       len(w.selection_difficulty._cards) == 6,
+        probes.append(("难度页有七张卡",
+                       len(w.selection_difficulty._cards) == 7,
                        f"{len(w.selection_difficulty._cards)} 张"))
         w.selection_difficulty._cards[-1].click()
         pump(app, 200)

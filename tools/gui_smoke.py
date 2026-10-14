@@ -754,7 +754,7 @@ def do_review(app):
     区别只是谁先发现输了。
     """
     # ---- 强度下限：只列不低于本局难度的档位 ----
-    for min_level, want in ((1, 5), (3, 3), (5, 1)):
+    for min_level, want in ((1, 6), (3, 4), (5, 2)):
         s = M.SelectionScreen(mode="review", min_level=min_level)
         got = _card_texts(s)
         check(len(got) == want and len(s._cards) == want,

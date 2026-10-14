@@ -19,6 +19,22 @@ inline double nowSec() {
     return std::chrono::duration<double>(clock::now().time_since_epoch()).count();
 }
 
+//: 一次搜索实际可用的秒数：`timeLimit` 扣掉留给回传与 UI 的余量。
+//:
+//: **必须只有这一个算式。** 它有**两个**消费点 —— 硬截止 `deadline_`，以及软
+//: 时间管理里"这一轮还剩多少预算"那笔账。两处各自写一遍的话，改余量口径时
+//: 只改一处就会让它们分叉：软停以为还有 45 秒余量、硬截止只剩 20 秒，于是它
+//: 开一轮注定跑不完的迭代，白白吃掉一次迭代加深。
+//:
+//: 余量两种给法：`cfg.reserveSec > 0` 时是**绝对秒数**（「Gomocup」档的 20 秒），
+//: 否则是 `RESERVE` 比例（历史行为，低档与 `engine_local` 的逐字一致依赖它）。
+inline double searchBudget(const SearchConfig& cfg) {
+    const double keep = cfg.reserveSec > 0.0
+                            ? cfg.reserveSec
+                            : cfg.timeLimit * RESERVE;
+    return std::max(0.01, cfg.timeLimit - keep);
+}
+
 //: 置换表条目类型。**抽成纯函数是为了能单测**（B2 回归）。
 //:
 //: 边界是这条函数的全部难点：`value == alpha_orig` 必须判为 UPPER 而不是
@@ -869,7 +885,7 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
         decayHistory();
 
         const double t0 = nowSec();
-        deadline_ = t0 + cfg.timeLimit * (1.0 - RESERVE);
+        deadline_ = t0 + searchBudget(cfg);
 
         Board bd = Board::fromArray(board);
 
@@ -1008,7 +1024,7 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
                 // 早退还要过第二道闸：**预算得先花掉相当一部分**。理由与实测
                 // 数字见 `constants.h` 的 `TIME_SOFT_MIN_USED` —— 单独用上面那
                 // 条判据时，短预算下会在只花掉 26% 时就收工，比基线还浅一层。
-                const double budget = cfg.timeLimit * (1.0 - RESERVE);
+                const double budget = searchBudget(cfg);
                 const double used = budget - remaining;
                 if (used >= budget * TIME_SOFT_MIN_USED &&
                     predicted > remaining * TIME_SOFT_MUL) {

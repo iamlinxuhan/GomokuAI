@@ -256,6 +256,11 @@ SearchConfig readConfig(const json::Value& req) {
     cfg.vcfNodeCap = clampI(static_cast<int64_t>(num("vcf_node_cap",
                                                      double(VCF_NODE_CAP))),
                             1000, int64_t(1) << 40);
+    // 绝对秒数的余量。**默认 0.0 = 沿用 RESERVE 比例**，所以不发这个键的
+    // 老客户端（以及全部历史档位）拿到的行为一个 bit 都没变。上限给到
+    // `time_limit` 的同一量级就够：它只是个余量，配得比预算还大没有意义，
+    // 而 `searchBudget()` 里有 `max(0.01, …)` 兜住极端组合。
+    cfg.reserveSec = clampD(num("reserve_sec", 0.0), 0.0, 3600.0);
     cfg.biasAttack = clampD(num("bias_attack", 0.0), -10.0, 10.0);
     cfg.biasDefence = clampD(num("bias_defence", 0.0), -10.0, 10.0);
     cfg.biasTolerance = clampD(num("bias_tolerance", 0.0), 0.0, 1e9);

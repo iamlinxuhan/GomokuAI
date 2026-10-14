@@ -42,7 +42,7 @@ reference for A/B comparisons.
 | **Negamax + PVS** | Principal Variation Search, fast pruning on zero-window searches |
 | **Transposition table** | Fixed-size array with age-based replacement; mate scores are stored normalised (store `value+ply`, read back `value-ply`). Levels 4/5 use a **2-way bucket** (48 MiB resident) |
 | **Quiescence search** | At leaf nodes, only forced moves are searched, removing misjudgements caused by the evaluation being cut off at the horizon |
-| **VCF (continuous forced fours)** | Searches specifically for forced sequences where "every move is a four"; **three-state return** (win / no win / could not finish), with AND semantics on the defending side. **Enabled on all five levels** — the lower levels are separated by their depth cap, not by making them blind |
+| **VCF (continuous forced fours)** | Searches specifically for forced sequences where "every move is a four"; **three-state return** (win / no win / could not finish), with AND semantics on the defending side. **Enabled on all six levels** — the lower levels are separated by their depth cap, not by making them blind |
 | **Move ordering** | History heuristic + killer moves + winning-point priority |
 | **Time control** | Hard time limit + iterative deepening + aspiration windows + cooperative cancellation (restarting mid-think interrupts immediately) |
 | **Opening book** | The strongest configuration's best moves for the first four opening moves, precomputed offline into a table (41 entries, covering positions with ≤3 stones on the board). A hit returns with zero delay; anything off-table falls back to search. The empty board still plays tengen, bypassing the table |
@@ -388,7 +388,7 @@ nps down.
 
 ## 🎛️ Difficulty
 
-The five presets are exactly `DIFFICULTY` in `engine.py`; the sixth level,
+The six presets are exactly `DIFFICULTY` in `engine.py`; the seventh level,
 **Custom**, has no fixed numbers — it is configured in the dialog opened from the
 difficulty screen. Units and values can be compared directly:
 
@@ -399,14 +399,26 @@ difficulty screen. Units and values can be compared directly:
 | **中级 (Intermediate)** | 7 s | 10 | 8 | 0.5 s | — | — |
 | **高级 (Advanced)** | 15 s | 24 | 10 | 1.5 s | ✅ | — |
 | **宗师 (Grandmaster)** | 20 s | 24 | 12 | 3.0 s | ✅ | — |
+| **Gomocup** | 300 s | 40 | 16 | 30 s | ✅ | — |
 | **Custom** | 10–60 s | 2–40 | 2–24 | Off/Low/Mid/High/Max | On/Off | — |
 
 - **"Depth cap" is a cap, not a promise.** The depth actually reached is decided
   by iterative deepening within the time limit — the first few opening moves
   come back immediately (the evaluation finds nothing worth searching), and only
   the midgame runs out the clock.
+- **The "Gomocup" level reserves a fixed 20 s; every other level reserves 15% of
+  the limit.** A proportional reserve would hold back 45 s of the 300, and this
+  level is aligned with the **300 s per move** cap of the Gomocup finals, so the
+  reserve has to be an absolute number. Both places that spend the budget (the
+  hard deadline and the soft time manager) go through the same `searchBudget()`,
+  so they cannot disagree.
+- **"Gomocup" does not take effect without the C++ engine.** It falls back to the
+  local Python engine, whose top level is 15 s: review clamps the limit to 15 s
+  (otherwise a game of a few dozen moves becomes 255 s of pure-Python search per
+  move), and a live game is clamped by the local engine itself. The difficulty row
+  shows a warning.
 - **VCF time counts inside that limit**, not as extra overhead.
-- **All five levels have VCF on.** The Novice level once had it off, and that was
+- **All six levels have VCF on.** The Novice level once had it off, and that was
   a mistake: with it off, Novice could neither work out its own chains of fours
   nor see the opponent's — that is not "a lower difficulty", that is
   **blindness**. In a real lost game, the human won with an 11-move VCF chain,
@@ -432,7 +444,7 @@ difficulty screen. Units and values can be compared directly:
   four that the opponent casually blocks" is not progress. **"More aggressive"
   and "weaker" have to be measured separately before they can be discussed — and
   here they measured out to be the same thing.**
-- **The sixth level, Custom**, lets you set all five parameters yourself: time /
+- **The seventh level, Custom**, lets you set all five parameters yourself: time /
   depth cap / quiescence plies are sliders, VCF budget and enhanced search are
   switches. **When the machine falls back to the local Python engine, custom
   parameters mostly do not take effect**: the fallback path does not forward the
@@ -462,11 +474,11 @@ these two levels is 15 s vs 20 s and a `vcf_budget` of 1.5 s vs 3.0 s, which
 shows up only in wide midgames. This table reads "how quickly these 5 positions
 resolve", not "the engine is always this fast".
 
-**All five levels share one opening book.** That is a deliberate trade-off:
+**All six levels share one opening book.** That is a deliberate trade-off:
 Entry and Novice now also play strong opening moves, so **the gradient across
 the first few opening moves is narrow**, in exchange for "no level's opening is
 the first move that a raw search happened to produce". There is also an
-independent reason Advanced/Grandmaster carry no attack bias: the book was built
+independent reason Advanced/Grandmaster/Gomocup carry no attack bias: the book was built
 with an unbiased Grandmaster, and giving them a bias would make the moves stored
 in it disagree with the move a fresh search would produce.
 

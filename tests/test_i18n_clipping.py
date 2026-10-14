@@ -30,7 +30,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PyQt5.QtCore import QRect, Qt
+from PyQt5.QtCore import QPoint, QRect, Qt
 from PyQt5.QtGui import QFontMetrics
 from PyQt5.QtWidgets import QAbstractButton, QApplication, QLabel, QWidget
 
@@ -173,7 +173,6 @@ def test_russian_difficulty_cards_wrap_to_two_rows(qapp):
 
     这里钉住"折行发生了"：单行 6×192 放不进 974 的可用宽度，至少有两行。
     """
-    from PyQt5.QtCore import QPoint
     i18n.set_language("ru")
     page = M.SelectionScreen(mode="difficulty")
     try:
@@ -199,17 +198,31 @@ def test_russian_difficulty_cards_wrap_to_two_rows(qapp):
 
 
 def test_chinese_cards_keep_the_classic_geometry(qapp):
-    """中文卡片尺寸/排布与改动前一致：难度卡一行 6 张、边长 149。
+    """中文卡片排布满尺寸、不靠压小来塞进一行。
 
-    "长语言修好了，中文却变胖/变高"是这次最该防的回归。
+    "长语言修好了，中文却变胖/变高"是这次最该防的回归。而**"塞进一行"不算
+    修好**：难度页加了「Gomocup」之后 7 张按 ``CARD_PX`` 一行要 1216px，那时
+    只剩"压到 125px"这一条路，压出来的卡片不再是正方形、副标题还要折行。
+    所以这里钉的是两头：卡片必须是原尺寸 ``CARD_PX``，而且折行而不是压小。
+
+    颜色页/模式页/规则页只有两三张，一行放得下原尺寸，仍是一行 —— 这条断言
+    只管难度页。
     """
     i18n.set_language("zh-CN")
     page = M.SelectionScreen(mode="difficulty")
     try:
         _show(page, qapp, M._design_size())
         sizes = {(c.width(), c.height()) for c in page._cards}
-        assert len({c.y() for c in page._cards}) == 1, "中文卡片不该折行"
-        assert sizes == {(149, 149)}, "中文难度卡尺寸变了：%s" % (sizes,)
+        assert sizes == {(theme.CARD_PX, theme.CARD_PX)}, \
+            "中文难度卡尺寸变了：%s" % (sizes,)
+        # 行号要 `mapTo` 到页面才量得到：卡片挂在每一行自己的容器里，
+        # `c.y()` 永远是 0（这条断言最初写成 `c.y()`，于是"只有一行"是白测的）。
+        ys = {c.mapTo(page, QPoint(0, 0)).y() for c in page._cards}
+        assert len(ys) == 2, "7 张卡应折成两行，实得 %d 行" % len(ys)
+        rows = [[c for c in page._cards
+                 if c.mapTo(page, QPoint(0, 0)).y() == y] for y in sorted(ys)]
+        assert sorted(len(r) for r in rows) == [3, 4], \
+            "折行分布不对：%s" % ([len(r) for r in rows],)
     finally:
         page.deleteLater()
         _pump(qapp, 5)

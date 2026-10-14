@@ -97,7 +97,7 @@ __all__ = [
     "LINE_SCORES", "LV_FOUR", "LV_FOUR_LIVE", "LV_ONE", "LV_THREE_LIVE",
     "LV_THREE_SLEEP", "LV_TWO_LIVE", "LV_TWO_SLEEP", "STATIC_MAX",
     "engine_label", "current_port", "note_book", "binary_path",
-    "DIFFICULTY", "DIFFICULTY_NAMES",
+    "DIFFICULTY", "DIFFICULTY_NAMES", "GOMOCUP_LEVEL",
     "difficulty_name",
     "CUSTOM_LEVEL", "custom_config", "custom_defaults",
     "set_custom_config", "reset_custom_config",
@@ -106,13 +106,13 @@ __all__ = [
 
 
 # ---------------------------------------------------------------------------
-# 2. 五档难度
+# 2. 六档难度
 # ---------------------------------------------------------------------------
 #
 # 重构前是三档（3/7/15 秒，深度上限 4/10/24）。C++ 把算力提了一个量级之后，
 # 那三档会在同样的深度上**趋同** —— 用户看到的是"中级和高级走出一样的棋，但
 # 高级要多等 8 秒"。所以这里刻意用「时间 + 深度上限 + VCF 预算」三者共同把
-# 梯度压开，并扩到五档。
+# 梯度压开，并扩到五档；后来又加了第 6 档「Gomocup」（详见那一档的注释）。
 #
 # **权威在 Python**：每次请求把这组参数随报文下发，C++ 侧不写死难度表。好处是
 # 校准参数不必重编译，而且"难度"这个概念留在 UI 层 —— 与"PvP 时 AI 只是其中
@@ -194,10 +194,50 @@ DIFFICULTY = {
     # `enhance=True`（见 `cpp/src/search.cpp` 的 LMR 段与延伸段）。
     5: dict(name="宗师", time=20.0, max_depth=24, vcf_budget=3.0, qply=12,
             enhance=True, bias=None),
+    # Gomocup：**长考档**，为 2027 年参加 Gomocup 做铺垫，同时也是项目本身的一次
+    # 算力压榨。单手上限取该赛事的决赛圈口径（300 秒一手 / 1000 秒一局）。
+    #
+    # 这一档与前面五档有一个结构性差别：**它是唯一一个缓冲按绝对秒数给的档**。
+    # 前五档的余量是比例（`cpp/src/constants.h` 的 `RESERVE = 0.15`），20 秒下
+    # 留 3 秒；同样的比例套到 300 秒上要留 45 秒，而 300 秒的盘外开销并不随
+    # 预算增长（回传一个 JSON、UI 落一手棋，都是毫秒级）。所以这里给
+    # `reserve_sec=20.0`，报文里多一个 `reserve_sec` 键，C++ 侧就按绝对秒数扣。
+    # `reserve_sec` **只在这一档出现**：其余五档不下发这个键，报文逐字节与从前
+    # 相同，`tools/positions.py` 上"低档与 Python 参考引擎逐字同着"那条护栏
+    # 因此不受影响。
+    #
+    # `max_depth=40` 是这一档**最要紧的一个数**。宗师的上限 24 是从旧三档继承来
+    # 的，20 秒下从来没有撞到过；但 300 秒是 20 秒的 15 倍，迭代加深的循环上界
+    # （`cpp/src/search.cpp` 里 `for depth = 1..cfg.maxDepth`）就成了唯一可能
+    # 白扔预算的地方。40 留了安全余量：`extend` 的强制着法延伸会让实际 ply 超过
+    # 循环深度，而杀手着法表是按 `MAX_PLY + 2` 开的下标（`MAX_PLY = 64`）。
+    #
+    # `vcf_budget` 3.0 → 30.0、`qply` 12 → 16：VCF 是主搜索**之前**的独立快通道，
+    # 300 秒里给它 3 秒等于没给。
+    #
+    # ⚠️ **这一档的棋力提升幅度要实测，不许假设。** 宗师那一段注释里已经量过：
+    # 这台引擎对时间的响应是"每翻一倍约多 1 层"，而且"15 s→20 s 在宽局面上
+    # 0 层"。300 秒是 20 秒的 15 倍，按那个斜率乐观估计也只多 3—4 层。**如果实测
+    # 下来深度在预算远未用尽时就停住，问题在算法不在时钟** —— 那时要动的是
+    # 着法排序与剪枝，不是把这一档的数字再堆高。
+    6: dict(name="Gomocup", time=300.0, max_depth=40, vcf_budget=30.0,
+            qply=16, enhance=True, bias=None, reserve_sec=20.0),
 }
 
 #: 档位 → 中文名。UI 的难度卡与面板读数都用它，避免"3 级"这种脱离语境的编号。
 DIFFICULTY_NAMES = {k: v["name"] for k, v in DIFFICULTY.items()}
+
+#: 「Gomocup」档的档位号 —— 出厂预设里最强的那一档。
+#:
+#: 它比其余五档多两样东西，界面与测试都**按号认它**，不按名字比字符串：
+#: 一个绝对秒数的余量 ``reserve_sec``（见那一档的注释），以及难度卡上一条
+#: 说明"这一档是什么"的副标题（``main.py``）。
+#:
+#: 写死 6 而不用 ``max(DIFFICULTY)``：这个号与「最强」不是同一件事 —— 以后
+#: 再加一档更长的，Gomocup 仍然是 6。真加了档要回头想的就是"界面还认不认得出
+#: 它"，而按号认的写法会让那一刻**看得见**（这条断言先炸）。
+GOMOCUP_LEVEL = 6
+assert GOMOCUP_LEVEL in DIFFICULTY, "GOMOCUP_LEVEL 必须指向表里真实存在的一档"
 
 #: 本地兜底引擎的最强档（``engine_local.DIFFICULTY`` 保持三档不变 ——
 #: ``tests/test_vcf.py`` 会在运行期改 ``DIFFICULTY[3]['vcf_budget']`` 并期望生效，
@@ -211,6 +251,16 @@ DIFFICULTY_NAMES = {k: v["name"] for k, v in DIFFICULTY.items()}
 _LOCAL_MAX_LEVEL = max(_local.DIFFICULTY)
 assert set(_local.DIFFICULTY) == set(range(1, _LOCAL_MAX_LEVEL + 1)), \
     "engine_local.DIFFICULTY 的档位编号必须连续：%r" % (sorted(_local.DIFFICULTY),)
+
+
+def _local_max_time(mod) -> float:
+    """本地引擎模块最高档的时限（秒）—— 本地真正会去吃的那个上限。
+
+    用作"回退时最多给它多少时间"的天花板（见 ``analyze`` 的降级分支）。取**表里
+    的值**而不是写死一个数：本地引擎加档时这里跟着走，不会留下一个没人记得的
+    魔数。``mod`` 而不是模块级常量，是因为无禁手与禁手是**两份**本地引擎。
+    """
+    return max(mod.DIFFICULTY[k]["time"] for k in mod.DIFFICULTY)
 
 #: 只用于注释里说明"余量由谁扣"。**不要再拿它去乘下发的参数。**
 #:
@@ -231,31 +281,40 @@ _RESERVE = _local.RESERVE  # 仅作文档锚点，见上
 
 
 # ---------------------------------------------------------------------------
-# 2b. 自定义难度（第 6 张卡）
+# 2b. 自定义难度（难度页的最后一张卡）
 # ---------------------------------------------------------------------------
 #
 # 用户在难度页上多了一个「自定义」：时限 / 深度上限 / VCF 预算 / 静止搜索层数 /
-# 增强搜索，五项自己调。它**不是** ``DIFFICULTY`` 里的第 6 档，而是一个哨兵档位号
+# 增强搜索，五项自己调。它**不是** ``DIFFICULTY`` 里的一档，而是一个哨兵档位号
 # 加一份可注入的配置。
 #
-# 为什么不干脆往 ``DIFFICULTY`` 里加 ``6:``：那张表被一堆地方当作"**出厂的五档**"
+# 为什么不干脆往 ``DIFFICULTY`` 里加一档：那张表被一堆地方当作"**出厂的预设档**"
 # 来读 —— ``sorted(DIFFICULTY)``（难度页与复盘页的卡片循环）、
 # ``max(DIFFICULTY)``（非法档位的回退目标）、``tools/bench.py`` 与
 # ``tools/ui_e2e.py`` 的档位遍历。塞进去会连带惊动它们，其中最硬的两处是
-# ``main.py`` 里 ``assert len(tones) == len(levels)`` 与难度卡配色表。更要紧的是
-# **用户可见**的一处：复盘强度页按「不低于本局难度」过滤，而 6 是最大值 ——
-# 于是**每一局**打完的复盘页都会多出一张「自定义」卡，而不只是自定义局。
+# ``main.py`` 里 ``assert len(tones) == len(levels)`` 与难度卡配色表。
 #
-# 哨兵方案让上面这些一个字都不用改：``DIFFICULTY`` 仍是「五档」，
+# 但真正决定性的理由是**它与预设档不是一类东西**：预设档是「一个固定强度」，
+# 用户点一下就开局；「自定义」是一份**要现填参数**的配置。在复盘强度页上，
+# 每一张卡的含义是"用这一档重算这盘棋" —— 在那里摆一张「自定义」等于让用户
+# 只想换个强度、却先面对一个要填五个参数的弹窗。所以它只出现在难度页。
+#
+# 哨兵方案让上面这些一个字都不用改：``DIFFICULTY`` 只装预设档，
 # 「自定义」只出现在难度页；自定义局的复盘**直接跳过强度页**用本局快照跑。
+#
+# **编号曾经是 6，加了「Gomocup」之后挪到 7。** 挪动它要小心的是"有没有东西把
+# 这个数字存下去了"：答案是没有 —— 落盘的只有自定义那份配置的 JSON
+# （``main.py`` 的 ``_SETTINGS_CUSTOM_KEY``），键里不含档位号；`gamekunnan`
+# 只在内存里活一局。卡的编号标签（"06"/"07"）是从这里现算的。
 #
 # **两份引擎的支持面不同，界面必须如实说。** ``time`` / ``max_depth`` /
 # ``vcf_budget`` / ``qply`` 两项引擎都读；``enhance``（LMR + 强制着法延伸）
 # **只有 C++ 有** —— ``engine_local`` 里根本没有这条路。而且降级到本地时
 # ``ai_move`` 的回退分支压根不转发 cfg，本地按自己的档位表跑最强档，
 # 所以**自定义参数在回退时几乎全部不生效**（唯一的例外是复盘：
-# ``analyze`` 的回退分支显式传了 ``time_limit``）。
-CUSTOM_LEVEL = 6
+# ``analyze`` 的回退分支显式传了 ``time_limit``，且被钳在本地引擎自己的最高档
+# —— 15 秒，见那里）。
+CUSTOM_LEVEL = 7
 
 #: 自定义档的出厂值。取**宗师（5）的原值** —— 自定义是"往上调"的入口，
 #: 默认不该比预设最强档还弱；关掉 ``enhance`` 就自然落到「高级」附近。
@@ -334,7 +393,7 @@ def _cfg_for(level: int) -> dict:
     的档位号"这类情况兜底，**不抛异常**：抛出去会让 AIWorker 报 AI异常，
     用户看到的是"不能下棋"，而正确答案是"下一档最强的"。
 
-    哨兵档必须在 ``.get`` **之前**接住：``CUSTOM_LEVEL=6`` 不在表里，落到
+    哨兵档必须在 ``.get`` **之前**接住：``CUSTOM_LEVEL=7`` 不在表里，落到
     `.get` 就会静默变成"宗师"，那正是自定义这个功能最不该有的失败方式。
     """
     if level == CUSTOM_LEVEL:
@@ -901,6 +960,14 @@ class _ServerClient:
             # 取值，见 `readConfig`），所以下发它不会让任何可用引擎失配。
             "rules": self._variant,
         }
+        # 绝对秒数的缓冲（「Gomocup」档的 20 秒）。**只有带这个键的档位才下发。**
+        # 前五档没有它，报文因此逐字节与从前相同 —— 那正是"低档与 `engine_local`
+        # 逐字同着"那条护栏依赖的东西（见 `constants.h` 里 `RESERVE` 的注释）。
+        # C++ 侧 `reserve_sec` 缺省是 0.0，含义是"沿用 RESERVE 比例"，所以老版
+        # 引擎收到不带这个键的报文，行为的每一个 bit 都没变。
+        if "reserve_sec" in cfg:
+            req["reserve_sec"] = max(0.0, float(cfg["reserve_sec"]))
+
         bias = cfg.get("bias")
         if bias:
             req["bias_attack"] = float(bias["attack"])
@@ -1259,7 +1326,7 @@ def analyze(board, me, level, cancel=None, cfg=None, variant="free"):
     ``cfg`` 可以**显式传一份配置**覆写按 ``level`` 查出来的那份。自定义局靠它把
     "开局那一刻快照的参数"交给复盘 —— 否则用户打完棋之后再打开自定义弹窗改几个
     数字，这一局的复盘结果就跟着变了。默认 ``None`` 时仍走 ``_cfg_for(level)``，
-    所以五档的行为一个字都没变。
+    所以所有预设档的行为一个字都没变。
 
     ``variant`` 选规则，与 ``ai_move`` 同一个含义。**复盘必须用本局那一套规则**：
     禁手局里黑方的一手值多少分，只有按禁手规则算出来的那个数才有意义 —— 用无禁手
@@ -1279,8 +1346,20 @@ def analyze(board, me, level, cancel=None, cfg=None, variant="free"):
             _analyze_warned = True
             print(f"[复盘] 降级到本地 Python 引擎：{type(exc).__name__}: {exc}",
                   file=sys.stderr)
-        return _local_engine(variant).analyze(
-            board, me, level, cancel=cancel, time_limit=float(cfg["time"]))
+        local = _local_engine(variant)
+        # **`time_limit` 钳到本地引擎自己的最高档。** 本地 Python 引擎只有三档，
+        # 顶格 15 秒（`engine_local.DIFFICULTY`），而这里的 `cfg` 可能是
+        # 「Gomocup」那一份（300 秒）—— 原样转发会让"没有 C++ 引擎的机器上复盘
+        # 一局长考棋"变成每手 255 秒的纯 Python 搜索，一局几十手就是几小时。
+        #
+        # 上限取**本地引擎自己认定的最高档**，不是随便一个数：那是本项目对
+        # "这个引擎再多给时间能不能变强"给出的实测答案（见 `engine_local` 那条
+        # 饱和注释）。超过它的部分只买墙钟，不买棋力。
+        #
+        # 副作用要说清：自定义档的滑杆到 60 秒，回退机上的复盘也会被压到 15 秒。
+        # 1–3 档的 `time` 本来就在上限之下，`min` 对它们恒等，行为一个字没变。
+        limit = min(float(cfg["time"]), _local_max_time(local))
+        return local.analyze(board, me, level, cancel=cancel, time_limit=limit)
     if not cands:
         # 与 `engine_local.analyze` 同一条归一：没有可比的最优解（空盘 /
         # 满盘 / 一轮都没跑完）。判据是"表空"而不是"idx < 0" —— 空盘时

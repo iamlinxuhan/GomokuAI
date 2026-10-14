@@ -100,7 +100,12 @@ constexpr int ASPIRATION = 120;         // 渴望窗口初值
 constexpr int ASP_WINDOW_MUL = 4;       // 失败后窗口放大倍数
 constexpr int ASP_FAILS = 3;            // 连续失败几次后放弃渴望、走全窗口
 
-constexpr double RESERVE = 0.15;        // 留给回传与 UI 的余量，从时间上限里扣
+//: 留给回传与 UI 的余量，**占时间上限的比例**。
+//:
+//: 只在 `SearchConfig::reserveSec == 0` 时用得上。那条路是全部历史档位走的，
+//: 低档与 Python 参考引擎的逐字一致（`tools/positions.py`）依赖这个比例。要
+//: 绝对秒数就填 `reserveSec`，别动这里 —— 预算的唯一算式是 `searchBudget()`。
+constexpr double RESERVE = 0.15;
 
 // ==================== 增强搜索（只有高级/宗师启用） ====================
 //

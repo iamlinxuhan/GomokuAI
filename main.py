@@ -1137,7 +1137,7 @@ _CUSTOM_OPTIONS = (
 _CUSTOM_HINTS = {
     "vcf_budget": lambda v: (
         "关掉 VCF 之后 AI 会看不见连续冲四：既算不出自己的，也看不见对手的。"
-        "预设的五档从不用这个办法拉开差距 —— 它们靠深度上限。"
+        "预设的六档从不用这个办法拉开差距 —— 它们靠深度上限。"
         if float(v) <= 0.0 else ""),
     "enhance": lambda v: (
         "" if v else "关掉后与「高级」的搜索方式一致。"),
@@ -1288,8 +1288,11 @@ class CustomDifficultyDialog(QDialog):
         self._refresh_hint(key)
 
     def _refresh_hint(self, key):
+        # 过 ``i18n.t`` —— 与 ``faint_label`` 在构造期做的事一样。这里曾经直接
+        # ``setText``，于是两条提示在六种语言里都显示中文原文，而译表里那五份
+        # 译文从来没人读得到（``t()`` 一次都没被调用，连漏译日志都不会响）。
         fn = _CUSTOM_HINTS.get(key)
-        self._hints[key].setText(fn(self._cfg[key]) if fn else "")
+        self._hints[key].setText(i18n.t(fn(self._cfg[key])) if fn else "")
 
     def _on_reset(self):
         """回到出厂值。**只动这个弹窗**，不碰引擎 —— 用户还可以再改回去。"""
@@ -2224,6 +2227,19 @@ class GamePanel(QFrame):
             # 例外：它是一句文案，只是碰巧从 engine 的表里来。
             self.difficulty_row.set_value(
                 i18n.t(engine.difficulty_name(difficulty)))
+            # 「Gomocup」档的承诺**在没有 C++ 引擎的机器上不成立**：本地 Python
+            # 引擎只跑到 15 秒（``engine_local.DIFFICULTY`` 顶格），300 秒的长考
+            # 它给不了，复盘的回退路径也只按 15 秒算。面板那一格仍写「Gomocup」
+            # —— 那是本局的档位，没说错 —— 代价挂在 tooltip 上。不写这一句，
+            # 用户看到的是"选了长考档、AI 只想了 12 秒"，而且找不到解释。
+            #
+            # 传 `rules` 而不是用 `binary_path()` 的默认值：禁手局要找的是另一
+            # 个可执行文件，两个文件各自独立存在。
+            self.difficulty_row.setToolTip(
+                "" if (difficulty != engine.GOMOCUP_LEVEL
+                       or engine.binary_path(rules))
+                else i18n.t("本机没有 C++ 引擎，这一档会退回本地 Python"
+                            "（上限 15 秒），长考不生效。"))
             # 引擎名（"C++ 引擎" / "Python (本地)"）**不翻** —— 它与日志里的
             # 写法必须一致，用户拿这个字符串去搜日志时要能搜到。
             self.engine_row.set_value(engine.engine_label(rules))
@@ -2293,14 +2309,49 @@ def _page_content_w() -> int:
     return max(_px(320), w - 2 * theme.SPACE_XL)
 
 
-def _card_fit_size(n: int, gap: int) -> int:
-    """``n`` 张卡 + ``(n-1)`` 段 gap 塞进页面内容宽度时的卡片边长。
+def _card_fit_size(n: int, gap: int, max_rows: int = 1) -> int:
+    """``n`` 张卡 + 段间距塞进页面内容宽度时的卡片边长。
 
     封顶 ``theme.CARD_PX``（正常屏幕上一张都不缩，观感与从前一致），下限
     ``_px(88)`` —— 再小就放不下卡面那两行字，宁可让它横向滚动。
+
+    ``max_rows`` 是这一页允许多少行。默认 1：挤不进一行就压小卡片 —— 颜色页
+    /模式页/规则页只有两三张，这条路径下永远取到 ``CARD_PX``，压小那一段其实
+    只在小窗口（``_autofit_enabled``）里生效。
+
+    **给 2 换一套优先级：先折行，折行仍放不下才压小。** 这是难度页要的 ——
+    7 张卡压到 125px 之后副标题会折行、卡片变成竖长方形，而页面下方是大片
+    空页，用高度换宽度在这里白赚。判据只看宽度：``max_rows`` 行里每行
+    ``ceil(n / rows)`` 张、按 ``CARD_PX`` 排得下就返回 ``CARD_PX``，行怎么
+    居中由 ``_fit_card_row`` 决定。
+
+    ``max_rows`` 只是上限：真折成几行、每行几张由 ``_fit_card_row`` 按卡片
+    最终宽度定，它还会把同一组卡的宽高统一。
     """
     avail = _page_content_w()
-    return max(_px(88), min(theme.CARD_PX, (avail - (n - 1) * gap) // n))
+    full = theme.CARD_PX
+    for rows in range(1, max_rows + 1):
+        per_row = -(-n // rows)                  # ceil(n / rows)
+        if per_row * full + (per_row - 1) * gap <= avail:
+            return full
+    per_row = -(-n // max_rows)
+    return max(_px(88), min(full, (avail - (per_row - 1) * gap) // per_row))
+
+
+def _difficulty_sub(level: int) -> str:
+    """难度卡/复盘卡的第二行字。
+
+    出厂预设档报的是**思考时限** —— 它是 ``engine.DIFFICULTY`` 里真实存在、
+    用户又能直接感知的量（"AI 要想多久"）。数字从表里现读，不在这里抄。
+
+    「Gomocup」档例外：那一档名字本身就是个陌生词，报"300 秒"只说了它多长、
+    没说它是什么。它报**这一档存在的理由**（长考、为比赛准备）。这是难度页上
+    唯一一处"副标题不是时间"的卡，所以按 ``engine.GOMOCUP_LEVEL`` 认号，
+    不按名字比字符串。
+    """
+    if level == engine.GOMOCUP_LEVEL:
+        return i18n.t("长考·为比赛准备")
+    return i18n.tf("思考上限 %g 秒", engine.DIFFICULTY[level]["time"])
 
 
 def _strength_bar(players, diameter=28, card_px=None):
@@ -2310,6 +2361,10 @@ def _strength_bar(players, diameter=28, card_px=None):
     1/4 是留给接触投影的），盒间距固定 ``SPACE_XS``。d=28 时五颗要
     5×35 + 4×4 = 191px，而卡片内容区只有 ``CARD_PX - 2*SPACE_MD`` = 136px，
     最后一颗被卡片右缘切掉，宗师那张肉眼只剩四颗半。
+
+    颗数没有上限（第 6 档「Gomocup」要 6 颗）：排得下就按原间距，排不下就一直
+    收到刚好塞进内容区 —— 6 颗在 136px 里步距 20px、子径仍是 28px，看得出
+    是六颗。
 
     这里改成**盒子重叠摆放**：颗粒少时步距保持原样（盒宽 + SPACE_XS），
     排不下才收紧，一直收到刚好塞进内容区。压缩的只是盒间距，**直径始终是
@@ -2354,13 +2409,13 @@ def _custom_mark():
 def _fit_card_row(cards, gap):
     """把一组卡片按**当前语言的内容需求**排进选择页：放不下就折行。
 
-    宽度先取基准（``_card_fit_size``：中文下这一排刚好排满一行），再按每张卡
-    上"最长的不可断单元"放大 —— 一个单词宽于卡片就会被右缘裁掉，而换行救不了
-    它。放大后一行排不下就折成多行（俄语难度页 6 张卡分 3+3 两行），每行居中，
-    全部卡片统一宽高。
+    宽度先取基准（``_card_fit_size`` 给的边长，默认已是 ``CARD_PX``），再按每张
+    卡上"最长的不可断单元"放大 —— 一个单词宽于卡片就会被右缘裁掉，而换行救不了
+    它。放大后一行排不下就折成多行，每行居中，全部卡片统一宽高。
 
-    中文文案的最长单元都短于基准宽度，所以这条路径在中文下**恒等于原布局**
-    （一行、原尺寸）；它只在英语/俄语这类长文案下生效。
+    **六张以上的页面都会走到折行这一支**：难度页 7 张按原尺寸一行要 1216px、
+    复盘页 6 张要 1040px，都超出一行的 974px，于是各折成 4+3 与 3+3。两三种
+    语言的文案比基准宽时（俄语「Гроссмейстер」）也会在这里把卡片撑大再折行。
     """
     n = len(cards)
     if n == 0:
@@ -2519,10 +2574,14 @@ class SelectionScreen(Screen):
             # 两处对得上纯属巧合。扩到 5 档时这种巧合必然失守，而失守的表现是
             # "界面上写着 9 秒、AI 实际想了 20 秒"，没有任何测试会报警。
             #
-            # 配色只有四种 tone（primary/success/danger/ghost），五档必然重复
-            # 一个。重复选在最后两档：区分它们的仍是强度条（4 颗子 vs 5 颗子）
-            # 与文字，而颜色只承担"越往下越亮"的辅助作用。
-            tones = ("ghost", "success", "primary", "danger", "danger")
+            # 配色只有四种 tone（primary/success/danger/ghost），到第 4 档就必然
+            # 重复。重复选在最后几档：区分它们的仍是强度条（4 / 5 / 6 颗子）与
+            # 文字，而颜色只承担"越往下越亮"的辅助作用。
+            #
+            # **扩档时追加在末尾，前五项一个都不动。** 下面复盘页按**绝对档位号**
+            # 取色（``tones[lv - 1]``），动前缀等于把已发布截图与文档里的配色
+            # 悄悄改掉。
+            tones = ("ghost", "success", "primary", "danger", "danger", "danger")
             levels = sorted(engine.DIFFICULTY)
             assert len(tones) == len(levels), "难度卡配色与档位数不同步"
 
@@ -2557,16 +2616,18 @@ class SelectionScreen(Screen):
             #  * 复盘页的过滤是「不低于本局难度」，如果自定义也进这张表，用户
             #    只是想让 AI 从某一档重算，却先要面对一个要填参数的弹窗。
             extra = 1 if self.mode == "difficulty" else 0
-            size = _card_fit_size(len(levels) + extra, gap)
+            # ``max_rows=2``：难度页加「Gomocup」之后是 7 张，一行按原尺寸排不下
+            # （7×160+6×16 = 1216 > 974）。压到 125px 也能一行，但副标题会折成
+            # 两行、卡片变竖长方形，而这一页下面是大片空页 —— 折成 4+3 明显更
+            # 好看。复盘页走同一支，6 张折成 3+3，与俄语难度页既有做法一致。
+            size = _card_fit_size(len(levels) + extra, gap, max_rows=2)
             for level, tone in zip(levels, tones):
                 # N 颗子当强度条 —— 用的是棋盘上那套材质，不是另画一个图标。
                 # 排不下时收紧的是**间隙**，不是棋子（见 _strength_bar）。
                 btn = card_button(engine.difficulty_name(level), tone,
                                   face=_strength_bar([bar_player] * level,
                                                      card_px=size),
-                                  sub=i18n.tf(
-                                      "思考上限 %g 秒",
-                                      engine.DIFFICULTY[level]["time"]),
+                                  sub=_difficulty_sub(level),
                                   index=f"{level:02d}", size=size)
                 # 同一批卡片服务于两个页面，只有"点了发哪个信号"不同。
                 sig = (self.review_level_selected if self.mode == "review"
@@ -2575,8 +2636,8 @@ class SelectionScreen(Screen):
                 self._cards.append(btn)
 
             if self.mode == "difficulty":
-                # 第 6 张卡：**不画强度条**。强度条只表达"几颗子 = 多强"，而
-                # 自定义不表示某个固定强度 —— 硬塞五颗会和宗师那张看起来一样。
+                # 最后一张卡：**不画强度条**。强度条只表达"几颗子 = 多强"，而
+                # 自定义不表示某个固定强度 —— 硬塞 N 颗会和最强的预设档一样。
                 # 卡面换成自绘的「?」，说的是"这一档由你来定"（见 ui_kit
                 # 的 QuestionMark，那里写了为什么不是文字控件、为什么是问号）。
                 custom_btn = card_button(
@@ -3120,7 +3181,7 @@ class GomokuGame(QMainWindow):
         # 设置弹窗：**不占 `central` 的一页**，所以不参与 _drop_pages 的页面表；
         # 关掉即销毁，下次点齿轮重新建（档位/主题可能已经变了，重建即回显）。
         self.settings_dialog = None
-        # 自定义难度弹窗（难度页第 6 张卡打开的）
+        # 自定义难度弹窗（难度页最后一张卡打开的）
         self.custom_dialog = None
         # 本局开局时快照的自定义参数（非自定义局为 None）。复盘时用它重算 ——
         # 快照而不是现读，是为了"打完之后再改参数"不改写这一局的复盘结果。
@@ -3713,7 +3774,7 @@ class GomokuGame(QMainWindow):
         self._start_game()
 
     def _on_custom_requested(self):
-        """难度页第 6 张卡：开自定义配置弹窗。"""
+        """难度页最后一张卡：开自定义配置弹窗。"""
         if self.custom_dialog is not None:
             self.custom_dialog.raise_()
             self.custom_dialog.activateWindow()
@@ -3770,6 +3831,20 @@ class GomokuGame(QMainWindow):
                 "增强 %s\n" % (float(c["time"]), int(c["max_depth"]),
                               float(c["vcf_budget"]), int(c["qply"]),
                               "开" if c.get("enhance") else "关"))
+        elif self.gamekunnan == engine.GOMOCUP_LEVEL:
+            # 「Gomocup」档也要说全参数，理由与自定义那一行**逐字相同**：事后翻
+            # 日志要能回答"这一局到底按什么参数搜的"。这一档尤其需要 ——
+            # **它在运行期是可改的**（压测脚本临时改表里的 time 与 reserve_sec），
+            # 只写"Gomocup"三个字，分不出那是 300 秒的长考还是压测跑的一轮
+            # 30 秒。余量也写：它是这一档唯一按**绝对秒数**给的量，换一个值就是
+            # 换一套时间管理。
+            g = engine.DIFFICULTY[engine.GOMOCUP_LEVEL]
+            self.logger.f.write(
+                "  Gomocup参数: 时限 %gs / 余量 %gs / 深度 %d / VCF %g / "
+                "qply %d / 增强 %s\n" % (
+                    float(g["time"]), float(g.get("reserve_sec", 0.0)),
+                    int(g["max_depth"]), float(g["vcf_budget"]),
+                    int(g["qply"]), "开" if g.get("enhance") else "关"))
         self.logger.f.write("  引擎: %s\n\n" % (
             engine.binary_path(self.game_rules)
             or "C++ 不可用，将用本地 Python 引擎"))
