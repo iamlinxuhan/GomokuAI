@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="theme-color" content="#f4f5f8">
+<title>五子棋 AI</title>
+<!-- 主题要在样式表之前定下来：等 app.js 跑到最后再加 class，卡片会以浅色
+     画第一帧，然后被 0.15s 的 background 过渡从白渐变到深色 —— 存了深色
+     主题的人每次打开都要看见一下闪白。 -->
+<script>
+  try {
+    if (localStorage.getItem('gomoku-theme') === 'dark') {
+      document.documentElement.classList.add('dark');
+    }
+  } catch (e) { /* 隐私模式 */ }
+</script>
+<!-- Toy 平台把作品挂在 bilibili.com/toy/<slug>/ 下面，一切资源都必须是相对
+     路径；写成 /style.css 会在平台上变成白屏。 -->
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<main id="app">
+
+  <!-- ================================================== 选择页 -->
+  <section id="setup" class="screen">
+    <header class="screen-head">
+      <h1 class="screen-title">五子棋 AI</h1>
+      <p class="screen-sub">C++ 引擎编译成 WebAssembly，在你自己的浏览器里算棋</p>
+    </header>
+
+    <div class="group">
+      <span class="group-label">对局模式</span>
+      <div class="cards" id="choose-mode">
+        <button class="card is-on" data-mode="ai">
+          <span class="card-index">01</span>
+          <span class="card-text">人机对战</span>
+          <span class="card-sub">和本机引擎下</span>
+        </button>
+        <button class="card" data-mode="online">
+          <span class="card-index">02</span>
+          <span class="card-text">联机对战</span>
+          <span class="card-sub">和好友各用一台设备</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="group" id="group-online" style="display:none">
+      <span class="group-label">联机</span>
+      <div class="online-row">
+        <button id="btn-create-room" class="btn primary">创建房间</button>
+        <span class="online-or">或</span>
+        <input id="room-code" class="text-input" maxlength="6"
+               placeholder="房间码" autocomplete="off" spellcheck="false">
+        <button id="btn-join-room" class="btn ghost">加入房间</button>
+      </div>
+      <p class="foot-note" id="online-status"></p>
+    </div>
+
+    <div class="group" id="group-color">
+      <span class="group-label">执棋颜色</span>
+      <div class="cards" id="choose-color">
+        <button class="card is-on" data-color="1">
+          <span class="card-index">01</span>
+          <span class="card-face"><i class="stone-icon black"></i></span>
+          <span class="card-text">黑棋</span>
+          <span class="card-sub">先手</span>
+        </button>
+        <button class="card" data-color="2">
+          <span class="card-index">02</span>
+          <span class="card-face"><i class="stone-icon white"></i></span>
+          <span class="card-text">白棋</span>
+          <span class="card-sub">后手</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="group" id="group-level">
+      <span class="group-label">AI 难度</span>
+      <div class="cards cards-level" id="choose-level">
+        <!-- 由 app.js 的 LEVELS 渲染，与桌面版 engine.DIFFICULTY 同一张表 -->
+      </div>
+    </div>
+
+    <div class="group" id="group-rules">
+      <span class="group-label">规则</span>
+      <div class="cards" id="choose-rules">
+        <button class="card is-on" data-rules="free">
+          <span class="card-index">01</span>
+          <span class="card-text">无禁手</span>
+          <span class="card-sub">五连即胜，无额外限制</span>
+        </button>
+        <button class="card" data-rules="ban">
+          <span class="card-index">02</span>
+          <span class="card-text">禁手</span>
+          <span class="card-sub">黑方三三、四四、长连判负</span>
+        </button>
+      </div>
+    </div>
+
+    <button id="start" class="btn primary btn-start">开始对局</button>
+    <p class="foot-note" id="setup-hint">黑先白后，先连成五子者胜</p>
+  </section>
+
+  <!-- ================================================== 对局页 -->
+  <div id="game" class="layout hidden">
+    <div class="board-wrap">
+      <canvas id="board"></canvas>
+      <div id="overlay" class="overlay hidden">
+        <div class="overlay-card">
+          <h2 id="overlay-title">黑方胜</h2>
+          <p id="overlay-text"></p>
+          <div class="overlay-actions">
+            <button id="btn-again" class="btn primary">再来一局</button>
+            <button id="btn-review" class="btn ghost" style="display:none">📊 复盘</button>
+            <button id="btn-overlay-back" class="btn ghost">改设置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 复盘：先选强度（与难度页同一套档位），再逐手重算 -->
+    <div id="review-pick" class="overlay hidden">
+      <div class="overlay-card">
+        <h2>选择复盘强度</h2>
+        <p>逐手重算你下过的每一手，标出可以下得更好的那些</p>
+        <div class="chips" id="pick-levels"></div>
+        <div class="overlay-actions">
+          <button id="btn-review-start" class="btn primary">开始复盘</button>
+          <button id="btn-review-close" class="btn ghost">取消</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="review-run" class="overlay hidden">
+      <div class="overlay-card">
+        <h2>正在复盘</h2>
+        <p id="run-step">第 0/0 手</p>
+        <div class="bar"><i id="run-bar"></i></div>
+        <div class="overlay-actions">
+          <button id="btn-run-cancel" class="btn danger">✕ 取消复盘</button>
+        </div>
+      </div>
+    </div>
+
+    <aside class="panel">
+      <div class="panel-head">
+        <h1 class="panel-title">五子棋 AI</h1>
+      </div>
+
+      <button id="btn-theme-row" class="capsule">
+        当前主题(点击以切换)：<span id="theme-icon">☀</span>
+      </button>
+
+      <div class="turn-card" id="turn-card">
+        <i class="stone-icon black" id="turn-stone"></i>
+        <span class="turn-text" id="turn">轮到你落子</span>
+      </div>
+
+      <dl class="info">
+        <div id="info-room-row" style="display:none"><dt>房间</dt><dd id="info-room">—</dd></div>
+        <div><dt>规则</dt><dd id="info-rules">无禁手</dd></div>
+        <div><dt>AI 难度</dt><dd id="info-level">中级</dd></div>
+        <div><dt>引擎</dt><dd id="info-engine">C++ · WASM</dd></div>
+        <div><dt>悔棋次数</dt><dd id="info-undo">0</dd></div>
+        <div><dt>步数</dt><dd id="info-moves">0</dd></div>
+        <div><dt>用时</dt><dd id="info-time">00:00</dd></div>
+      </dl>
+
+      <p class="foot-note hidden" id="online-note"></p>
+
+      <div class="chart">
+        <div class="chart-head"><span id="chart-score-label">AI 评分</span></div>
+        <canvas id="chart-score" class="chart-canvas"></canvas>
+        <div class="chart-readout" id="score-readout"></div>
+      </div>
+
+      <div class="chart">
+        <div class="chart-head">
+          <span>人类胜率（估计）</span>
+        </div>
+        <canvas id="chart-win" class="chart-canvas"></canvas>
+      </div>
+
+      <div class="review-box hidden" id="review-box">
+        <div class="review-head"><span id="review-title">复盘结果</span><em id="review-count"></em></div>
+        <div class="review-rows" id="review-rows"></div>
+        <p class="review-readout" id="review-readout"></p>
+        <button id="btn-review-exit" class="btn ghost">🏠 结束复盘</button>
+      </div>
+
+      <div class="actions">
+        <button id="btn-undo" class="btn ghost">↩ 悔棋</button>
+        <button id="btn-restart" class="btn primary">🔄 重新开始</button>
+        <button id="btn-back" class="btn danger">✕ 改设置</button>
+      </div>
+    </aside>
+  </div>
+
+</main>
+
+<!-- 开局库：生成物，见 tools/build_book_web.py。必须在 app.js 之前加载。 -->
+<script src="./book.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

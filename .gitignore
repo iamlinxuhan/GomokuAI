@@ -30,3 +30,7 @@ deb_build/
 
 # 四架构的产物。裸可执行文件与 .pkg 的暂存目录同名，用一条通配一并盖住。
 GomokuAI_For_Linux_*
+
+# 网页版交给 Toy 平台的 zip。`webapp/dist/` 已被上面的 dist/ 盖住 ——
+# 里面的 gomoku-*.js 是 emscripten 产物，要用时跑 cpp/web/build_wasm.sh 重编。
+webapp/gomoku-web.zip

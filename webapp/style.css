@@ -1,0 +1,545 @@
+/* 网页版的样式表，逐个 token 对齐桌面版的 theme.py。
+ *
+ * 对应关系写在这里，改配色时两边一起改：
+ *   --bg / --bg-hi        → BG / BG_HI
+ *   --surface / --surface-hi / --surface-2 → SURFACE / SURFACE_HI / SURFACE_2
+ *   --accent / --accent-hi / --accent-lo   → ACCENT / ACCENT_HI / ACCENT_LO
+ *   --danger …、--success …、--info        → 同名 token
+ *   --text / --text-dim / --text-faint     → TEXT / TEXT_DIM / TEXT_FAINT
+ * 棋盘色（木色、网格、棋子）在 app.js 里画，值同样取自 theme.py，两套主题共享。
+ *
+ * 默认**浅色**：桌面版默认深色，但推广素材、截图、绝大多数人第一眼看到的
+ * 都是浅色那一版，网页从众。切换按钮在面板上，选择记在 localStorage。
+ */
+
+:root {
+  --bg: #f4f5f8;
+  --bg-hi: #eef0f5;
+  --surface: #ffffff;
+  --surface-hi: #fbfcfd;
+  --surface-2: #eceef2;
+  --border: #8791a3;
+  --text: #1c212b;
+  --text-dim: #4a5261;
+  --text-faint: #5b6372;
+  --accent: #0e6f85;
+  --accent-hi: #0d7d94;
+  --accent-lo: #0a5c70;
+  --on-accent: #ffffff;
+  --success: #1e7538;
+  --success-hi: #238340;
+  --success-lo: #1a6531;
+  --danger: #b0303a;
+  --danger-hi: #cc3a45;
+  --danger-lo: #992a33;
+  --info: #6d3fc4;
+  --ghost-hover: #e2e5ec;
+  --ghost-press: #d5d9e2;
+  --overlay: rgba(236, 238, 242, 0.86);
+
+  --font-ui: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+             "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC",
+             "WenQuanYi Micro Hei", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "SF Mono", Menlo, "JetBrains Mono",
+               "DejaVu Sans Mono", monospace;
+
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --control-h: 40px;
+}
+
+/* 深色变量挂在 <html> 上，不是 <body>：body 只铺到内容高度，它下面的那块画布
+   属于 html，变量挂在 body 上就会在页面偏短时露出浅色底。 */
+:root.dark {
+  --bg: #12141a;
+  --bg-hi: #171a22;
+  --surface: #1a1d25;
+  --surface-hi: #1f232d;
+  --surface-2: #232833;
+  --border: #3c4354;
+  --text: #e9ecf2;
+  --text-dim: #9aa4b5;
+  --text-faint: #8a94a6;
+  --accent: #45c8e0;
+  --accent-hi: #6ad6ea;
+  --accent-lo: #2ba4bd;
+  --on-accent: #12141a;
+  --success: #7fd18a;
+  --success-hi: #98dfa2;
+  --success-lo: #68b673;
+  --danger: #e8747c;
+  --danger-hi: #f0919a;
+  --danger-lo: #c85f68;
+  --info: #a78bfa;
+  --ghost-hover: #2b3140;
+  --ghost-press: #20252f;
+  --overlay: rgba(10, 12, 16, 0.86);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html { height: 100%; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 平铺底色。之前这里叠了一条渐变，结果在内容高度 42% 的位置留了一道能看见
+   的接缝 —— 桌面版本来就通体一个 BG，照抄它更省事也更好看。 */
+body {
+  display: flex;
+  justify-content: center;
+  min-height: 100%;
+  background: var(--bg);
+}
+
+#app {
+  width: 100%;
+  max-width: 1180px;
+  padding: 24px;
+  display: flex;
+  justify-content: center;
+}
+
+.hidden { display: none !important; }
+
+/* ============================================================ 按钮 */
+
+.btn {
+  height: var(--control-h);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--r-sm);
+  font: 700 16px/1 var(--font-ui);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, opacity 0.15s;
+}
+
+.btn.primary {
+  background: linear-gradient(180deg, var(--accent-hi), var(--accent));
+  color: var(--on-accent);
+}
+.btn.primary:hover { background: var(--accent-hi); }
+.btn.primary:active { background: linear-gradient(180deg, var(--accent), var(--accent-lo)); }
+
+.btn.danger {
+  background: linear-gradient(180deg, var(--danger-hi), var(--danger));
+  color: var(--on-accent);
+}
+.btn.danger:hover { background: var(--danger-hi); }
+.btn.danger:active { background: linear-gradient(180deg, var(--danger), var(--danger-lo)); }
+
+.btn.ghost { background: var(--surface-2); }
+.btn.ghost:hover { background: var(--ghost-hover); }
+.btn.ghost:active { background: var(--ghost-press); }
+
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ============================================================ 选择页 */
+
+/* 选择页的宽度按"六张 160px 的卡正好排一行"倒推：6×160 + 5×16 = 1040。
+   桌面版的卡就是 160 见方，网页跟着这个数走，卡片才能是正方形。 */
+.screen {
+  width: 100%;
+  max-width: 1040px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 32px 0 48px;
+}
+
+/* 标题居中 —— 桌面版 SelectionScreen 的标题与副标题都是居中的。 */
+.screen-head { display: flex; flex-direction: column; gap: 8px; align-items: center; text-align: center; }
+
+.screen-title {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+
+.screen-sub { margin: 0; color: var(--text-dim); font-size: 14px; }
+
+.group { display: flex; flex-direction: column; gap: 8px; }
+
+.group-label { color: var(--text-faint); font-size: 12px; letter-spacing: 1px; text-align: center; }
+
+/* 卡片行居中排列（桌面版 _fit_card_row 也是居中）。 */
+.cards { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; }
+
+/* 六档排一行、等宽等方 —— 与桌面版难度页一致。160 见方是 theme.CARD_PX；
+   一行放得下六张，所以不缩。窄屏另有一套三列的规矩，见文件末尾。 */
+.cards-level {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 16px;
+}
+
+.card {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+/* 颜色 / 规则那两行的卡与桌面版同为 160 见方；难度行的宽度交给 grid。 */
+.cards > .card { flex: 0 1 160px; }
+
+.card:hover { background: var(--surface-2); border-color: var(--accent); }
+.card.is-on { border-color: var(--accent); border-width: 2px; padding: 11px; }
+.card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.card-index {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  color: var(--text-faint);
+  font: 12px/1 var(--font-mono);
+}
+
+.card-face { display: flex; gap: 4px; align-items: center; justify-content: center; }
+
+.card-text { font-size: 16px; font-weight: 700; color: var(--text); text-align: center; }
+
+.card-sub { font-size: 12px; color: var(--text-dim); text-align: center; line-height: 1.4; }
+
+.btn-start { width: 100%; margin-top: 8px; }
+
+.foot-note { margin: 0; color: var(--text-faint); font-size: 12px; text-align: center; }
+
+/* 棋子圆点：与棋盘上的棋子同一套渐变配方，只是缩小到 26px。 */
+.stone-icon {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 1px 2px rgba(74, 44, 15, 0.35);
+}
+.stone-icon.black {
+  background: radial-gradient(circle at 34% 32%, #5c6169 0%, #23262b 55%, #0d0f12 100%);
+  border: 2px solid #3a382f;
+}
+
+/* 深色主题下卡面本身就是 #232833，黑子的深棕描边几乎看不见，六档难度条
+   只剩一个黑洞洞的轮廓。换一圈中性灰把圆盘勾出来 —— 棋盘的描边不变，
+   这是界面上的小图标，不是棋子本身。 */
+:root.dark .stone-icon.black { border-color: #5b6372; }
+.stone-icon.white {
+  background: radial-gradient(circle at 34% 32%, #fffdf9 0%, #efece4 55%, #cdc6b8 100%);
+  border: 2px solid #5f3d15;
+}
+
+.cards-level .stone-icon { width: 14px; height: 14px; border-width: 1px; }
+
+/* ============================================================ 对局页 */
+
+.layout {
+  width: 100%;
+  display: flex;
+  gap: 8px;
+  /* 行高由棋盘决定，面板拉到同一高度 —— 桌面版的面板就是齐窗高，
+     三个按钮在底部。棋盘自己不能跟着拉（得保持正方形），所以单给它顶对齐。 */
+  align-items: stretch;
+  justify-content: center;
+}
+
+/* 棋盘跟着窗口长：桌面版也是窗口越大盘越大，不设固定边长。上限 980 只是
+   防止 4K 竖屏上把棋子放大成一张砖头脸。 */
+.board-wrap {
+  position: relative;
+  flex: 0 1 auto;
+  align-self: flex-start;
+  width: min(100%, calc(100dvh - 48px));
+  max-width: 980px;
+  aspect-ratio: 1 / 1;
+}
+
+#board {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------- 右侧面板 */
+
+.panel {
+  flex: 0 0 264px;
+  width: 264px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: linear-gradient(180deg, var(--surface-hi), var(--surface));
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.panel-head { display: flex; align-items: center; gap: 8px; }
+
+.panel-title { margin: 0; flex: 1; font-size: 20px; font-weight: 700; text-align: center; }
+
+.capsule {
+  align-self: center;
+  max-width: 100%;
+  height: 32px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--text-dim);
+  font: 14px/1 var(--font-ui);
+  cursor: pointer;
+}
+.capsule:hover { background: var(--ghost-hover); color: var(--text); }
+
+.turn-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.turn-card .stone-icon { width: 32px; height: 32px; }
+
+.turn-card[data-state="think"] { border-color: var(--info); }
+
+.turn-text { font-size: 16px; font-weight: 700; }
+.turn-card[data-state="think"] .turn-text { color: var(--info); }
+.turn-card[data-state="win"] .turn-text { color: var(--success); }
+.turn-card[data-state="lose"] .turn-text { color: var(--danger); }
+
+.info { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.info > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.info dt { color: var(--text-dim); font-size: 14px; }
+.info dd { margin: 0; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.chart {
+  padding: 10px 12px 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.chart-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+
+/* 读数放在图下面，与桌面版同位置（"d11 1.96M 1.24M/s 1.6s"）。塞进标题行
+   会把标题挤成两行 —— "AI 评分" 断成 "AI 评" / "分" 很显眼。 */
+.chart-readout {
+  margin-top: 4px;
+  min-height: 1em;
+  color: var(--text-faint);
+  font: 11px/1.3 var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-canvas { display: block; width: 100%; height: 62px; }
+
+.actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+.actions .btn { width: 100%; }
+
+/* ------------------------------------------------------- 结算遮罩 */
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--overlay);
+  border-radius: var(--r-lg);
+  animation: fade 0.2s ease;
+}
+
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+.overlay-card {
+  width: min(80%, 320px);
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  text-align: center;
+}
+
+.overlay-card h2 { margin: 0 0 8px; font-size: 32px; }
+.overlay-card p { margin: 0 0 24px; color: var(--text-dim); font-size: 14px; line-height: 1.6; }
+
+.overlay-actions { display: flex; flex-direction: column; gap: 8px; }
+
+/* ============================================================ 窄屏 */
+
+@media (max-width: 860px) {
+  #app { padding: 12px; }
+
+  .layout { flex-direction: column; align-items: center; gap: 12px; }
+
+  .board-wrap { width: 100%; max-width: 560px; }
+
+  .panel { flex: 1 1 auto; width: 100%; max-width: 560px; }
+
+  .screen { padding: 16px 0 32px; gap: 20px; }
+  .screen-title { font-size: 26px; }
+  .cards { gap: 12px; }
+  .cards > .card { flex: 1 1 140px; max-width: 180px; }
+  .cards-level { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  /* 三列时每张卡内宽只剩约 93px，"思考上限 0.5 秒"正好折行。缩到 11px
+     就回到一行 —— 一句短语被拆成"0.5 / 秒"很难看。 */
+  .card { padding: 10px; }
+  .card.is-on { padding: 9px; }
+  .card-sub { font-size: 11px; }
+  .chart-canvas { height: 52px; }
+}
+
+/* ============================================================ 联机 */
+
+.online-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.online-or { color: var(--text-faint); font-size: 13px; }
+
+.text-input {
+  height: var(--control-h);
+  width: 132px;
+  padding: 0 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font: 700 16px/1 var(--font-mono);
+  letter-spacing: 2px;
+  text-align: center;
+  text-transform: uppercase;
+}
+.text-input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* 复盘的两个浮层盖整个视口：它们与棋盘无关，压在 .layout 里按
+   position:absolute 定位会落在初始包含块上，边角还带着棋盘的圆角。 */
+#review-pick, #review-run { position: fixed; border-radius: 0; z-index: 30; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 0 0 20px; }
+
+.chip {
+  height: 34px;
+  padding: 0 12px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font: 700 14px/1 var(--font-ui);
+  cursor: pointer;
+}
+.chip:hover { background: var(--ghost-hover); }
+.chip.is-on { border-color: var(--accent); color: var(--accent); }
+
+.bar {
+  height: 6px;
+  margin: 0 0 20px;
+  background: var(--surface-2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bar > i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s linear;
+}
+
+/* ============================================================ 复盘结果 */
+
+.review-box { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+/* 标题与计数各占一行：并排时中文标题会被挤断成"复盘结果 · 初 / 级"。 */
+.review-head { display: block; }
+.review-head span { font-size: 15px; font-weight: 700; }
+.review-head em { display: block; margin-top: 2px; color: var(--text-faint); font-size: 12px; font-style: normal; }
+
+/* 几十条记录要能翻；不给固定高度的话它会把整个面板撑出窗口。 */
+.review-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.review-row {
+  display: block;
+  width: 100%;
+  padding: 7px 9px;
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font: 13px/1.35 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  white-space: normal;
+}
+.review-row:hover { background: var(--ghost-hover); }
+.review-row.is-on { border-color: var(--accent); }
+.review-row.is-optimal { color: var(--success); }
+
+.review-readout {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* 复盘期间把"对局中"那几块收起来：读取的一张张局面是落子**之前**的快照，
+   旁边还挂着"轮到你落子"与互数按钮只会让人以为还能接着下。 */
+#game.reviewing .turn-card,
+#game.reviewing .info,
+#game.reviewing .chart,
+#game.reviewing .actions { display: none; }
+
+/* 观战/联机的状态行用同一套 foot-note，但要在游戏页里也能看见。 */
+#online-status { margin-top: 4px; }
+
+/* 联机局没有 AI 参与，两张评分曲线只会有空轴。 */
+#game.online .chart { display: none; }
