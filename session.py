@@ -115,9 +115,12 @@ class Session:
         self.gamerule = 3
         self.winner = 0
         self.output = UNDO_LIMIT    # 剩余悔棋次数
-        #: 玩家（执黑或执白的那一方）每一步落子**之前**的局面快照，
-        #: ``[{'seq', 'r', 'c', 'before'}, ...]``。战后复盘只分析这些局面；
-        #: 只有人机模式记录（本地双人没有"复盘对象"）。
+        #: 战后复盘的素材：每一步落子**之前**的局面快照，
+        #: ``[{'seq', 'r', 'c', 'before'[, 'stone']}, ...]``。三条路记的东西
+        #: 不同 —— 人机只记玩家的手（``stone`` 缺省 = 玩家执的那一色），本地
+        #: 双人黑白都记并带 ``stone``，局域网只记我方的那些。本模块的
+        #: ``apply_human_move`` 只覆盖人机那一支；另外两支由 `main` 从房间事件
+        #: 里补记（见 ``GomokuGame._on_room_move``）。
         self.human_moves = []
         self.opening_done = False
 

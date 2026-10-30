@@ -147,7 +147,8 @@ def _show(widget, qapp, size=None):
 
 # ==================== 1. 选择页卡片 ====================
 
-@pytest.mark.parametrize("mode", ["mode", "color", "rules", "difficulty", "review"])
+@pytest.mark.parametrize("mode", ["mode", "color", "rules", "difficulty",
+                                  "review", "review_local", "review_lan"])
 def test_selection_cards_fit_in_russian(mode, qapp):
     """卡片标题/副标题在俄语下完整显示（单词不裁、折行高度够）。
 

@@ -613,16 +613,31 @@ def do_local_battle(app):
         return
     check(ov.result_text == "黑方获胜", "遮罩文案是「黑方获胜」",
           ov.result_text)
-    check(not ov.can_review, "本地对战没有「算法复盘」按钮")
+    # 2026-10-30 起本地对战**也**给复盘：这份列表要算黑白双方（逐手标明），
+    # 入口不再只在"输给 AI"时出现。
+    check(ov.can_review, "本地对战有「算法复盘」按钮（双方都算）")
     labels = [b.text() for b in ov.findChildren(QPushButton)]
-    check(all("算法复盘" not in t for t in labels),
-          "遮罩上确实没有复盘按钮", str(labels))
+    check(any("算法复盘" in t for t in labels),
+          "遮罩上确实有复盘按钮", str(labels))
+    check([m.get("stone") for m in w.human_moves] ==
+          [1, 2, 1, 2, 1, 2, 1, 2, 1], "复盘素材按黑白交替记下了每一手",
+          str([m.get("stone") for m in w.human_moves]))
     check(w.game_panel.turn_indicator.label.text() == "黑方获胜",
           "面板终局文案是「黑方获胜」",
           w.game_panel.turn_indicator.label.text())
     check(w.game_panel.engine_row._value.text() == "—",
           "本地对战的面板不显示引擎",
           w.game_panel.engine_row._value.text())
+
+    # 复盘强度页：双人局没有"本局难度"，列全表并带「自定义」。
+    w._on_review_clicked()
+    pump(60, app)
+    if check(w.review_strength is not None, "本地对战进入复盘强度页"):
+        check(w.review_strength.mode == "review_local",
+              "强度页是双人局那一支", w.review_strength.mode)
+        check(len(w.review_strength._cards) == len(M.engine.DIFFICULTY) + 1,
+              "双人局复盘强度页照搬难度页的档位表",
+              f"{len(w.review_strength._cards)} 张")
 
     w._cancel_ai()
     w._cancel_review(discard=True)

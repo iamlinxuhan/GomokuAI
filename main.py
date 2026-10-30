@@ -324,21 +324,25 @@ class _RoomBridge(QObject):
 
 # ==================== 复盘 Worker 线程 ====================
 class ReviewWorker(QThread):
-    """战后复盘：逐手重算玩家每一着，找出"不是最优点"的那些。
+    """战后复盘：逐手重算，找出"不是最优点"的那些。
 
     **每手都用所选档位的时限**（``engine.analyze`` 的默认口径 = 难度表里的
     ``time``），所以这一轮可能跑上十几秒 × 十几手。取消同样是协作式的：
     ``cancel()`` 置位 Event，引擎在搜索循环里轮询到就退出，**已经算完的部分
     保留**（``completed`` 照常发出，只是短一些）。
 
-    只复盘**玩家**的着法：``moves`` 是 ``main`` 记下的那些落子前局面快照，
-    ``human`` 是玩家执的子色。AI 的着法不在其中 —— 用户点名的口径。
+    ``moves`` 是 ``main`` 记下的那些落子前局面快照。**谁下的由每条记录自己带**
+    （``stone`` 键），因为三条路的复盘对象不同：
+
+    * 人机：只有玩家的着法，不记 ``stone``，一律按 ``human`` 算；
+    * 本地对战：黑白双方都记，于是**双方**都重算、都标明；
+    * 局域网：只记我方的着法 —— 对手的棋不在"我"的复盘范围里。
     """
 
     progressed = pyqtSignal(int, int)   # (已完成, 总数)
     completed = pyqtSignal(object)      # [record, ...]
 
-    def __init__(self, moves, human, level, cfg=None):
+    def __init__(self, moves, human, level, cfg=None, variant="free"):
         super().__init__()
         self.moves = list(moves)
         self.human = human
@@ -347,6 +351,10 @@ class ReviewWorker(QThread):
         # 否则打完棋再打开自定义弹窗改参数，这一局的复盘结果会被改写。预设档
         # 传 None，照旧走难度表。
         self.cfg = dict(cfg) if cfg is not None else None
+        # **本局那一套规则**。禁手局里黑方的一手值多少分，只有按禁手规则算出
+        # 来的数才有意义 —— 拿无禁手的刻度去评一盘禁手棋，被禁的着法会被算成
+        # 好棋（``engine.analyze`` 的文档串也这么写）。
+        self.variant = variant if variant in ("free", "ban") else "free"
         self._cancel = threading.Event()
 
     def cancel(self):
@@ -384,8 +392,16 @@ class ReviewWorker(QThread):
         """
         before = item['before']
         played = (item['r'], item['c'])
+        # 这一手是谁下的：本地对战的记录带 ``stone``，人机局没有这个键
+        # （那条路上每一条都是玩家自己的，``self.human`` 就是答案）。
+        stone = int(item.get('stone') or self.human)
+        # 只有**本地对战**的记录会带这个键（黑白交替，必须标明）；人机与
+        # 局域网整张列表同一个人，结果页不写前缀 —— 所以这里如实照抄，
+        # 而不是把算出来的 ``stone`` 一律塞进记录。
+        tagged = bool(item.get('stone'))
         best_idx, best_val, cands, _info = engine.analyze(
-            before, self.human, self.level, cancel=self._cancel, cfg=self.cfg)
+            before, stone, self.level, cancel=self._cancel, cfg=self.cfg,
+            variant=self.variant)
         if self._cancel.is_set():
             return None
         if not cands:
@@ -394,12 +410,16 @@ class ReviewWorker(QThread):
             #    个概念 —— 不是走错，是没得比。
             #  * 搜索连一轮都没跑完：截断了，同样没得比。
             # 两者都记 ``best=None``，结果页按"未评分"处理（见 ``_record_line``）。
-            return {
-                'seq': item['seq'], 'played': played, 'best': None,
+            rec = {
+                'seq': item['seq'], 'played': played,
+                'best': None,
                 'best_val': None, 'before': before, 'mate': False,
                 'played_val': None, 'delta': None, 'offboard': False,
                 'empty': not bool(np.any(before)),
             }
+            if tagged:
+                rec['stone'] = stone
+            return rec
         table = dict(cands)
         played_idx = played[0] * BOARD_SIZE + played[1]
         rec = {
@@ -412,6 +432,8 @@ class ReviewWorker(QThread):
             # 结果页要另给一句文字结论（见 ``_record_line``）。
             'mate': is_mate(best_val),
         }
+        if tagged:
+            rec['stone'] = stone
         if played_idx not in table:
             # 不在表里有两种**完全不同**的原因，不能混成一句话：
             #
@@ -478,10 +500,20 @@ def _record_line(rec):
     用户回头就找不到"我当时第 9 手走哪儿了" —— 列表要有从头到尾的连续性，
     结论才落在一条完整的棋谱上而不是一串孤立的错误。
 
+    本地对战的行首**标明这一手是谁下的**（【黑方】/【白方】）：那份列表里
+    黑白交替出现，不标就分不清第 3 手是"我走错了"还是"对面走错了"。人机与
+    局域网的行不带这个前缀 —— 前者只算玩家，后者只算我方，列表里从头到尾
+    同一个人，标了反而啰嗦。
+
     分值差在杀棋局面里没有量纲意义（两个杀棋分之差是 2×10⁷ 这个量级），
     所以那里改报一句文字结论 —— 光甩一个七位数只会让人以为程序算错了。
     """
-    head = i18n.tf("第 %d 手   %s", rec['seq'], _fmt_point(rec['played']))
+    if rec.get('stone'):
+        head = i18n.tf("【%s】第 %d 手   %s",
+                       i18n.t("黑方" if rec['stone'] == 1 else "白方"),
+                       rec['seq'], _fmt_point(rec['played']))
+    else:
+        head = i18n.tf("第 %d 手   %s", rec['seq'], _fmt_point(rec['played']))
     if not _is_rated(rec):
         # 空盘起始手没有"最优点"可言；搜索没跑完一轮则是没算出来。都不编。
         return head + ("   " + i18n.t("空盘起始手，无候选可比") if rec['empty']
@@ -693,12 +725,15 @@ class ReviewBoardScreen(Screen):
             QTimer.singleShot(0, sync)
 
     def _played_player(self):
-        """玩家那一手用的是谁的子色 —— 幽灵子的颜色。
+        """这一手用的是谁的子色 —— 幽灵子的颜色。
 
-        棋盘上黑先白后，第 N 手（``seq`` 从 1 起）的奇偶就是子色。不用
-        ``self.human``：那是"玩家执哪一色"，只有在玩家始终执同一色的对局里
-        才等价，而这里要的是"这一手是谁下的"。
+        记录里带着就用它（本地对战的黑白两手都带 ``stone``）；没带的是人机
+        与局域网的记录，那里每一行都是同一方，棋盘上黑先白后，第 N 手
+        （``seq`` 从 1 起）的奇偶就是子色。
         """
+        stone = self.rec.get('stone')
+        if stone:
+            return int(stone)
         return 1 if self.rec['seq'] % 2 == 1 else 2
 
 
@@ -2479,7 +2514,7 @@ def _rules_log_text(rules: str) -> str:
 class SelectionScreen(Screen):
     """对战模式 / 禁手规则 / 执棋颜色 / AI难度 / 复盘强度 选择。
 
-    五个模式共用 ``Screen`` 的骨架与节奏，差异只剩标题文案与卡片行 —— 历史上
+    这些模式共用 ``Screen`` 的骨架与节奏，差异只剩标题文案与卡片行 —— 历史上
     两条分支各自抄了一份 stretch/spacing（一个 30 一个 25，没有理由）。
     """
 
@@ -2489,7 +2524,12 @@ class SelectionScreen(Screen):
     review_level_selected = pyqtSignal(int)  # 复盘强度，档位 1-5
     rules_selected = pyqtSignal(int)  # 0=无禁手, 1=禁手（RIF）
 
-    #: 五个模式的标题/副标题，与 ``setup_ui`` 里的卡片分支一一对应。
+    #: 复盘页的三个入口：人机、本地对战、局域网。三者的卡片表一模一样，
+    #: 差别只在副标题说的"重算谁"。合成一组是因为 ``setup_ui`` 与
+    #: ``_rebuild_selection`` 里每一处"是不是复盘页"的判断都得同时认这三个。
+    _REVIEW_MODES = ("review", "review_local", "review_lan")
+
+    #: 各模式的标题/副标题，与 ``setup_ui`` 里的卡片分支一一对应。
     _TITLES = {
         "mode": ("选择对战模式", "挑战 AI、与身边人对坐，或局域网联机"),
         "rules": ("选择规则", "禁手规则只约束黑方：三三、四四、长连判负"),
@@ -2497,6 +2537,10 @@ class SelectionScreen(Screen):
         "difficulty": ("选择 AI 难度", "难度越高，AI 思考越深入"),
         "review": ("选择复盘强度",
                    "复盘强度不能低于本局难度（%s）"),
+        # 双人局没有"本局难度"可参照，副标题改说"重算谁" —— 那也正是这三种
+        # 复盘的实质差别（人机只算玩家、本地对战算双方、局域网只算我方）。
+        "review_local": ("选择复盘强度", "黑白双方每一手都会重算，并标明是谁下的"),
+        "review_lan": ("选择复盘强度", "只重算我方每一手"),
     }
 
     def __init__(self, mode="color", min_level=1):
@@ -2510,11 +2554,21 @@ class SelectionScreen(Screen):
         self._cards = []
         self.setup_ui()
 
+    def _offers_custom(self) -> bool:
+        """这一页要不要最后那张「自定义」卡。
+
+        难度页要；**双人局**的复盘页也要（用户 2026-10-30：复盘强度的选择
+        完全照搬难度选择，包含自定义）；人机局的复盘页不要 —— 自定义局的
+        复盘在那条路上整页都不出现。
+        """
+        return self.mode in ("difficulty", "review_local", "review_lan")
+
     def setup_ui(self):
         # 卡片行的间距：难度/复盘页 5 张卡用 LG(16)，颜色/mode 页只有 2 张，
         # 宽间距是那两张页面的节奏。卡片边长按"这一页要放几张"现算，塞不下
         # 就整体缩小（封顶 CARD_PX，正常屏幕上等于不缩）。
-        gap = (theme.SPACE_LG if self.mode in ("difficulty", "review")
+        gap = (theme.SPACE_LG
+               if (self.mode == "difficulty" or self.mode in self._REVIEW_MODES)
                else theme.SPACE_XL)
 
         if self.mode == "mode":
@@ -2563,7 +2617,7 @@ class SelectionScreen(Screen):
                 btn.clicked.connect(lambda _=False, v=value:
                                     self.color_selected.emit(v))
                 self._cards.append(btn)
-        elif self.mode in ("difficulty", "review"):
+        elif self.mode == "difficulty" or self.mode in self._REVIEW_MODES:
             # 副标题**曾经写的是"搜索深度 1/2/3"**，那是假的：三个档位的搜索
             # 深度上限是 4/10/24，实测到的是 4/4/5（见 tools/BASELINE.md）。
             # 改报思考时限 —— 它是 engine.DIFFICULTY 里真实存在、且用户能直接
@@ -2588,7 +2642,7 @@ class SelectionScreen(Screen):
             # 复盘页**只列不低于本局难度**的档位（用户点名的口径：初级输了就只能
             # 用初级及以上来复盘）。在这里过滤而不是在 `__init__` 里改 `levels`：
             # `index` 标签写的是真实档位号（"02" 就是第 2 档），过滤后仍要指对。
-            if self.mode == "review":
+            if self.mode in self._REVIEW_MODES:
                 levels = [lv for lv in levels if lv >= self.min_level]
                 # 配色跟着**真实档位号**走（第 2 档是 success，与难度页一致），
                 # 而不是把过滤后的列表从头上重新配一遍色。
@@ -2609,13 +2663,13 @@ class SelectionScreen(Screen):
             # —— 那是上一页的事。反过来，颜色选择页与面板的回合指示**不能**
             # 这么改，那里的子必须如实显示黑白。
             bar_player = 2 if theme.current_theme() == "dark" else 1
-            # 「自定义」只出现在**难度页**，复盘页不加。两个理由：
-            #  * 复盘页的档位是"用哪一档重算"，而自定义局的复盘**直接跳过这一页**
-            #    用本局快照的参数跑（见 GomokuGame._show_review_strength），所以
-            #    它在这里没有用武之地；
-            #  * 复盘页的过滤是「不低于本局难度」，如果自定义也进这张表，用户
-            #    只是想让 AI 从某一档重算，却先要面对一个要填参数的弹窗。
-            extra = 1 if self.mode == "difficulty" else 0
+            # 「自定义」出现在难度页，以及**双人局**的复盘页（本地对战 /
+            # 局域网）：那两局从没选过难度，用户要的就是一张和难度页一样的
+            # 表 —— 入门到 Gomocup，外加自定义（用户 2026-10-30 点名的口径）。
+            # 人机局的复盘页仍然不加：自定义局的复盘直接跳过这一页用本局快照
+            # 的参数跑（见 GomokuGame._show_review_strength），摆一张进去只会
+            # 多一个要填参数的弹窗。
+            extra = 1 if self._offers_custom() else 0
             # ``max_rows=2``：难度页加「Gomocup」之后是 7 张，一行按原尺寸排不下
             # （7×160+6×16 = 1216 > 974）。压到 125px 也能一行，但副标题会折成
             # 两行、卡片变竖长方形，而这一页下面是大片空页 —— 折成 4+3 明显更
@@ -2630,12 +2684,13 @@ class SelectionScreen(Screen):
                                   sub=_difficulty_sub(level),
                                   index=f"{level:02d}", size=size)
                 # 同一批卡片服务于两个页面，只有"点了发哪个信号"不同。
-                sig = (self.review_level_selected if self.mode == "review"
+                sig = (self.review_level_selected
+                       if self.mode in self._REVIEW_MODES
                        else self.difficulty_selected)
                 btn.clicked.connect(lambda _=False, l=level, s=sig: s.emit(l))
                 self._cards.append(btn)
 
-            if self.mode == "difficulty":
+            if self._offers_custom():
                 # 最后一张卡：**不画强度条**。强度条只表达"几颗子 = 多强"，而
                 # 自定义不表示某个固定强度 —— 硬塞 N 颗会和最强的预设档一样。
                 # 卡面换成自绘的「?」，说的是"这一档由你来定"（见 ui_kit
@@ -2645,9 +2700,14 @@ class SelectionScreen(Screen):
                     face=_custom_mark(),
                     sub="算法与深度可调",
                     index=f"{engine.CUSTOM_LEVEL:02d}", size=size)
+                # 难度页点了先去填参数；复盘页**不弹窗**，直接用当前那套
+                # 自定义参数重算 —— 复盘是回看，不该先拦住用户改十项数字。
+                if self.mode == "difficulty":
+                    custom_sig = self.difficulty_selected
+                else:
+                    custom_sig = self.review_level_selected
                 custom_btn.clicked.connect(
-                    lambda _=False: self.difficulty_selected.emit(
-                        engine.CUSTOM_LEVEL))
+                    lambda _=False, s=custom_sig: s.emit(engine.CUSTOM_LEVEL))
                 self._cards.append(custom_btn)
 
         # 5 张卡在 SPACE_XL(24) 下是 5×160+4×24 = 896px，仍塞得进 WINDOW_W=1022
@@ -3589,16 +3649,21 @@ class GomokuGame(QMainWindow):
     def _rebuild_selection(self, old):
         """按旧页自己的 ``mode``/``min_level`` 重建一个选择页，并重接信号。"""
         new = SelectionScreen(mode=old.mode, min_level=old.min_level)
-        sig, slot = {
-            "mode": (new.mode_selected, self._on_mode_selected),
-            "color": (new.color_selected, self._on_color_selected),
-            "difficulty": (new.difficulty_selected, self._on_difficulty_selected),
-            "review": (new.review_level_selected, self._on_review_level_selected),
-        }[old.mode]
+        if old.mode in SelectionScreen._REVIEW_MODES:
+            # 三个复盘入口共用同一套信号与句柄：重建后仍落回 ``review_strength``。
+            sig, slot, attr = (new.review_level_selected,
+                               self._on_review_level_selected,
+                               "review_strength")
+        else:
+            sig, slot = {
+                "mode": (new.mode_selected, self._on_mode_selected),
+                "color": (new.color_selected, self._on_color_selected),
+                "difficulty": (new.difficulty_selected,
+                               self._on_difficulty_selected),
+            }[old.mode]
+            attr = {"mode": "selection_mode", "color": "selection_color",
+                    "difficulty": "selection_difficulty"}[old.mode]
         sig.connect(slot)
-        attr = {"mode": "selection_mode", "color": "selection_color",
-                "difficulty": "selection_difficulty",
-                "review": "review_strength"}[old.mode]
         if getattr(self, attr, None) is old:
             return self._replace_page(old, new, attr)
         # 这一页还留在栈里但没有句柄（理论上不会）：只换页面，不覆盖句柄。
@@ -4325,6 +4390,11 @@ class GomokuGame(QMainWindow):
             # 本地双人局 UI 持有两条连接，同一手会收到两份 —— 只认第一份。
             return
         r, c, stone = int(ev["r"]), int(ev["c"]), int(ev["stone"])
+        # 复盘要的是**这一手落子之前**的局面。人机局那份来自人类回合的 turn
+        # 事件（``_pending_snapshot``）；双人局没有"回合前"事件，落子前这一刻
+        # 就在手边，复制一份再往下走，别让落子把它改掉。
+        before = (self._pending_snapshot if self.playmode == 0
+                  else self.board.copy())
         self.board[r][c] = stone
         self.session.move_count = move_no
         self.session.last_move = (r, c, stone)
@@ -4345,12 +4415,19 @@ class GomokuGame(QMainWindow):
             if self.playmode == 0:
                 # 复盘快照：before 是**这一手落子前**的局面，来自人类回合的
                 # turn 事件；seq 就是这一手的 move_no（与旧版逐字一致）。
-                before = self._pending_snapshot
                 if before is not None:
                     self.human_moves.append({
                         "seq": move_no, "r": r, "c": c, "before": before,
                     })
                 self._pending_snapshot = None
+            elif self.playmode == 1 or stone == self.session.human_stone:
+                # 本地对战：黑白**双方**都进复盘，记录带上子色（结果页据此
+                # 标【黑方】/【白方】）；局域网：只记我方 —— 对手的着法不是
+                # "我"要复盘的东西。
+                self.human_moves.append({
+                    "seq": move_no, "r": r, "c": c, "before": before,
+                    "stone": stone,
+                })
         else:
             # AI 着法。f.closed 是纵深防御：房间关闭与事件投递之间的窗口里
             # 往已关闭文件写会抛 ValueError —— 在 Qt 槽里传播就是直接崩。
@@ -4699,17 +4776,28 @@ class GomokuGame(QMainWindow):
         self._show_review_strength()
 
     def _show_review_strength(self):
-        """复盘强度：只列不低于本局难度的档位（``min_level``）。
+        """复盘强度：人机局只列不低于本局难度的档位（``min_level``）。
 
-        **自定义局跳过这一页。** 用户的口径是"直接取自定义难度的算法进行复盘"，
-        所以没有可选项可挑；而且这一页的卡片表只装 ``DIFFICULTY`` 里的五档，拿
-        ``min_level=6`` 去过滤会得到一张空页。
+        **人机自定义局跳过这一页。** 用户的口径是"直接取自定义难度的算法进行
+        复盘"，所以没有可选项可挑；而且这一页的卡片表只装 ``DIFFICULTY`` 里的
+        预设档，拿自定义的哨兵去过滤会得到一张空页。
+
+        **本地对战 / 局域网没有"本局难度"。** 这两局的对手是人，从头到尾没
+        选过档；``gamekunnan`` 那时还停在上一次人机的值（可能是"宗师"，也可能
+        是自定义的哨兵）。拿它当 ``min_level`` 会莫名把入门到高级全滤掉，拿它
+        当"跳过这一页"的依据更会把一局人机自定义的参数套到两个人的棋局上。
+        所以这两局一律列全表，档位由用户现挑 —— 那也正是"复盘时想用什么强度
+        重算"的意思。
         """
-        if self.gamekunnan == engine.CUSTOM_LEVEL:
-            self._on_review_level_selected(engine.CUSTOM_LEVEL)
-            return
-        self.review_strength = SelectionScreen(mode="review",
-                                               min_level=self.gamekunnan)
+        if self.playmode == 0:
+            if self.gamekunnan == engine.CUSTOM_LEVEL:
+                self._on_review_level_selected(engine.CUSTOM_LEVEL)
+                return
+            mode, min_level = "review", self.gamekunnan
+        else:
+            mode = "review_local" if self.playmode == 1 else "review_lan"
+            min_level = 1
+        self.review_strength = SelectionScreen(mode=mode, min_level=min_level)
         self.review_strength.review_level_selected.connect(
             self._on_review_level_selected)
         self._switch_page(self.review_strength)
@@ -4721,14 +4809,24 @@ class GomokuGame(QMainWindow):
         self.review_progress.cancel_clicked.connect(self._cancel_review)
         self._switch_page(self.review_progress)
 
-        human = 1 if self.gamemode == 0 else 2
+        # 人机局的默认子色来自执棋选择；局域网要问**这一局我执的是哪一色**
+        # （开房/加入时定下的，``gamemode`` 在那条路上只表示房主选了先后手）。
+        # 本地对战两条记录都自带 ``stone``，这个默认值用不上。
+        if self.playmode == 2 and self.session.human_stone:
+            human = self.session.human_stone
+        else:
+            human = 1 if self.gamemode == 0 else 2
         self._review_generation += 1
         gen = self._review_generation
-        # 自定义局把**开局那一刻快照的参数**交给复盘；预设档传 None，照旧查表。
+        # 人机自定义局把**开局那一刻快照的参数**交给复盘；预设档传 None，照旧
+        # 查表。双人局没有"本局自定义参数"可谈（那局根本没走难度页），
+        # ``game_custom_cfg`` 里就算还留着上一局人机的快照也不该拿来用 ——
+        # 这里传 None，引擎会取**当前**的自定义参数（``engine.custom_config``）。
         cfg = (self.game_custom_cfg
-               if level == engine.CUSTOM_LEVEL else None)
+               if level == engine.CUSTOM_LEVEL and self.playmode == 0
+               else None)
         self.review_worker = ReviewWorker(self.human_moves, human, level,
-                                          cfg=cfg)
+                                          cfg=cfg, variant=self.game_rules)
         self.review_worker.progressed.connect(self._on_review_progress)
         self.review_worker.completed.connect(
             lambda recs, lv=level, g=gen: self._on_review_done(recs, lv, g))
@@ -4910,8 +5008,8 @@ class GomokuGame(QMainWindow):
         lan = (self.playmode == 2)
         can_review = False
         if lan:
-            # LAN：对手是人不是 AI，没有"算法复盘"的素材；文案从"你"的
-            # 视角出发（human_stone 是这一局里我执的颜色）。
+            # LAN：对手是人不是 AI，所以文案从"你"的视角出发
+            # （human_stone 是这一局里我执的颜色）。
             if self.gamerule == 0:
                 text = "平局！"
                 is_win = False
@@ -4924,6 +5022,11 @@ class GomokuGame(QMainWindow):
                 text = "你输了！"
                 is_win = False
                 winner_str = "remote"
+            # 复盘入口：人机局只在输给 AI 时给（赢了没什么可复盘），而这里
+            # 两边都是人 —— 输赢都值得回头看一眼。房间配置 allow_review=False
+            # 时照旧不给；human_moves 里只有我方的着法，为空就说明我一着一手
+            # 都没记下（例如中途才连上），没有可复盘的东西。
+            can_review = bool(self.human_moves) and self._cfg("allow_review")
         elif local:
             # 本地对战：文案报的是"哪一方"赢，不是"你"。tone 只有 win/lose
             # 两种（theme 里就这两条规则），平局沿用 win —— 它至少不是个
@@ -4934,6 +5037,10 @@ class GomokuGame(QMainWindow):
                 text = "平局"
             is_win = True
             winner_str = {1: "black", 2: "white"}.get(self.winner, "draw")
+            # 本地对战同样是两个人下的棋：复盘把黑白双方都重算一遍、逐手
+            # 标明（见 ``ReviewWorker``）。平局也一样 —— 这里和上面 LAN 那支
+            # 是同一句判断，写在两支里是为了不打乱"文案在前、权限在后"。
+            can_review = bool(self.human_moves) and self._cfg("allow_review")
         elif self.gamerule == 2:
             text = "你赢了！"
             is_win = True
@@ -4942,10 +5049,11 @@ class GomokuGame(QMainWindow):
             text = "你输了！"
             is_win = False
             winner_str = "ai"
-            # 复盘入口**只在输给 AI 时**出现：赢了没有可复盘的东西，本地对战
-            # 根本没有 AI。判据写在这里而不是让遮罩自己猜，是因为"这一局是不是
-            # 输给 AI"只有主窗口知道（playmode + gamerule）。房间配置
-            # allow_review=False 时同样不给 —— 入口级禁用。
+            # 人机局的复盘入口**只在输给 AI 时**出现：赢给 AI 的那几手没有
+            # 值得回头看的东西。判据写在这里而不是让遮罩自己猜，是因为"这一局
+            # 是不是输给 AI"只有主窗口知道（playmode + gamerule）。房间配置
+            # allow_review=False 时同样不给 —— 入口级禁用。（本地对战 / 局域网
+            # 两支各自有自己的一份判断，见上。）
             can_review = bool(self.human_moves) and self._cfg("allow_review")
         else:
             text = "平局！"

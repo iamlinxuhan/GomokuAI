@@ -81,23 +81,28 @@ reference for A/B comparisons.
 - **Three ways to play**: right after the splash you choose "Challenge the AI",
   "Local match" or "LAN play". A local match involves no AI at all — two people
   take turns on one machine — so the turn hint and the final result both speak in
-  stone colours (`Black wins` / `White wins` / `Draw`), and its endgame overlay
-  offers no review: with no AI there is no algorithm to review against. LAN play
-  has its own section below
+  stone colours (`Black wins` / `White wins` / `Draw`), and it can be reviewed
+  afterwards like any other game (both sides, see below). LAN play has its own
+  section below
 - **Optional ban rules**: every mode is followed by a rules page (free / ban).
   Ban applies only to the game that selected it, and binds **black only** — a
   double three, double four or overline loses. Forbidden points are drawn as a
   ring with a cross in it (a geometric marker, not a character), hovering one
   explains it, and playing one asks for confirmation first
-- **Post-game algorithmic review**: after losing to the AI you can pick a
-  strength no lower than the one you played and have the engine re-compute each
-  move in turn. **Every move gets a row** — the good ones marked green and
-  labelled "optimal", the rest as original point → best point + score
-  difference — with a progress bar and a cancel that keeps what was already
-  computed. "Show position" displays the board **as it stood before that move**,
-  with the best point ringed and your actual move drawn as a ghost stone, so the
-  two sit on one board. The review runs on its own background thread
-  (`ReviewWorker`) at the time limit of the chosen level
+- **Post-game algorithmic review**: when a game ends you pick a strength and
+  have the engine re-compute each move in turn. **Every move gets a row** — the
+  good ones marked green and labelled "optimal", the rest as original point →
+  best point + score difference — with a progress bar and a cancel that keeps
+  what was already computed. "Show position" displays the board **as it stood
+  before that move**, with the best point ringed and your actual move drawn as a
+  ghost stone, so the two sit on one board. What gets reviewed depends on the
+  mode: against the AI only your moves, at a strength no lower than the one you
+  played (a custom game reuses its own parameters); in a local two-player match
+  **both colours**, each row prefixed with `【Black】` / `【White】` and the
+  strength page offering the full six levels plus custom; over the LAN only
+  **your own** moves. The review runs on its own background thread
+  (`ReviewWorker`) at the time limit of the chosen level, and under the rules the
+  game was played with
 
 ---
 

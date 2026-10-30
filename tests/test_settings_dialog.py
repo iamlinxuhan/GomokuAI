@@ -210,21 +210,29 @@ def test_gear_is_hidden_only_on_the_loading_screen(win, qapp):
 # ==================== 4：自定义卡只出现在难度页 ====================
 
 def test_custom_card_only_on_the_difficulty_page(qapp):
-    """难度页六张卡（五档 + 自定义），复盘页仍然五张。
+    """难度页六张卡（五档 + 自定义），人机复盘页仍然五张。
 
     ``SelectionScreen`` 的卡片表来自 ``engine.DIFFICULTY``，而哨兵档**不在**表里
     —— 自定义卡是唯一一张单独追加的。复盘页按 ``level >= min_level`` 过滤，若把
     哨兵塞进 ``DIFFICULTY``，这里会变成 6。
+
+    双人局的两张复盘页（``review_local`` / ``review_lan``）**要**那张自定义卡
+    —— 用户 2026-10-30 的口径是"复盘强度的选择完全照搬难度选择，包含自定义"。
     """
     difficulty = M.SelectionScreen(mode="difficulty")
     review = M.SelectionScreen(mode="review", min_level=1)
+    pvp = M.SelectionScreen(mode="review_local", min_level=1)
+    lan = M.SelectionScreen(mode="review_lan", min_level=1)
     try:
         assert len(difficulty._cards) == len(engine.DIFFICULTY) + 1
         assert len(review._cards) == len(engine.DIFFICULTY)
+        for page in (pvp, lan):
+            assert len(page._cards) == len(engine.DIFFICULTY) + 1
+            assert _card_text(page._cards[-1]) == "自定义"
         assert _card_text(difficulty._cards[-1]) == "自定义"
     finally:
-        difficulty.deleteLater()
-        review.deleteLater()
+        for page in (difficulty, review, pvp, lan):
+            page.deleteLater()
 
 
 def test_custom_card_emits_the_sentinel_level(qapp):
@@ -323,6 +331,7 @@ def test_custom_review_skips_the_strength_page(win, qapp, monkeypatch):
                                enhance=False)
     win.gamemode = 0
     win.human_moves = []
+    win.game_rules = "ban"
 
     captured = {}
     # 只用 __init__ 的入参做断言，真线程与它的信号一并顶掉。
@@ -332,6 +341,8 @@ def test_custom_review_skips_the_strength_page(win, qapp, monkeypatch):
 
     assert captured["level"] == engine.CUSTOM_LEVEL
     assert captured["cfg"]["max_depth"] == 9
+    # 复盘要按**本局**的规则打分，否则禁手局里被禁的点会被评为好棋。
+    assert captured["variant"] == win.game_rules
     assert win.review_strength is None, "自定义局不该渲染强度页"
 
 
@@ -343,10 +354,11 @@ def _make_stub(captured):
         progressed = pyqtSignal(int, int)
         completed = pyqtSignal(object)
 
-        def __init__(self, moves, human, level, cfg=None):
+        def __init__(self, moves, human, level, cfg=None, variant="free"):
             super().__init__()
             captured["level"] = level
             captured["cfg"] = cfg
+            captured["variant"] = variant
 
         def start(self):
             pass

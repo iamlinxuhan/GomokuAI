@@ -213,13 +213,42 @@ def test_human_then_ai_move_updates_board_and_snapshot(monkeypatch, qapp):
         _teardown(win, qapp)
 
 
-def test_human_moves_not_recorded_in_pvp(monkeypatch, qapp):
-    """C3：本地双人没有"复盘对象"，human_moves 必须为空。"""
+def test_pvp_records_both_sides_with_their_stone(monkeypatch, qapp):
+    """C3：本地对战**黑白双方**都进复盘素材，每条带子色。
+
+    复盘要把两边都重算、逐手标明【黑方】/【白方】（用户 2026-10-30 的口径），
+    所以这里的 ``human_moves`` 不再是"玩家自己的手"，而是"所有人类着法"。
+    """
     win, _ = _build(monkeypatch, qapp, mode=1)
     try:
         _human_click(qapp, win, 9, 9)
         assert _pump_until(qapp, lambda: win.board[9][9] == 1), "本地首手未落子"
-        assert win.human_moves == []
+        _human_click(qapp, win, 8, 8)
+        assert _pump_until(qapp, lambda: win.board[8][8] == 2), "白子未落"
+
+        assert [(m["seq"], m["stone"]) for m in win.human_moves] == \
+            [(1, 1), (2, 2)]
+        first, second = win.human_moves
+        assert not first["before"].any()        # 第 1 手的 before 就是空盘
+        assert second["before"][9][9] == 1      # 第 2 手看得到第 1 手
+        assert second["before"][8][8] == 0      # 但看不到自己 —— 落子**之前**
+    finally:
+        _teardown(win, qapp)
+
+
+def test_pvp_undo_trims_both_sides_records(monkeypatch, qapp):
+    """本地对战悔棋：撤掉的那几手，复盘素材里也不留。"""
+    win, _ = _build(monkeypatch, qapp, mode=1)
+    try:
+        for r, c in ((9, 9), (8, 8), (9, 8)):
+            _human_click(qapp, win, r, c)
+            assert _pump_until(qapp, lambda r=r, c=c: win.board[r][c] != 0), \
+                "本地落子未完成"
+        assert [m["seq"] for m in win.human_moves] == [1, 2, 3]
+
+        win._on_undo()
+        assert _pump_until(qapp, lambda: win.move_count == 2), "悔棋未回到第 2 手"
+        assert [m["seq"] for m in win.human_moves] == [1, 2]
     finally:
         _teardown(win, qapp)
 
