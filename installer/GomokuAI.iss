@@ -34,12 +34,26 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={localappdata}\GomokuAI
+DefaultDirName={autopf}\GomokuAI
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-; 装进 %LOCALAPPDATA% 而非 Program Files：不需要管理员权限（不弹 UAC），
-; 且与旧的 install.bat 行为一致 —— 那里写的也是 %LOCALAPPDATA%\GomokuAI。
-PrivilegesRequired=lowest
+; **全机安装**（Program Files + HKLM 卸载项），不是每用户装的 %LOCALAPPDATA% 那份。
+;
+; 2026-11-01 改的，直接原因是 Microsoft Store 的包检查：那套检查跑安装程序时
+; 用的不是当前用户上下文，`PrivilegesRequired=lowest` 把卸载项写进 HKCU 之后，
+; 检查侧读不到，于是「添加或删除程序中的条目」和「捆绑软件检查」两项都只能
+; 报"无法标识"（问号，不是叉），提交时再进一步报 `PackageSet 无效`。
+; HKLM 里的卸载项对任何上下文都可见，这一条从根上消掉。
+;
+; 代价是要弹 UAC（安装一次，不是每次启动）。应用本身不受影响：设置走
+; QSettings（HKCU），安装包装的是 play 变体、一个文件都不往 exe 同目录写
+; （见 gamelog.py 顶部那段），所以 Program Files 的只读属性不会碍事。
+;
+; `{autopf}` 在下面的架构指令下解析为 `C:\Program Files`；两条架构指令同时
+; 保证 32 位 Windows 装不上 —— 打出来的 exe 是 64 位的。
+PrivilegesRequired=admin
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist-installer
 ; 产物名与 Linux 那套逐字同构：GomokuAI_<平台>_<stem>_<setup|run>[_debug|_play]。
 ; Linux 是 GomokuAI_Linux_amd_x86_64_setup.deb，这里是它的 .exe 版本。

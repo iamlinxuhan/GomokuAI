@@ -657,7 +657,7 @@ jobs:
             | 平台 | 可选架构 | 安装包 |
             |---|---|---|
             | Linux | `amd_x86_64` / `amd_x32` / `aarch64` / `armv7` | `.deb`（x86 系）或 `.tar.gz`（ARM 系，解包后 `sudo ./install.sh`） |
-            | Windows | `amd_x86_64` | `.exe`，装到 `%LOCALAPPDATA%\GomokuAI`，不需要管理员权限 |
+            | Windows | `amd_x86_64` | `.exe`，装到 `C:\Program Files\GomokuAI`，安装时弹一次 UAC |
 
             裸文件下载后要自己给可执行位（Release 资产不携带文件权限）：
             `chmod +x GomokuAI_Linux_amd_x86_64_run_play`。
