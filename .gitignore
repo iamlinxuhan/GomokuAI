@@ -25,6 +25,7 @@ dist/
 build/
 *.spec
 dist-installer/
+dist-msix/
 deb_build/
 .venv-build/
 

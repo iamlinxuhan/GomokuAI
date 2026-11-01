@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX 清单模板。由 packaging/msix/build_msix.ps1 填充，不要手改生成物。
+
+  **Identity 的两项必须与 Partner Center 里那个 MSIX 产品的「产品标识」逐字一致**，
+  大小写也算 —— 不一致时上传会报 0x80080204（清单与保留标识不匹配），而且报错
+  里只会说"包名或发布者不匹配"，不会告诉你差在哪。
+-->
+<Package
+    xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+    xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+    xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+    IgnorableNamespaces="uap rescap">
+
+  <Identity
+      Name="@IDENTITY_NAME@"
+      Publisher="@IDENTITY_PUBLISHER@"
+      Version="@VERSION@"
+      ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>@DISPLAY_NAME@</DisplayName>
+    <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!-- 1809 起才支持完整的 Win32 打包。本地引擎是 C++17 编的，不挑更低版本。 -->
+    <TargetDeviceFamily Name="Windows.Desktop"
+                        MinVersion="10.0.17763.0"
+                        MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="zh-CN" />
+    <Resource Language="zh-TW" />
+    <Resource Language="en-US" />
+    <Resource Language="ru-RU" />
+    <Resource Language="ja-JP" />
+    <Resource Language="ko-KR" />
+  </Resources>
+
+  <Applications>
+    <!--
+      EntryPoint 必须是 Windows.FullTrustApplication 配 runFullTrust 能力：
+      这是个 PyInstaller 打出来的 Win32 程序，不是 UWP。
+    -->
+    <Application Id="App" Executable="GomokuAI.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+          DisplayName="@DISPLAY_NAME@"
+          Description="@DESCRIPTION@"
+          BackgroundColor="transparent"
+          Square150x150Logo="Assets\Square150x150Logo.png"
+          Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

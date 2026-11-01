@@ -1,0 +1,163 @@
+# ============================================================
+#  MSIX — 只给 Microsoft Store 提交用，与正式发版流程完全分开
+#
+#  为什么单开一条：EXE 提交方式卡在政策 10.2.9（包安全，要求自己做代码签名）。
+#  MSIX 由商店对上传的包重新签名，本地只要一张与清单 Publisher 同名的自签名
+#  证书就能封包，不用买证书。这跟 build.yml 那条发版链路没有交集：
+#
+#  * **不建 GitHub Release**，也不往 Release 挂资产；
+#  * 产物推到 `releases` 分支的 `msix/v<版本>/` 下，靠 GitHub Pages 给一条
+#    不重定向的直链（商店提交虽然是自己上传文件，但测试和留存都需要这条链接）；
+#  * 手动触发，identity 由调用方现场填 —— 那两项必须与 Partner Center 上那个
+#    MSIX 产品的「产品标识」逐字一致，写死在仓库里迟早对不上。
+# ============================================================
+name: Build MSIX
+
+on:
+  workflow_dispatch:
+    inputs:
+      identity_name:
+        description: "MSIX Identity Name（Partner Center → 产品标识 → 包/标识/名称）"
+        required: true
+        type: string
+      identity_publisher:
+        description: "MSIX Identity Publisher（产品标识 → 包/标识/发布者，形如 CN=...）"
+        required: true
+        type: string
+      display_name:
+        description: "清单里的显示名称"
+        required: false
+        default: "Gomoku AI"
+        type: string
+      publisher_display_name:
+        description: "发布者显示名"
+        required: false
+        default: "iamlinxuhan"
+        type: string
+      description:
+        description: "清单里的描述（磁贴旁边那行小字）"
+        required: false
+        default: "Offline Gomoku (five-in-a-row) with a C++ search engine"
+        type: string
+      publish_link:
+        description: "把产物推到 releases 分支并给出一条 Pages 直链"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  msix:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --python 3.11
+
+      - name: Resolve version
+        shell: pwsh
+        run: |
+          # 版本号只从 pyproject.toml 读 —— 与 build.yml 的来源一致。
+          # 手动触发时没有 tag，GITHUB_REF_NAME 是分支名，拿不到号码。
+          $m = Select-String -Path pyproject.toml -Pattern '^version\s*=\s*"([\d.]+)"' | Select-Object -First 1
+          if (-not $m) { throw "pyproject.toml 里读不到 version = " }
+          $ver = $m.Matches[0].Groups[1].Value
+          "APP_VERSION=$ver" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Write-Host "版本号: $ver"
+
+      - name: Build C++ engine
+        # 不带引擎，4/5 档会退回本地 Python 实现，MSIX 里那份就等于残废。
+        run: |
+          cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build cpp/build --config Release -j
+          .\cpp\build\Release\gomoku_engine.exe --verify-tables --selftest
+          .\cpp\build\Release\gomoku_engine_ban.exe --verify-tables --selftest
+
+      - name: Build onedir (MSIX payload, play)
+        shell: pwsh
+        run: |
+          $flavorDir = Join-Path $env:RUNNER_TEMP "build-flavor"
+          New-Item -ItemType Directory -Force -Path $flavorDir | Out-Null
+          Set-Content -Path "$flavorDir\_build_flavor.py" `
+            -Value 'FLAVOR = "play"' -Encoding ascii
+          uv run --frozen pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
+            --paths $flavorDir `
+            --add-binary "cpp\build\Release\gomoku_engine.exe;." `
+            --add-binary "cpp\build\Release\gomoku_engine_ban.exe;." main.py
+          if (-not (Test-Path "dist\GomokuAI\GomokuAI.exe")) {
+            throw "PyInstaller 没有产出 dist\GomokuAI\GomokuAI.exe"
+          }
+
+      - name: Pack and sign MSIX
+        shell: pwsh
+        # 参数走环境变量而不是把 ${{ }} 直接插进 PowerShell 单引号里 ——
+        # 描述里只要有一个单引号，插值那条路就会把脚本撕成两半。
+        env:
+          IDENTITY_NAME: ${{ inputs.identity_name }}
+          IDENTITY_PUBLISHER: ${{ inputs.identity_publisher }}
+          DISPLAY_NAME: ${{ inputs.display_name }}
+          PUBLISHER_DISPLAY_NAME: ${{ inputs.publisher_display_name }}
+          APP_DESCRIPTION: ${{ inputs.description }}
+        run: |
+          ./packaging/msix/build_msix.ps1 `
+            -IdentityName $env:IDENTITY_NAME `
+            -IdentityPublisher $env:IDENTITY_PUBLISHER `
+            -DisplayName $env:DISPLAY_NAME `
+            -PublisherDisplayName $env:PUBLISHER_DISPLAY_NAME `
+            -Description $env:APP_DESCRIPTION `
+            -AppVersion $env:APP_VERSION
+
+      - name: Check size against the Pages per-file limit
+        # GitHub Pages 单文件上限 100 MB。超了推上去也只会 404，
+        # 与其提交后才在商店那边发现，不如在这里说清楚。
+        shell: pwsh
+        run: |
+          $f = Get-Item "dist-msix\GomokuAI_Windows_amd_x86_64.msix"
+          $mb = [math]::Round($f.Length / 1MB, 1)
+          Write-Host "MSIX 大小：$mb MB"
+          if ($f.Length -gt 100MB) {
+            throw "MSIX 超过 GitHub Pages 的单文件上限（100 MB），直链发不出去"
+          }
+
+      - name: Publish to the releases branch
+        if: ${{ inputs.publish_link }}
+        shell: pwsh
+        run: |
+          git config user.name "iamlinxuhan"
+          git config user.email "2276677131@qq.com"
+          git fetch origin releases
+          git checkout -B releases FETCH_HEAD
+
+          $dir = "msix\v$env:APP_VERSION"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          Copy-Item "dist-msix\GomokuAI_Windows_amd_x86_64.msix" `
+            -Destination "$dir\GomokuAI_Windows_amd_x86_64.msix" -Force
+
+          git add $dir
+          if (git diff --cached --quiet) {
+            Write-Host "releases 分支上已经有同名同内容的文件，跳过提交"
+          }
+          else {
+            git commit -m "MSIX v$env:APP_VERSION"
+            git push origin releases
+          }
+          Write-Host "直链：https://iamlinxuhan.github.io/GomokuAI/msix/v$env:APP_VERSION/GomokuAI_Windows_amd_x86_64.msix"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix_amd_x86_64
+          path: dist-msix/GomokuAI_Windows_amd_x86_64.msix
