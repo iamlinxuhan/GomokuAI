@@ -86,8 +86,30 @@ echo "=============================================================="
 # --system-site-packages，所以 ③.5 里直接 import PIL 就得到。
 # ---------------------------------------------------------------------------
 export DEBIAN_FRONTEND=noninteractive
-apt-get update -qq
-apt-get install -y -qq --no-install-recommends \
+
+# 容器里第一次 apt 经常拿不到 DNS：docker 网桥的 DNS 还没就绪时，
+# `apt-get update` 只打一行 `Temporary failure resolving 'deb.debian.org'`
+# 就"成功"返回，紧随其后的 install 变成一整屏 `Unable to locate package`
+# —— 症状与真正的原因隔了一层。i386 那次就是这样在 13 秒里挂掉的，
+# 同一份代码在别的架构上刚刚装成功。
+#
+# 所以 update 与 install 绑在一起重试；三次都失败时 apt 自己的输出留在
+# 日志里，别让 "unable to locate package" 把 DNS 故障盖住。
+apt_install() {
+    local attempt
+    for attempt in 1 2 3; do
+        if apt-get update -qq &&
+           apt-get install -y -qq --no-install-recommends "$@"; then
+            return 0
+        fi
+        echo "!! apt 失败（第 ${attempt}/3 次），10 秒后重试" >&2
+        sleep 10
+    done
+    echo "!! apt 连续三次失败：容器内的包索引或 DNS 不可用" >&2
+    return 1
+}
+
+apt_install \
     python3 python3-venv python3-dev python3-pyqt5 python3-numpy python3-pil \
     cmake g++ gcc make binutils zlib1g-dev file \
     libgl1 libglib2.0-0 libxkbcommon-x11-0 libxkbcommon0 \
@@ -379,7 +401,7 @@ if [ "$EXT" = "appimage" ]; then
 
     # mksquashfs 是 appimagetool 的硬依赖；1.9.x 的 AppImage 里虽然自带一份，
     # 但显式装上不贵，也避免"某个发行版镜像里恰好缺了"这种只在 CI 炸的问题。
-    apt-get install -y -qq --no-install-recommends squashfs-tools
+    apt_install squashfs-tools
 
     APPDIR="AppDir"
     rm -rf "$APPDIR"
@@ -431,10 +453,17 @@ EOF
     # **不跟 `continuous`**：那是一个每天变的滚动 tag，哈希无法固定，"校验下载"
     # 就退化成"下载什么信什么"。1.9.1 是 2025-11-18 的正式发布。
     #
-    # 哈希从官方 Release 下载后本地算得；换版本必须同时改 URL 与哈希。
+    # 哈希是从官方 Release 下载后本地算得；换版本必须同时改 URL 与哈希。
+    #
+    # **这两个值第一次写错了**，两条 AppImage 分支都停在
+    # `sha256sum: WARNING: 1 computed checksum did NOT match`。
+    # 下面这组是 2026-11-13 重新下载并 sha256sum 算出来的，两个文件都是
+    # 真正的 ELF（`file` 认得出 x86-64 / ARM aarch64），不是错误页。
+    # 校验值和资产不匹配时**必须停下来查**，不能把断言删掉：
+    # 它正是这类手抄错误唯一的拦截点。
     APPIMAGETOOL_VERSION="1.9.1"
-    APPIMAGETOOL_SHA256_amd_x86_64="8e5a55a3740f92ebf77f1c88c3aa466ace6ad9739ed173d288023bac61457525"
-    APPIMAGETOOL_SHA256_aarch64="5ebab677bb0532e7e342487e5e3a40d648963d7a7faa299001c8ab5b3ca3ba7c"
+    APPIMAGETOOL_SHA256_amd_x86_64="ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0"
+    APPIMAGETOOL_SHA256_aarch64="f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158"
     case "$STEM" in
         amd_x86_64) TOOL_ARCH="x86_64";  TOOL_SHA="$APPIMAGETOOL_SHA256_amd_x86_64" ;;
         aarch64)    TOOL_ARCH="aarch64"; TOOL_SHA="$APPIMAGETOOL_SHA256_aarch64" ;;
