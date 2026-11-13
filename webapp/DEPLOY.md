@@ -99,7 +99,7 @@ cd webapp/dist && python3 -m http.server 8000
 2. 上传 `webapp/gomoku-web.zip`。**不要再套一层目录**，zip 里直接是
    `index.html`、`app.js`、`style.css`、`engine-worker.js`、`book.js`，
    再加 `gomoku-free-*.js` / `gomoku-ban-*.js` 八份（四个尺寸 × 两种规则），
-   一共 14 个文件。
+   一共 13 个文件。
 3. 填作品信息：
    - **slug**：建议 `gomoku-ai`。只用 `[A-Za-z0-9_-]`，**发布后不可修改**，
      它就是最终地址 `bilibili.com/toy/gomoku-ai/` 的那一段。
