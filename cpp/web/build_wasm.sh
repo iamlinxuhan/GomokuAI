@@ -24,7 +24,10 @@ cd "$ROOT"
 OUT=webapp/dist
 mkdir -p "$OUT"
 
-CORE="cpp/src/board.cpp cpp/src/evaluate.cpp cpp/src/search.cpp cpp/src/tables.cpp cpp/src/opening.cpp"
+# search.cpp 现在引用了 `openingBookLookup` 与 `dfpnSearch`（v4.4.0 起），
+# 少了它们链接会直接失败。网页这边不下发 useBook / proofMode（默认都是 0），
+# 所以这两块代码只是躺在包里，不会被走到。
+CORE="cpp/src/board.cpp cpp/src/evaluate.cpp cpp/src/search.cpp cpp/src/tables.cpp cpp/src/opening.cpp cpp/src/opening_book.cpp cpp/src/dfpn.cpp"
 API="cpp/web/wasm_api.cpp"
 
 # 异常必须真的能 catch：搜索用 `throw SearchAborted` 从深递归里跳出时间上限
