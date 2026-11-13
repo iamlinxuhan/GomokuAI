@@ -248,7 +248,12 @@ jobs:
           amd_deb='{"name":"amd64-deb","group":"amd64","stem":"amd_x86_64","platform":"linux/amd64","runs_on":"ubuntu-latest","qemu":false,"ext":"deb","deb_arch":"amd64"}'
           arm_appimage='{"name":"arm64-appimage","group":"arm64","stem":"aarch64","platform":"linux/arm64","runs_on":"ubuntu-24.04-arm","qemu":false,"ext":"appimage","deb_arch":"arm64"}'
           arm_tar='{"name":"arm64-tar","group":"arm64","stem":"aarch64","platform":"linux/arm64","runs_on":"ubuntu-24.04-arm","qemu":false,"ext":"tar.gz","deb_arch":"arm64"}'
-          i386='{"name":"i386","group":"i386","stem":"amd_x32","platform":"linux/386","runs_on":"ubuntu-latest","qemu":false,"ext":"deb","deb_arch":"i386"}'
+          # i386 钉在 24.04 而不是 ubuntu-latest：ubuntu-latest 已在 2026-11
+          # 迁到 26.04，而 32 位 userland 的容器在那张镜像上**解析不了 DNS**
+          # （`Temporary failure resolving 'deb.debian.org'`，重试三次都停在
+          # 同一处，同时跑的其他架构都能装上包）。armv7 走 QEMU 却没事，差的
+          # 就是"32 位 x86 进程 + 新版 docker 内置 DNS"这一格组合。
+          i386='{"name":"i386","group":"i386","stem":"amd_x32","platform":"linux/386","runs_on":"ubuntu-24.04","qemu":false,"ext":"deb","deb_arch":"i386"}'
           armv7='{"name":"armv7","group":"armv7","stem":"armv7","platform":"linux/arm/v7","runs_on":"ubuntu-latest","qemu":true,"ext":"tar.gz","deb_arch":"armhf"}'
           # tag 推送时 `inputs.linux` 是空串，落进 `*` 那一支 —— 正是发版要的。
           # 手动 dispatch 选 amd64 时只留 `group=amd64` 的两格。
@@ -312,8 +317,12 @@ jobs:
           EXT: ${{ matrix.ext }}
           DEB_ARCH: ${{ matrix.deb_arch }}
         run: |
+          # `--dns` 绕过 docker 内置的 127.0.0.11 解析器：32 位 x86 容器在
+          # 新版 runner 上就是死在这一步。写死了公共 DNS 之后，容器的
+          # /etc/resolv.conf 直接指向它们，不再经过内置转发。
           docker run --rm \
             --platform ${{ matrix.platform }} \
+            --dns 1.1.1.1 --dns 8.8.8.8 \
             -v "${GITHUB_WORKSPACE}:/src" -w /src \
             -e STEM -e EXT -e DEB_ARCH -e APP_VERSION \
             debian:bookworm \
