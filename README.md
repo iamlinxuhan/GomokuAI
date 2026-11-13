@@ -30,14 +30,13 @@ Ed25519 signature.
 > pure-Python engine, which needs no platform-specific binary and therefore runs
 > on macOS.
 
-| | |
-|---|---|
-| Board | 9×9 / 13×13 / 15×15 (default) / 19×19, free or RIF ban rules |
-| Difficulty | six presets (Entry → Gomocup) plus a custom level |
-| Modes | AI, local two-player, LAN, plus a headless server |
-| Platforms | Windows 10/11, Linux (x86_64, aarch64, x32, armv7) |
-| Tests | 706 passing (non-perf), plus a headless UI suite and a 4-size × 3-path end-to-end run |
-| Licence | GPL-3.0-or-later |
+- **Board** — 9×9 / 13×13 / 15×15 (default) / 19×19, free or RIF ban rules
+- **Difficulty** — six presets (Entry → Gomocup) plus a custom level
+- **Modes** — AI, local two-player, LAN, plus a headless server
+- **Platforms** — Windows 10/11, Linux (x86_64, aarch64, x32, armv7)
+- **Tests** — 706 passing (non-perf), plus a headless UI suite and a 4-size ×
+  3-path end-to-end run
+- **Licence** — GPL-3.0-or-later
 
 ---
 
