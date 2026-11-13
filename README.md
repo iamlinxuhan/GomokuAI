@@ -1,26 +1,22 @@
-# 🎮 Gomoku AI
+# 五子棋 AI · Gomoku AI
 
 [简体中文](README.zh-CN.md) | **English**
 
-> **macOS users: this repository ships no macOS build** (it has never been
-> developed or verified on macOS). For macOS, go to
-> **[GomokuAI-Py](https://github.com/iamlinxuhan/GomokuAI-Py)** — that is the
-> older pure-Python engine, which needs no platform-specific binary and
-> therefore runs on macOS.
+![Gomoku AI](docs/cover.png)
 
-A human-vs-AI Gomoku (five-in-a-row) program built on **PyQt5**. The engine is
-**bitboard + fully incremental evaluation + Negamax/PVS + transposition table +
-quiescence search + VCF (continuous forced fours)**, running on CPU only. Five
-difficulty levels; a cool-toned design system around a warm wooden board, with a
-side panel that plots the AI's score and the estimated human win rate live.
-**Three ways to play**: challenge the AI, play a local match with a second person
-at the same machine, or **play over the LAN** against another copy of the program.
+A human-vs-AI Gomoku (five-in-a-row) program on **PyQt5**, with its search core
+written in **C++17** and reached over a loopback socket. The engine is bitboard
+based, with fully incremental evaluation, PVS + transposition table + quiescence
+search, VCF, and the **Gomocup 2026 official opening book**. It runs on the CPU
+only.
 
-The search core was rewritten in **C++17** (same algorithm, aligned line by
-line) and exposed to the UI over a local TCP socket. Measured nps went from
-around 48k to **0.6–3.3M (roughly 20–30×)**. The Python implementation is kept
-in full as `engine_local.py` — both a fallback when C++ is unavailable and the
-reference for A/B comparisons.
+The board comes in **four sizes** — 9×9, 13×13, 15×15 (default) and 19×19 — and
+there are **three ways to play**: against the AI, a two-player match at one
+machine, or over the **LAN** against another copy of the program. Every finished
+game can be re-computed move by move.
+
+Windows and Linux builds are published with **automatic updates** verified by an
+Ed25519 signature.
 
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
@@ -28,108 +24,100 @@ reference for A/B comparisons.
 ![Version](https://img.shields.io/badge/version-4.4.0-brightgreen)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
+> **macOS users: this repository ships no macOS build** (it has never been
+> developed or verified on macOS). For macOS, go to
+> **[GomokuAI-Py](https://github.com/iamlinxuhan/GomokuAI-Py)** — the older
+> pure-Python engine, which needs no platform-specific binary and therefore runs
+> on macOS.
+
+| | |
+|---|---|
+| Board | 9×9 / 13×13 / 15×15 (default) / 19×19, free or RIF ban rules |
+| Difficulty | six presets (Entry → Gomocup) plus a custom level |
+| Modes | AI, local two-player, LAN, plus a headless server |
+| Platforms | Windows 10/11, Linux (x86_64, aarch64, x32, armv7) |
+| Tests | 706 passing (non-perf), plus a headless UI suite and a 4-size × 3-path end-to-end run |
+| Licence | GPL-3.0-or-later |
+
 ---
 
-## ✨ Features
+## What's new in v4.4.0
 
-### 🤖 AI algorithms
+- **Board size is selectable.** 9/13/15/19, default **15×15**, across single
+  player, local match, LAN, logs and review. On the C++ side each size is a
+  separate compile, so no hot path gained a runtime branch.
+- **The Gomocup 2026 official openings are in the book** — all 24 published
+  lines, every prefix of each, expanded through the eight D4 symmetries at
+  startup. A lookup is one hash at the root.
+- **DFPN proof search** ships with the binary in two flavours, VCF-only and VCT.
+  It is wired in parallel to the main search and **stays off by default**: the
+  A/B gate was not met (details below).
+- **Automatic updates** for the Windows installer, the Windows portable build and
+  the Linux AppImage: `SHA256SUMS` + detached Ed25519 signature, draft releases
+  that only go live after the offline signing step.
+- **Linux ships AppImage**; the eight bare executables are gone. Logging is
+  switched on with `--debug` or `GOMOKUAI_LOG=1` on any build.
+
+---
+
+## Screens
+
+| In a game | Picking a size |
+|---|---|
+| ![Game](docs/game.png) | ![Sizes](docs/sizes.png) |
+
+The side panel reports who computed each move (`C++` / `Python (local)` / `Book`),
+the TCP port it landed on, and plots two curves: the raw engine score, and an
+estimated human win rate derived from it. The latter is an estimate under the
+engine's own model, not a calibrated probability.
+
+---
+
+## Features
+
+### Engine
 
 | Technique | Notes |
-|------|------|
-| **Bitboard** | 361-bit integer bitmap + fully incremental state (candidate set / neighbour counts / hash / threat aggregation). `make`/`unmake` are strictly symmetric and support out-of-order undo |
-| **Pattern classification** | Defined by **set semantics**: `F(S) = {empty e : playing at e makes five}`, so `\|F\|≥2` is an open four and `\|F\|=1` is a four. It counts the **number of winning points**, not intermediate notions like "how many open fours" that would first need explaining |
-| **Zero-sum evaluation** | `evaluate(pos, black) == -evaluate(pos, white)`, maintained incrementally, with no asymmetric coefficients |
-| **Negamax + PVS** | Principal Variation Search, fast pruning on zero-window searches |
-| **Transposition table** | Fixed-size array with age-based replacement; mate scores are stored normalised (store `value+ply`, read back `value-ply`). Levels 4/5 use a **2-way bucket** (48 MiB resident) |
-| **Quiescence search** | At leaf nodes, only forced moves are searched, removing misjudgements caused by the evaluation being cut off at the horizon |
-| **VCF (continuous forced fours)** | Searches specifically for forced sequences where "every move is a four"; **three-state return** (win / no win / could not finish), with AND semantics on the defending side. **Enabled on all six levels** — the lower levels are separated by their depth cap, not by making them blind |
-| **Move ordering** | History heuristic + killer moves + winning-point priority |
-| **Time control** | Hard time limit + iterative deepening + aspiration windows + cooperative cancellation (restarting mid-think interrupts immediately) |
-| **Opening book** | The strongest configuration's best moves for the first four opening moves, precomputed offline into a table (41 entries, covering positions with ≤3 stones on the board). A hit returns with zero delay; anything off-table falls back to search. The empty board still plays tengen, bypassing the table |
-| **Enhanced search** | LMR + forced-move extension + 2-way bucket TT + iterative budget estimation, **enabled only for 高级 (Advanced) and 宗师 (Grandmaster)** |
+|---|---|
+| **Bitboard** | 361-bit bitmap (sized per build) with fully incremental state: candidate set, neighbour counts, Zobrist hash, threat aggregation. `make`/`unmake` are strictly symmetric and support out-of-order undo |
+| **Pattern classification** | Defined by set semantics: `F(S) = {empty e : playing at e makes five}`. `\|F\|≥2` is an open four, `\|F\|=1` a four. It counts winning points rather than introducing a vocabulary first |
+| **Zero-sum evaluation** | `evaluate(pos, black) == -evaluate(pos, white)`, maintained incrementally |
+| **Negamax + PVS** | Principal variation search with zero-window probes |
+| **Transposition table** | Fixed-size array, age-based replacement, mate scores normalised on store/read. Levels 4/5 use a 2-way bucket (48 MiB) |
+| **Quiescence search** | At leaf nodes only forced moves are searched, removing horizon misjudgements |
+| **VCF** | Searches forced sequences where every move is a four. Three-state return (win / no win / could not finish). On at **every** level |
+| **Move ordering** | History heuristic, killer moves, winning-point priority |
+| **Time control** | Hard deadline + iterative deepening + aspiration windows + cooperative cancellation |
+| **Opening book** | Gomocup 2026 lines with every prefix, expanded through D4, looked up once at the root; the small four-ply book still serves levels 1–2 |
+| **DFPN** | Two proof-search modes (VCF-only, VCT) beside the main search; off by default |
+| **Enhanced search** | LMR + forced-move extension, enabled for Advanced and Grandmaster |
 
-### 🎨 UI design
+### Interface
 
-- **One design system**: colours, font sizes, spacing and corner radii each have
-  a single source of truth (`theme.py`), and the whole app shares one QSS. No
-  hard-coded colour literals appear in the UI (guarded by
-  `tests/test_no_literal_colors.py`)
-- **Cool chrome, warm board**: the interface chrome is cool cyan while the board
-  stays warm wood — the board is the only warm focal point in the app. The wood
-  grain is generated procedurally; stones are sprites with a specular highlight
-  and a contact shadow
-- **Every button has all four states**: hover / pressed / focus / **disabled**
-- **Side panel**: live turn / difficulty / status / undo count / move count,
-  with two charts below
-  - **`AI (white) score`** (for debugging): a line of per-move scores, with a
-    symlog y-axis whose order of magnitude only ever grows. **A filled dot = a
-    search result (has depth, i.e. evidence); a hollow dot = a static estimate.**
-    Below it, a monospaced readout shows the search parameters (depth / nodes /
-    nodes per second / elapsed). The stone colour in the title follows the
-    player's choice (`AI (black) score` / `AI (white) score`) — the two charts
-    sit next to each other, and without stating which colour the AI plays, the
-    two curves get read as each other's
-  - **`Human win rate (est.)`**: a monotonic curve converted from the engine's
-    score (the AI's perspective is negated), on a fixed 0–100% y-axis that does
-    not auto-scale. **This is an estimate under the engine's model, not a
-    statistically calibrated probability** — 50% only means "the engine thinks
-    it is balanced", and 100%/0% appear only for a mate the search has proven
-  - **`Engine` / `TCP port`** (for diagnostics): the first says *who* computed
-    this move (`C++` / `Python (local)` / `Book`), the second says which port
-    the connection landed on
-- **Asynchronous AI**: threaded on a QThread, so the UI never stalls
-- **Three ways to play**: right after the splash you choose "Challenge the AI",
-  "Local match" or "LAN play". A local match involves no AI at all — two people
-  take turns on one machine — so the turn hint and the final result both speak in
-  stone colours (`Black wins` / `White wins` / `Draw`), and it can be reviewed
-  afterwards like any other game (both sides, see below). LAN play has its own
-  section below
-- **Optional ban rules**: every mode is followed by a rules page (free / ban).
-  Ban applies only to the game that selected it, and binds **black only** — a
-  double three, double four or overline loses. Forbidden points are drawn as a
-  ring with a cross in it (a geometric marker, not a character), hovering one
-  explains it, and playing one asks for confirmation first
-- **Post-game algorithmic review**: when a game ends you pick a strength and
-  have the engine re-compute each move in turn. **Every move gets a row** — the
-  good ones marked green and labelled "optimal", the rest as original point →
-  best point + score difference — with a progress bar and a cancel that keeps
-  what was already computed. "Show position" displays the board **as it stood
-  before that move**, with the best point ringed and your actual move drawn as a
-  ghost stone, so the two sit on one board. What gets reviewed depends on the
-  mode: against the AI only your moves, at a strength no lower than the one you
-  played (a custom game reuses its own parameters); in a local two-player match
-  **both colours**, each row prefixed with `【Black】` / `【White】` and the
-  strength page offering the full six levels plus custom; over the LAN only
-  **your own** moves. The review runs on its own background thread
-  (`ReviewWorker`) at the time limit of the chosen level, and under the rules the
-  game was played with
+- **One design system.** Colours, sizes, spacing and radii come from `theme.py`;
+  no colour literal appears in the UI (guarded by
+  `tests/test_no_literal_colors.py`).
+- **Cool chrome, warm board.** The interface is cool cyan, the board is the only
+  warm surface. Wood grain is generated procedurally; stones are sprites with a
+  highlight and a contact shadow.
+- **Asynchronous AI.** Search runs on a QThread and can be cancelled mid-think.
+- **Live readouts.** Turn, difficulty, engine, port, undo count, move count, and
+  the two charts.
+- **Optional RIF ban rules**, with forbidden points drawn as a geometric marker,
+  explained on hover and confirmed before play.
+- **Post-game review** for both colours in a local match, and for your own moves
+  in an AI game or over the LAN.
 
 ---
 
-## 📦 Getting started
+## Install
 
-### Option 1: download a Release
+### Release packages
 
-Download the package for your platform from
-[Releases](https://github.com/iamlinxuhan/GomokuAI/releases) (no Python
-installation needed). Windows and Linux each have a stable build; **there is no
-macOS build** (this project has never been developed or verified on macOS).
+Download from [Releases](https://github.com/iamlinxuhan/GomokuAI/releases). No
+Python installation needed.
 
-> **macOS users: please go to <https://github.com/iamlinxuhan/GomokuAI-Py> to
-> download the macOS-supported version.** This repository's C++ core ships only
-> Windows / Linux binaries and cannot run on macOS; that other repository is the
-> older pure-Python engine and provides `.dmg` / `.pkg` for both arm64 and Intel.
-
-Filenames look like: `GomokuAI_<platform>_<arch>_<setup|run_play>.<ext>`, plus
-`GomokuAI_Linux_<arch>.AppImage` for the two 64-bit Linux builds.
-
-**Since v4.4.0 there is no separate debug build.** Every platform used to ship
-both `run_debug` and `run_play`, differing only in whether they wrote logs. Any
-build can now be switched into logging with `--debug` or `GOMOKUAI_LOG=1`, and
-the log lands in `game_log_*.txt` next to the program. Dropping those eight
-files means adding an architecture no longer doubles the release.
-
-| Platform | Arch | File | How to install / run |
+| Platform | Arch | File | How |
 |---|---|---|---|
 | Windows | `amd_x86_64` | `..._setup.exe` | Double-click; installs to `C:\Program Files\GomokuAI` (one UAC prompt) |
 | Windows | `amd_x86_64` | `..._run_play.exe` | Standalone single file |
@@ -137,177 +125,197 @@ files means adding an architecture no longer doubles the release.
 | Linux | `amd_x86_64` / `amd_x32` | `..._setup.deb` | `sudo dpkg -i` → 「五子棋AI」 in the menu |
 | Linux | `aarch64` / `armv7` | `..._setup.tar.gz` | Unpack, then `sudo ./install.sh` |
 
-**Match the arch segment with `uname -m`**: `x86_64` → `amd_x86_64`, `i686` →
-`amd_x32`, `aarch64` → `aarch64`, `armv7l` / `armv6l` → `armv7`. `amd` covers
-the whole x86 family (Intel, AMD and virtual machines all take this one). **The
-two ARM entries are merged into one name**, rather than a self-contradictory
-combination like `arm_x86_64`.
+Match the arch segment with `uname -m`: `x86_64` → `amd_x86_64`, `i686` →
+`amd_x32`, `aarch64` → `aarch64`, `armv7l` / `armv6l` → `armv7`.
 
-The installers declare the graphics libraries, a CJK font candidate chain and
-`hicolor-icon-theme` in `Depends:`, and install their icon under
-`/usr/share/icons/hicolor/` alongside the menu entry, so the app shows up with
-its real icon. An AppImage cannot declare dependencies — it just reports
-whatever is missing. AppImages need the executable bit set by hand (Release
-assets do not carry file permissions):
+The installers declare their graphics libraries, a CJK font candidate chain and
+`hicolor-icon-theme`, and install the icon under `/usr/share/icons/hicolor/`, so
+the app appears with its real icon in the menu. AppImages cannot declare
+dependencies, and Release assets carry no file permissions:
 
 ```bash
 chmod +x GomokuAI_Linux_amd_x86_64.AppImage
 ./GomokuAI_Linux_amd_x86_64.AppImage
 ```
 
+**On Windows on ARM, take the x64 build.** Windows ships x64 emulation and it
+runs fine. There is no native Windows ARM package: PyQt5 has no `win_arm64`
+wheels across the entire series, so it cannot be built.
+
 ### Automatic updates
 
-**Only three builds update themselves**: the Windows installer, the Windows
-portable build, and the Linux AppImage. Settings has a "Check for updates"
-button, and the program also checks silently 2.5 s after startup (a network
-failure pops up nothing at all). `.deb`, `.tar.gz` and MSIX are handled by their
-package managers; for those, settings shows the version and a download link.
+Three builds update themselves: the Windows installer, the Windows portable build
+and the Linux AppImage. Settings has a "Check for updates" button, and the
+program also checks silently 2.5 s after startup — a network failure shows
+nothing. `.deb`, `.tar.gz` and MSIX are handled by their package managers; for
+those, settings shows the version and a download link.
 
-The trust root is an **Ed25519 signature**: the client fetches `SHA256SUMS` and
-`SHA256SUMS.sig`, verifies the signature against the public key compiled into
-the program, and only then checks the downloaded file against the hash. A
-missing signature, a bad signature and a hash mismatch all refuse the install
-and leave the current version untouched. The private key never leaves the
-maintainer's machine: CI produces a **draft** release, and it only goes live
-after the signature is uploaded offline.
+![Settings](docs/settings.png)
 
-**Everything runs on CPU only — no GPU driver, no PyTorch/CUDA.** The installer
-and AppImage builds leave no files on disk at all (no logs, no config, no cache
-directory); `game_log_*.txt` is written only when you pass `--debug` or set
-`GOMOKUAI_LOG=1`. To point a build at a specific log directory, use
+The trust root is an **Ed25519 signature**. The client fetches `SHA256SUMS` and
+`SHA256SUMS.sig`, verifies the signature against the public key compiled into the
+program, and only then checks the downloaded file against the hash. A missing
+signature, a bad signature and a hash mismatch all refuse the install and leave
+the current version untouched. The private key never leaves the maintainer's
+machine: CI produces a **draft** release, and it only goes live after the
+signature is uploaded offline.
+
+Everything runs on CPU only. The installer and AppImage builds leave no files
+besides the program itself; `game_log_*.txt` is written only with `--debug` or
+`GOMOKUAI_LOG=1`. To choose a log directory:
 `GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_amd_x86_64.AppImage`.
 
-**On Windows on ARM, take the x64 build.** The OS ships x64 emulation and it
-runs fine; **there is no native Windows ARM package** — PyQt5 has no `win_arm64`
-wheels across the entire series (PyPI publishes Windows wheels only as
-`win_amd64` and `win32`), so it cannot be built.
-
-### Option 2: run from source
+### From source
 
 ```bash
 git clone https://github.com/iamlinxuhan/GomokuAI.git
 cd GomokuAI
-uv sync                              # Python >= 3.11; runtime deps are just numpy + PyQt5
+uv sync                              # Python >= 3.11; runtime deps are numpy + PyQt5
 uv run python main.py
 ```
 
-Dependencies are managed with **uv** (`pyproject.toml` + a committed
-`uv.lock`). There is no `requirements.txt` anymore; without uv,
-`pip install numpy PyQt5` is exactly equivalent for running from source.
+Dependencies are managed with **uv** (`pyproject.toml` + a committed `uv.lock`).
+Without uv, `pip install numpy PyQt5` is exactly equivalent for running from
+source.
 
 ---
 
-## 🎯 Rules
+## Rules and board sizes
 
-1. Standard Gomoku rules on a **9×9 / 13×13 / 15×15 (default) / 19×19** board
-2. Black moves first; whoever first gets **five in a row** horizontally,
-   vertically or diagonally wins
-3. Players alternate, and a point cannot be played twice
+1. Standard Gomoku on a **9×9 / 13×13 / 15×15 (default) / 19×19** board.
+2. Black moves first; five in a row horizontally, vertically or diagonally wins.
+3. Players alternate; a point cannot be played twice.
 
-**Optional RIF ban rules.** The mode screen is followed by a rules page; choosing
-**ban** binds **black only** — making a double three, a double four or an
-overline (six or more) loses on the spot. **Exactly five in a row still wins and
-outranks every foul**, an overline included. White is never restricted, and the
-free game remains the default.
+The size is chosen on a page between the rules page and the colours, and the
+choice is remembered for the next game. 9×9 is for quick games, 13×13 is denser,
+19×19 leaves room. A game started at one size stays there: the LAN protocol
+carries the size in both `welcome` and `join`, and a mismatch is refused before
+the first move instead of surfacing as two screens disagreeing about the board.
 
----
-
-## 🌐 LAN play
-
-Two copies of the program on the same network can play each other. This is the
-**third card** on the mode screen and it involves no AI at all, which is why it
-gets a section of its own. (It is LAN only — crossing NAT, i.e. playing someone
-outside your network, is **not** implemented.)
-
-### Sessions, players and rooms
-
-The game state machine was lifted out of the UI (M1–M4). The authoritative state
-— board, move list, win/draw, undo policy, review snapshots — lives in
-`session.py`, which holds **no Qt and no sockets**. The UI holds none of it: it
-renders and forwards intent.
-
-| Module | What it is |
-|---|---|
-| `session.py` | The single source of truth for the rules. Single-player, LAN and the dedicated server all run through the same `Session` — there is no second win check anywhere |
-| `players.py` | A seat is a `PlayerSpec`; `HumanLocal` and `AIPlayer` implement it, and `AIPlayer` simply wraps the existing `engine.ai_move`. **The C++ engine, silent degradation and cooperative cancellation are untouched by this refactor** |
-| `match.py` | Headless `Match`: black-first alternating play, opening prefix, cooperative cancel. Zero Qt — the room reuses it |
-| `ban_rules.py` | The RIF ban rules, in one place. `Session` asks it **before** the stone is placed — every predicate assumes the point is still empty. Zero Qt, no search: it is a pure function of the position, which is what makes the parity suite possible |
-| `room.py` | One room = one `Session` + the seats. An `ai` seat is computed server-side; a `remote` seat is driven by whatever connection attaches. **An illegal move is answered with an error and re-asked — it never ends the game** |
-| `wire.py` | JSON + `\n` line protocol, `PROTO_VERSION = 1`, two-way `hello` version check. "It connects" is not the same as "it is our program" — the lesson `engine.py` had already learned |
-| `server.py` | `RoomServer`: listen, room registry, connection lifecycle. Default port **48900**, kept clear of the engine's port pool (49001–49093) |
-| `client.py` | `RoomClient` (reader thread + `on_event`) and `LocalRoom` |
-
-**The UI always speaks through a `RoomClient`.** Single-player uses an in-process
-transport, LAN uses TCP — so single-player and multiplayer go down the same
-protocol path, the same shape as Minecraft, where single-player *is* the built-in
-server. The `Room` runs on its own game thread; AI seats search on a board
-snapshot and moves and undos are serialised under one lock, so a half-applied
-position is never read.
-
-### Single-player is now a built-in room
-
-M4c rewired single-player from "the UI holds a `Session` and runs its own
-`AIWorker`" to "the app opens a room and attaches `RoomClient`s to it". The
-`AIWorker` class still exists (its own test uses it) but **the main flow no
-longer references it** — one game engine, one path.
-
-### Dedicated server
-
-`server.py` also runs headless, with a human or an AI on either seat:
-
-```bash
-python server.py --port 48900 --room demo --black ai --white remote
-```
-
-### What the room decides, and what the UI only mirrors
-
-`RoomConfig` (`allow_undo` / `undo_limit` / `allow_review` / `allow_restart` /
-`show_ai_scores`) travels down with `welcome`, and **its defaults are exactly
-today's single-player behaviour**. The client disables the entries a room has
-switched off. (There is no UI to edit it yet.)
-
-Undo across a network is a **negotiation**: `undo_proposed` / `undo_response`,
-and **the game is frozen while a proposal is pending** — a remote move arriving
-in that window is held, not dropped. A same-process opponent (single-player and
-local match) keeps the old behaviour of applying an undo straight away. The
-policy itself is "rewind to before the requester's own last stone", so an AI's
-opening move that gets undone is simply **re-played** rather than leaving the
-opponent to move first on an empty board.
-
-### Known limits
-
-- **Disconnecting ends the game.** `Room.detach()` terminates an unfinished
-  game; reconnect / resume is **not** implemented.
-- Two real machines across a firewall have **not** been verified by hand. The
-  LAN path is covered by socket-level and UI-level tests on a single machine.
-- Joining the **dedicated server** is not wired into the UI (no room list, no
-  room name entry), and spectators are not implemented.
+**Optional RIF ban rules.** Choosing **ban** binds **black only**: a double
+three, a double four or an overline (six or more) loses on the spot. Exactly five
+in a row still wins and outranks every foul, an overline included. White is never
+restricted, and free play remains the default.
 
 ---
 
-## ⚙️ The C++ compute core
+## Difficulty
 
-The algorithm is not newly written: constant tables, the pattern classifier, the
-search structures and the three-state VCF semantics all correspond one-to-one
-with `engine_local.py`, and the comments in `cpp/src/*.h` record, item by item,
-the historical bugs where "these few lines **must not be helpfully fixed**".
+The six presets are exactly `DIFFICULTY` in `engine.py`; the seventh level,
+**Custom**, is configured in a dialog.
 
-### Build
+| Level | Time per move | Depth cap | Quiescence plies | VCF budget | Enhanced |
+|---|---|---|---|---|---|
+| **Entry** 入门 | 0.5 s | 2 | 2 | 0 s | — |
+| **Novice** 初级 | 3 s | 4 | 4 | 0.3 s | — |
+| **Intermediate** 中级 | 7 s | 10 | 8 | 0.5 s | — |
+| **Advanced** 高级 | 15 s | 24 | 10 | 1.5 s | ✅ |
+| **Grandmaster** 宗师 | 20 s | 24 | 12 | 3.0 s | ✅ |
+| **Gomocup** | 300 s | 40 | 16 | 30 s | ✅ |
+| **Custom** | 10–60 s | 2–40 | 2–24 | Off / Low / Mid / High / Max | On/Off |
 
-```bash
-cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
-cmake --build cpp/build -j
-./cpp/build/gomoku_engine --selftest        # in-process self-test, exit 0 = pass
-```
+Measured (`tools/bench.py --engine cpp --level N`, five fixed positions, 19×19):
 
-**Zero third-party dependencies**: only the standard library plus platform
-sockets (platform differences are compiled away into a single file,
-`tcp_server.cpp`). Every build automatically runs `--verify-tables` — the
-112-line numbering being off by one is the only thing in this port that **fails
-silently** (the symptom is "the scores are slightly off", with no error), so it
-has to be surfaced at build time.
+| Level | Wall clock median / max | Depth median / max | nps median |
+|---|---|---|---|
+| Entry | 44 ms / 65 ms | 2 / 2 | 12,504 |
+| Novice | 76 ms / 260 ms | 4 / 4 | 488,899 |
+| Intermediate | 5,992 ms / 5,996 ms | 5 / 6 | 1,279,829 |
+| Advanced | 8,640 ms / 12,792 ms | 6 / 9 | 977,729 |
+| Grandmaster | 9,216 ms / 17,048 ms | 6 / 9 | 894,351 |
 
-### Architecture: two engines, one façade
+Some notes that the table does not show:
+
+- **The depth cap is a cap, not a promise.** The depth actually reached is
+  decided by iterative deepening inside the time limit.
+- **Entry and Novice finish far inside their time** (44 ms / 76 ms) because their
+  depth caps bind before the clock does. That is deliberate.
+- **Gomocup reserves a fixed 20 s; every other level reserves 15% of its limit.**
+  15% of 300 s would hold back 45 s, and the level is aligned with the 300 s
+  per-move cap of the Gomocup finals, so the reserve is an absolute number. The
+  hard deadline and the soft time manager go through the same `searchBudget()`.
+- **VCF time counts inside the limit**, as part of it.
+- **Every level has VCF on.** Novice once had it off, and with it off the level
+  could not see an opponent's chain of fours — blindness, not a gentler game.
+- **Only Entry carries a root attack bias**, applied at the root with a tolerance
+  band. Novice and Intermediate carried the same band for a while and lost 25–35%
+  and 0% (0–8) in same-level self-play, so it was measured and removed.
+
+---
+
+## Opening book
+
+Two books ship, for two different purposes.
+
+### The Gomocup 2026 book
+
+`data/gomocup_2026.json` holds the **24 official openings published for Gomocup
+2026** — 12 freestyle15, 12 standard — each with its full move sequence and a
+reply computed by this project's own engine for the final position. The book is
+generated by `tools/gen_gomocup_data.py` into two mirrors that must agree:
+
+- `cpp/src/gomocup_book_data.h` for the C++ core,
+- `GomokuAI/gomocup_book_data.py` for the Python engine.
+
+**Every prefix is a key.** An opponent following a published line gets answered
+move by move, from the second move on, instead of having to reach the line's end
+first. Our own turn stores one move; the opponent's side is what branches, since
+only the opponent can deviate.
+
+**D4 expansion happens once, at startup.** Each prefix position is replayed in
+its eight symmetries (four rotations, four mirrored rotations) and hashed, so a
+position is recognised whatever orientation it arrives in. When two lines land on
+the same key with different replies, the line with the smaller linear index wins;
+the build prints the collision count once. Measured coverage after expansion:
+
+| Size | Lines kept | Nodes | Table entries |
+|---|---|---|---|
+| 19×19 | 24 | 139 | 713 |
+| 15×15 | 24 | 139 | 713 |
+| 13×13 | 22 | 117 | 633 |
+| 9×9 | 8 | 40 | 197 |
+
+The 19×19 table is the same lines shifted by +2 from the centre; lines that would
+run off a 13×13 or 9×9 board are dropped whole rather than squeezed.
+
+**Where it fires, and where it does not:**
+
+- **Only at the root**, never inside the tree, and **never on `analyze`** — a
+  review asks for the score of every candidate move, which is a different
+  question from "what does the book play".
+- **Levels 3 and up.** Levels 1–2 keep the small four-ply book, which predates
+  this work.
+- **Never in the ban variant.** The official lines are published under free
+  rules, and following one under RIF could walk black into a foul. The ban build
+  ignores the flag and both sides of the parity suite agree.
+- A hit reports `reason="开局库"`, `score=0`, `nodes=nps=0`, so the panel can
+  explain an instant move.
+- **The empty board still plays tengen** through `opening_move()`, bypassing the
+  book. As black, only lines that open at tengen can be entered; the rest matter
+  when the opponent follows a line.
+
+### The small book (levels 1–2)
+
+`opening_book.py` is generated by `tools/build_book.py` and holds the strongest
+configuration's moves for the first four opening moves: 41 entries covering
+positions with ≤3 stones on the board. The tree branches only on the opponent's
+turn, because our own turn always plays the stored move.
+
+There is exactly **one Python table and no C++ mirror** for this book. It is hit
+inside `engine.py` before the request is sent, so a second copy could only drift.
+A mismatch in hashing would present as "the book seems not to work", silently.
+
+A hit returns with zero delay and its stored score, which is the true evaluation
+at build time, so `nodes` is 0 while `best_val` is not. The cost is that low
+levels show high readings on the win-rate chart for the first few opening moves.
+Filling in 0 would be a lie instead.
+
+The panel reports `Book` on the engine row. The three values — `C++`,
+`Python (local)`, `Book` — describe three genuinely different execution paths.
+
+---
+
+## Two engines, one façade
 
 ```
 ┌─ Python (UI, PyQt5) ────────────┐        ┌─ C++17 ───────────────────┐
@@ -315,218 +323,69 @@ has to be surfaced at build time.
 │    └ RoomClient                 │        │   ├ Board (bitboard)      │
 │         └ Room → AIPlayer       │  TCP   │   ├ evaluate (incremental)│
 │              └ engine.ai_move()─┼───────►│   ├ search (PVS+TT+QS)    │
-│              │                  │ JSON   │   └ vcf (forced fours)    │
-│              ├─ ok → C++ result │◄───────┤  one client / cancellable │
+│              │                  │ JSON   │   ├ vcf (forced fours)    │
+│              ├─ ok → C++ result │◄───────┤   └ dfpn (proof search)   │
 │              └─ fail → silent ↓ │        └───────────────────────────┘
 │  engine_local.py  (the old one) │
 │    fallback + all light funcs   │
 └─────────────────────────────────┘
 ```
 
-**Only the search goes over TCP, and there are exactly two kinds of it.**
-`ai_move` (playing) and `analyze` (post-game review) go over TCP; `check_win` /
-`win_line` / `evaluate` / `opening_move` stay local, because they **all run
-synchronously on the UI main thread** (every stone placed runs each of them).
-Moving them onto TCP would mean the interface blocking on a network round trip
-every move, which directly conflicts with "the UI never stalls".
+**Only the search crosses TCP.** `ai_move` and `analyze` go over the socket;
+`check_win`, `win_line`, `evaluate` and `opening_move` stay local because they run
+synchronously on the UI thread, every stone.
 
-`analyze`'s request fields are **byte-identical to `compute`'s** (including the
-conditional `bias_*` and `enhanced/lmr/extend`) — a review has to use the same
-configuration the game did, or it is reviewing a different game. The only
-difference is the extra `cands` array in the reply. It too runs on a background
-thread (`ReviewWorker`), one move per time limit, so going over TCP does not
-block the main thread.
+**Difficulty parameters are sent by Python.** Each request carries
+`time/max_depth/vcf_budget/qply` and the level's bias coefficient; the C++ side
+hard-codes no difficulty table, so calibration needs no recompilation.
 
-**Difficulty parameters are authoritatively sent down by Python.** Every request
-carries `time/max_depth/vcf_budget/qply` plus the entry level's bias
-coefficient; the C++ side hard-codes no difficulty table. The benefit is that
-calibration parameters need no recompilation, and that "difficulty" stays a UI
-concept — consistent with the abstraction that "in PvP the AI is just one of the
-players".
+**The engine binary is a server.** The UI connects lazily through `engine.py`,
+launches it when it cannot connect, and stops it via `atexit`. Ports come from a
+pool of 15 per (variant, size), and each candidate must pass a `hello` check
+before any search runs on it.
 
-**The `gomoku_engine` binary is a server; you never start it yourself.** The UI
-connects lazily through `engine.py`, launches it if it cannot connect, and stops
-it via `atexit` on exit. A fixed port would collide with leftover processes from
-older versions, so ports come from a **pool** (`config.PORT_POOL`, 15 uncommon
-ports), tried one by one; each one must **pass a `hello` check** before any
-search is run on it — "you can connect" is not the same as "it is our engine".
-It listens on loopback only.
-
-**Degradation is silent, and never betrays the game.** Server not compiled,
-failed to start, crashed, displaced by another window, all 15 ports
-unavailable — every case is translated into "this one used the local engine",
-the game continues, and **no dialog is shown and no exception is raised**. Only
-one line of reason goes to stderr, and the panel's `Engine` row flips to
-`Python (local)`. **An opening-book hit is not degradation**: that move neither
-searched nor used TCP, but that is **by design**, so it reports `Book`
-(reporting `Python (local)` would raise a false alarm on the very first move of
-every game). When a level exceeds the local table (which has only 3 levels),
-levels 4/5 fall back to **the strongest local level** rather than erroring out.
+**Degradation is silent.** Server not built, failed to start, crashed, all ports
+taken — every case means "this move used the local engine". The game continues,
+no dialog is shown, one line goes to stderr, and the panel's `Engine` row reads
+`Python (local)`. A book hit is not degradation and reports `Book`.
 
 ### The two engines' scales must agree
 
-The C++ port follows Python's scoring scale and changes not a single constant.
-The win-rate anchors in `analysis.py` are pinned directly to `LV_THREE_LIVE`,
-`BONUS_DOUBLE_FOUR` and `STATIC_MAX` (verified one by one by
-`tests/test_analysis.py::test_anchors_are_engine_constants`). When the scales
-agree, the two charts on the right are correct by construction; when they
-disagree, the charts are drawn **silently** wrong. Hence the client validates
-`board_size` / `win_score` / `static_max` during the handshake, and switches
-ports and launches its own instance if they don't match.
+The C++ port follows Python's scoring scale and changes no constant. The win-rate
+anchors in `analysis.py` are pinned to `LV_THREE_LIVE`, `BONUS_DOUBLE_FOUR` and
+`STATIC_MAX`, verified by `tests/test_analysis.py::test_anchors_are_engine_constants`.
+When the scales agree, the two charts are right by construction; when they
+disagree, the charts are drawn wrong with no error anywhere. The client therefore
+validates `board_size` / `win_score` / `static_max` during the handshake.
 
-### A counter-intuitive pitfall: `_VCF_NODE_CAP`
-
-Python's `_VCF_NODE_CAP = 120000` works out to about 2.4 seconds, far more than
-the highest level's 1.5 s VCF budget, so it essentially never triggers. **In
-C++, 120k nodes take about 0.05 s, so this cap triggers on every single level** —
-a large number of provable mates get classified as `EXHAUSTED` ("could not
-finish", i.e. no verdict), making **the engine actually weaker at VCF than the
-Python version**. This is the opposite of the intuition that "C++ is stronger",
-and it is the easiest thing in this kind of port to miss. It is now called
-`VCF_NODE_CAP` and sent down with the request.
-
-### Measured throughput
+### Throughput
 
 | Engine | Median nps (5 fixed midgames) |
 |---|---|
 | `engine_local.py` (Python + numpy) | 47,000 – 50,000 |
 | `gomoku_engine` (C++17) | 0.6M – 3.3M |
 
-Around **20–30×**. Note that nps **decreases** as the level rises (about 430k at
-level 2, 940k at level 5) — that is not a regression: higher levels use a larger
-qply, so the quiescence share rises to 40%–90%, and quiescence nodes are much
-cheaper than main-search nodes, so mixing them into the same denominator drags
+Around **20–30×**. nps **decreases** as the level rises (about 430k at level 2,
+940k at level 5) because higher levels use a larger `qply`: quiescence nodes are
+much cheaper than main-search nodes, and mixing them into one denominator drags
 nps down.
 
----
+### A counter-intuitive pitfall: `_VCF_NODE_CAP`
 
-## 🎛️ Difficulty
+Python's `_VCF_NODE_CAP = 120000` works out to about 2.4 seconds, more than the
+highest level's VCF budget, so it essentially never triggers. In C++ 120k nodes
+take about 0.05 s, so the same cap triggered on **every** level, classifying a
+large number of provable mates as `EXHAUSTED` and making the C++ engine **weaker
+at VCF than the Python one**. It is now `VCF_NODE_CAP` and sent with the request.
 
-The six presets are exactly `DIFFICULTY` in `engine.py`; the seventh level,
-**Custom**, has no fixed numbers — it is configured in the dialog opened from the
-difficulty screen. Units and values can be compared directly:
+### Enhanced search (Advanced and Grandmaster)
 
-| Level | Time per move | Depth cap | Quiescence plies | VCF budget | Enhanced | Attack bias (tolerance band) |
-|------|---------|---------|------------|---------|---------|------------------|
-| **入门 (Entry)** | 0.5 s | 2 | 2 | 0 s | — | 1.5 / 0.5, band 0 |
-| **初级 (Novice)** | 3 s | 4 | 4 | 0.3 s | — | — |
-| **中级 (Intermediate)** | 7 s | 10 | 8 | 0.5 s | — | — |
-| **高级 (Advanced)** | 15 s | 24 | 10 | 1.5 s | ✅ | — |
-| **宗师 (Grandmaster)** | 20 s | 24 | 12 | 3.0 s | ✅ | — |
-| **Gomocup** | 300 s | 40 | 16 | 30 s | ✅ | — |
-| **Custom** | 10–60 s | 2–40 | 2–24 | Off/Low/Mid/High/Max | On/Off | — |
+Three `SearchConfig` fields carry it, all defaulting to 0: `enhanced`, `lmr`,
+`extend`. With `enhanced == 0`, every path is bit-for-bit identical to before —
+which is what keeps the C++↔Python parity suite and the pinned `--selftest`
+moves valid.
 
-- **"Depth cap" is a cap, not a promise.** The depth actually reached is decided
-  by iterative deepening within the time limit — the first few opening moves
-  come back immediately (the evaluation finds nothing worth searching), and only
-  the midgame runs out the clock.
-- **The "Gomocup" level reserves a fixed 20 s; every other level reserves 15% of
-  the limit.** A proportional reserve would hold back 45 s of the 300, and this
-  level is aligned with the **300 s per move** cap of the Gomocup finals, so the
-  reserve has to be an absolute number. Both places that spend the budget (the
-  hard deadline and the soft time manager) go through the same `searchBudget()`,
-  so they cannot disagree.
-- **"Gomocup" does not take effect without the C++ engine.** It falls back to the
-  local Python engine, whose top level is 15 s: review clamps the limit to 15 s
-  (otherwise a game of a few dozen moves becomes 255 s of pure-Python search per
-  move), and a live game is clamped by the local engine itself. The difficulty row
-  shows a warning.
-- **VCF time counts inside that limit**, not as extra overhead.
-- **All six levels have VCF on.** The Novice level once had it off, and that was
-  a mistake: with it off, Novice could neither work out its own chains of fours
-  nor see the opponent's — that is not "a lower difficulty", that is
-  **blindness**. In a real lost game, the human won with an 11-move VCF chain,
-  and Novice had no mechanism at all that could see it. The lower levels are now
-  separated by **depth cap**, not by a missing subsystem.
-- **Only the Entry level carries a "root-node attack bias"**, and it applies at
-  the root only, never injected into `evaluate()` — making the evaluation itself
-  asymmetric would destroy its zero-sum property, and zero-sumness is a
-  precondition for search correctness. The mechanism is a **tolerance band**:
-  moves whose scores are within the band of the best move (the Entry band is 0)
-  remain candidates, and within the band one is chosen by
-  `1.5 × own pattern − 0.5 × opponent threat`; outside the band not a single
-  point is conceded, and mate verdicts (`is_mate`) do not take part in the
-  reordering. So it **only reorders moves whose scores are exactly equal**,
-  sacrificing nothing.
-  Novice and Intermediate once carried a band of 3000 as well (to be "more
-  aggressive"), and it was **measured and removed**: in same-level self-play the
-  biased side scored 25–35% at Novice and **0% (0–8)** at Intermediate. Even
-  "only reordering among equal scores" lost 6–14, which shows the real cause is
-  not the band width but that **this criterion judges the opposite of what the
-  search judges** — any move creating a four lifts "own pattern" to about
-  100000, overwhelming the reordering; and at a depth of 4–6 plies "creating a
-  four that the opponent casually blocks" is not progress. **"More aggressive"
-  and "weaker" have to be measured separately before they can be discussed — and
-  here they measured out to be the same thing.**
-- **The seventh level, Custom**, lets you set all five parameters yourself: time /
-  depth cap / quiescence plies are sliders, VCF budget and enhanced search are
-  switches. **When the machine falls back to the local Python engine, custom
-  parameters mostly do not take effect**: the fallback path does not forward the
-  configuration, and locally the engine runs its own strongest level (15 s /
-  depth 24). The dialog says so at the bottom — that line is a warning, not
-  decoration.
-
-**Measured (`python tools/bench.py --engine cpp --level N`, 5 fixed positions).**
-Note that "depth cap" is the configured value while "median depth" is what was
-actually reached:
-
-| Level | Wall clock median / max | Depth median / max | nps median | Time compliant |
-|---|---|---|---|---|
-| 入门 | 44 ms / 65 ms | 2 / 2 | 12,504 | 5/5 |
-| 初级 | 76 ms / 260 ms | 4 / 4 | 488,899 | 5/5 |
-| 中级 | 5992 ms / 5996 ms | 5 / 6 | 1,279,829 | 5/5 |
-| 高级 | 8640 ms / 12 792 ms | 6 / **9** | 977,729 | 5/5 |
-| 宗师 | 9216 ms / 17 048 ms | 6 / **9** | 894,351 | 5/5 |
-
-**Entry and Novice come nowhere near using their time** (44 ms / 76 ms): their
-`max_depth` is 2 / 4, so the cap takes effect before the clock does — that is
-deliberate. **Advanced and Grandmaster reach the same depth on these 5
-positions**: several of the five are **already decided** (for example, the side
-to move in `mid_10stones` has already lost), and those should return instantly.
-**A staircase only spreads out on narrow trees**; the real distinction between
-these two levels is 15 s vs 20 s and a `vcf_budget` of 1.5 s vs 3.0 s, which
-shows up only in wide midgames. This table reads "how quickly these 5 positions
-resolve", not "the engine is always this fast".
-
-**All six levels share one opening book.** That is a deliberate trade-off:
-Entry and Novice now also play strong opening moves, so **the gradient across
-the first few opening moves is narrow**, in exchange for "no level's opening is
-the first move that a raw search happened to produce". There is also an
-independent reason Advanced/Grandmaster/Gomocup carry no attack bias: the book was built
-with an unbiased Grandmaster, and giving them a bias would make the moves stored
-in it disagree with the move a fresh search would produce.
-
-**Intermediate's 7 seconds was set by one specific position, not guessed.** In a
-real lost game (Intermediate playing white, human winning on move 31 at J8), the
-decisive move is move 4: with only three stones on the board, **ply 4 picks K9
-while ply 5 picks K7/K11** — adjacent plies reaching opposite conclusions. Re-
-searching this move with a 5.0 s budget gives **two different answers**, in a
-ratio that varies with how busy the machine is (with 6 saturated processes
-running, 4/4 all played the losing move); 7.0 s gives the right answer stably at
-4/4. **This pushes the horizon farther out, it does not cure anything** — any
-fixed budget has a horizon, and this limit only guarantees "this one position is
-visible".
-
----
-
-## ⚡ Enhanced search (Advanced and Grandmaster only)
-
-Three `SearchConfig` fields carry this, and **all default to 0**: `enhanced` (the
-master switch), `lmr`, `extend` (the last two exist only to isolate
-measurements).
-
-**Defaulting to 0 is the key to the whole design.** With `enhanced == 0`,
-**every code path is bit-for-bit identical to before** — so the exact moves
-pinned in `--selftest`, and that ply encoding of `WIN_SCORE-2`, pass unchanged;
-the line-for-line agreement between the Novice/Intermediate levels and the Python
-reference implementation `engine_local` continues to hold; and LMR cannot leak
-into the lower levels unnoticed.
-
-### It really does search deeper within the same time limit
-
-Five fixed positions, **not one second more of budget** (L4 = 15 s), toggling only
-`enhanced`; `lmr` and `extend` can each be turned on alone, precisely to answer
-"which one is doing the work":
+Same time limit, five fixed positions, toggling only the flags:
 
 | Position | Off | LMR only | Extension only | Both |
 |---|---|---|---|---|
@@ -535,382 +394,216 @@ Five fixed positions, **not one second more of budget** (L4 = 15 s), toggling on
 | `spread_wide` | 5 | **6** | 5 | **6** |
 | `dense_threat` | 6 | **9** | **8** | **9** |
 | `sparse_early` | 6 | **8** | 6 | **8** |
-| **median / max** | **5 / 6** | **6 / 9** | 5 / 8 | **6 / 9** |
 
-**LMR is the main lever**: on its own it achieves exactly the same depth as "both
-on". **The extension alone does not move the median on open positions**, and
-contributes 6 → 8 only on the threat-dense `dense_threat` — consistent with its
-design intent (it extends moves where "you created a threat that must be
-answered", which barely triggers at all in positions with sparse threats).
-**Both together are never worse than either alone**, so production takes `both`.
-
-On `dense_threat` it reaches depth 9 in 11.1 seconds, **not using the full 12.8
-seconds** — this is not bought by piling on time. The same position in the
-`--selftest` midgame probe goes from
-`dep=6 / 1.892M nodes / 1700 ms` to `dep=7 / 1.450M nodes / 1074 ms`:
-**deeper, fewer nodes, less time**.
-
-### A/B win rate: the criterion has to be measured at a budget where the treatment actually takes effect
-
-`tools/ab_enhance.py` is a paired A/B (same openings, colours swapped each way).
-Lowering the per-move budget first is deliberate — measure "does the treatment
-take effect" first:
-
-| Per-move budget | Depth off | Depth on | Depth difference? |
-|---|---|---|---|
-| 1.5 s | median 5, max 6 | median 5, max 6 | **No** |
-| 6 s | median 5, max 6 | median 6, max 8 | Yes |
-| 15 s | median 5, max 6 | median 6, max 9 | Yes |
-
-The reason is not complicated: LMR does not apply at all when `depth < 3`, the
-extension needs `depth >= 3`, and 1.5 s only reaches 4–6 plies. **At 1.5 s both
-arms play the same moves, so of course the win rate can only be 50%.** So the
-test is run at 6 s, where the treatment genuinely takes effect (30 games,
-paired):
-
-| Games | Enhanced wins / losses | Win rate | Overall p | Paired McNemar p | Fisher p as black |
-|---|---|---|---|---|---|
-| 30 (15 pairs) | **21 / 9** | **70.0%** | one-sided 0.021 | one-sided 0.035 | two-sided 0.035 |
-
-**The most informative column is the black one**: Gomoku is a game with a huge
-first-move advantage, and across the 30 games the first player won 22. The
-enhanced arm went **14–1 as black (93%)**, while the baseline as black was only
-8–7 — nearly the entire gap comes from "can you cash in when you get the first
-move". As white the enhanced arm was 7/15 (47%), roughly level with the
-baseline: white's disadvantage is not something two extra plies can turn around.
-
-**One limitation needs stating clearly**: 6 s is the budget at which the
-treatment takes effect, whereas production levels are 15 s / 20 s. **70% should
-not be extrapolated to "it also wins 70% at production levels"** — the strongest
-statement available is "on a budget where the enhancement genuinely takes effect,
-it is clearly stronger". The full chain of evidence is: depth (same budget,
-median 5→6, max 6→9, with fewer nodes and less time) → win rate (70%, p ≈
-0.02–0.035) → no drop in solve rate (L4/L5 are still 8/8 on
-`tools/positions.py`, and the moves and scores for all 8 positions are unchanged
-character for character).
-
-### Two pitfalls that were quantified
-
-- **Iterative budget estimation bailed out far too conservatively.** The
-  criterion for "is the next iteration worth starting" multiplies a very noisy
-  estimate of the branching factor; at a 1.5 s budget it finished having spent
-  only 26%, and one ply shallower than the baseline. The crux is that "try one
-  more iteration" and "bail out now" have **asymmetric** costs: trying and not
-  finishing = the same depth + the time spent; bailing out = the same depth +
-  the time saved. **Trying once is a free option**, so a second gate was added:
-  at least half the budget must be spent before an early exit is allowed. **This
-  deserves recording separately because its symptom is indistinguishable from
-  "the algorithm got dumber"** — the enhanced arm was neither slower nor wrong
-  at short budgets, it just "decided it was satisfied early".
-- **The 2-way bucket lookup threw away half its hits.** When the TT changed from
-  "direct mapped" to "2 ways per bucket", the two geometries shared one array,
-  and the `lookup()` branch for "only way 0 hit" never updated the index pointer
-  — so an entry was hit, but compared against the key using a stale index;
-  failing that comparison, it was returned as a miss. **Hits were silently
-  discarded**, with no abnormal behaviour from the engine, only reduced
-  intelligence (TT hit rate 1.5%–5.9% → **0.0%–0.2%**). So `--selftest` gained a
-  `ttHitRate > 0.005` guard — **the threshold must not be written as `> 0`**,
-  which would be entirely insensitive to a hit rate collapsing to 0.1%.
+LMR is the main lever. In a paired A/B at 6 s per move (30 games, colours
+swapped), the enhanced arm won **21–9 (70%, p ≈ 0.02–0.035)**, and 14–1 as black.
+6 s is the budget at which the treatment actually takes effect; 70% should not be
+extrapolated to production levels of 15/20 s.
 
 ---
 
-## 📖 Opening book
+## DFPN
 
-The strongest configuration's best moves for the first four opening moves are
-precomputed offline into a table that is looked up at runtime. The artefact is
-`GomokuAI/opening_book.py` (**generated by `tools/build_book.py`, do not edit by
-hand**), with 41 entries covering positions with ≤3 stones on the board.
+`cpp/src/dfpn.{h,cpp}` is a depth-first proof-number search with an arena: nodes
+are allocated once (`nodeCap + 1`), the pointer is reset per search, and nodes are
+never freed. It returns three states — `WIN`, `NO_WIN`, `UNKNOWN`. A node cap,
+a timeout, a cancellation, a depth limit or a repeated line all return
+`UNKNOWN`; only a fully resolved root returns a definite verdict.
+
+Two move generators:
+
+- **Mode 1, VCF-only.** Reuses the VCF move enumeration, which is complete for
+  the four-threat space, so both `WIN` and `NO_WIN` are trustworthy.
+- **Mode 2, VCT.** Threat-space search over fours and open threes. The attacker
+  and defender sets must both be complete for a verdict; when either is
+  incomplete the result degrades to `UNKNOWN`. A proven win inside the
+  abstraction can still fail in the full game if the abstraction is incomplete,
+  and the code is written so that incompleteness costs a verdict, never a
+  false one.
+
+When enabled, DFPN runs as a `std::thread` beside the main PVS search, with its
+own board and arena, sharing only the read-only root position and the cancel
+flag. A `WIN` is applied at the end of the current iteration; a faster or equally
+fast mate already found by the main search is kept.
+
+**The A/B gate was not met.** `tools/ab_proof.py`, five levels, 1.5 s per move,
+32 self-play games and 9 fixed positions:
+
+| Arm | Win rate | Takeovers | Moves differing from proof-off |
+|---|---|---|---|
+| Mode 1 (VCF-only) | 50.0% | 0 / 264 | 0 / 9 |
+| Mode 2 (VCT) | 50.0% | 0 / 287 | 0 / 9 |
+
+With no measured improvement, `proof_mode` stays 0 at all six levels. The code
+remains reachable through explicit configuration.
+
+---
+
+## Review
+
+When a game ends you pick a strength and the engine re-computes each move.
+**Every move gets a row**: good ones marked green and labelled "optimal", the
+rest as original point → best point + score difference, with a progress bar and a
+cancel that keeps what was already computed. "Show position" displays the board as
+it stood before that move, with the best point ringed and your actual move drawn
+as a ghost stone.
+
+What gets reviewed depends on the mode:
+
+- against the AI, **your moves only**, at a strength no lower than the one played;
+- in a **local two-player match, both colours**, each row prefixed with
+  `【Black】` / `【White】`, and the strength page offers all six levels plus
+  custom;
+- **over the LAN, your own moves only**.
+
+The review runs on its own thread and uses the rules the game was played with, so
+a ban game goes through the ban engine. The opening move on an empty board and
+any move whose search never completed are their own category — they were never
+compared, and counting them as mistakes would be wrong.
+
+---
+
+## LAN play
+
+Two copies of the program on the same network can play each other. It is the
+third card on the mode screen and involves no AI. It is LAN only; crossing NAT is
+not implemented.
+
+The authoritative state lives in `session.py`, which holds no Qt and no sockets:
+board, move list, win/draw, undo policy, review snapshots. The UI renders and
+forwards intent. Single-player is a built-in room over an in-process transport, so
+single-player and LAN take the same protocol path.
+
+| Module | Role |
+|---|---|
+| `session.py` | The single source of truth for the rules |
+| `players.py` | A seat is a `PlayerSpec`: `HumanLocal` or `AIPlayer` |
+| `match.py` | Headless `Match`: alternating play, opening prefix, cooperative cancel |
+| `ban_rules.py` | RIF ban predicates, pure functions of the position |
+| `room.py` | One room = one `Session` + seats; an illegal move is re-asked, never fatal |
+| `wire.py` | JSON + `\n` protocol, `PROTO_VERSION = 1`, two-way `hello` check |
+| `server.py` | `RoomServer`: listen, room registry, lifecycle; default port **48900** |
+| `client.py` | `RoomClient` (reader thread + `on_event`) and `LocalRoom` |
+
+`RoomConfig` travels down with `welcome`, and its defaults are exactly
+single-player behaviour. Undo across a network is a negotiation, and the game is
+frozen while a proposal is pending. A headless server is available:
 
 ```bash
-python tools/build_book.py               # 20 s/node by default, resumable if interrupted
-python tools/build_book.py --port 8899   # must change ports while the game is running
+python server.py --port 48900 --room demo --black ai --white remote
 ```
 
-**The tree branches only on the opponent's turn.** Our own turn stores a single
-move (in real play we **always** play it, so building a book for a world where
-"we don't play our own best move" would be money burnt); the opponent's turn
-expands to 4 moves — only the opponent can deviate, and every deviation needs an
-answer. The whole tree is therefore only `1 + 8 + 8×4 = 41` nodes, and the 8
-branches for the second move are the `OPENING_SECOND_MOVES` list in
-`tools/selfplay.py`. **The branches must include "the opponent's own move" as a
-position** — the book is partitioned by `(position, side to move)`, and after
-black plays its best move it is white to move, which is a **new key**, and the
-highest-probability one at that.
-
-**There is only one Python table; the C++ side has no mirror.** The book is hit
-inside `engine.py`'s `ai_move`, **before the request is even sent** — C++'s
-`openingMove()` is not on the move-generation path at all. (`analyze`, the other
-thing that goes over TCP, does **not** consult the book either: a review wants
-"the candidate scores for every move", and the book supplies a single move —
-not the same thing. Worse, letting the book in would let a review report "the
-book plays here" as "the engine thinks this is best", which is a different
-claim.) So the only effect of
-"mirroring it" would be one more table that can drift: each side has its own
-Zobrist hashing, and once they diverge C++ would **silently** find no entries at
-all (presenting as "the book seems not to work"). **Write no second table, and
-there is no divergence to have.**
-
-**The empty board still plays tengen, bypassing the table.** `opening_move`'s
-"empty board → tengen" is a **pinned rule**, and both `main.py` and the docs
-depend on it. ⚠️ **The gate must be based on "a table hit", not on "few stones on
-the board"** — the latter would also activate the old rule that "places a point
-at a fixed offset hugging the opponent's first stone", which is not a
-strengthening but a **lobotomy**.
-
-**The book covers only the standard opening set — going off it means "fall back
-to search", not "play wrong".** As soon as the opponent plays anything outside
-those 4 branches, the position is no longer a key for any entry → no lookup →
-**fall back to a regular search, character for character identical to not having
-the book at all**. The book has no "approximate match" escape hatch (hashing is
-an exact comparison), so even if it stored a bad move, that move could only take
-effect **in its own positions** and could not spill outside them.
-
-**Scores are reported faithfully.** What the table stores is the **true
-evaluation at build time** (from the side to move's perspective), reported as-is
-on a hit, so `nodes` is 0 while `best_val` is non-zero. The cost is that Entry
-and Novice show grandmaster-level readings on the win-rate chart for the first
-few opening moves — what the book stores is a grandmaster evaluation, and
-filling in 0 would be lying instead.
-
-**The panel reports `Book` on that row.** The `Engine` row has three values,
-corresponding to three genuinely **different** execution paths: `C++` (went
-through the server), `Python (local)` (degraded), `Book` (table hit, zero
-delay). Listing the third separately is necessary — reporting it as `C++` would
-be a lie (it never connected), and reporting it as `Python (local)` is worse:
-that is a synonym for "degraded". Note that the AI's first move when playing
-first goes through `opening_move` and **does not pass through `ai_move`**, so
-the indicator is broken on that path; hence the public entry point
-`engine.note_book()`, with the two paths reporting the same value asserted
-directly by `tests/test_opening_book.py`.
-
-### Why the book was not expanded, and what the A/B actually measured
-
-A review proposed expanding the book (41 entries, ≤3 stones) to 6–8 moves,
-calling it "the most obvious ceiling on playing strength". We tested the premise
-before acting on it. The win-rate A/B turned out to be the wrong instrument here,
-and an offline probe settled the question in seconds.
-
-**The A/B first, because it is the part that failed.** `tools/arena.py` gained
-`--a-no-book` / `--b-no-book`. Passing either one also forces **both** sides onto
-the Python local engine, which removes the C++/Python routing as a confound:
-the book hit path goes to the local engine by design (`engine.py`'s gate), so
-without that, "book" and "no book" would differ in implementation as well as in
-treatment. Two runs:
-
-| Run | Games completed | Wall clock | Why it stopped |
-|---|---|---|---|
-| L5 vs L5, 200 games | 1 | 551 s for that one game | 200 games ≈ 31 h — the cost was the result |
-| L1 vs L1, 200 games | 8 | 319 s | abandoned, compute budget |
-
-Keep the L5 numbers as a cost measurement. They cannot settle anything about
-strength: **the book is that same engine's own output.** Its entries were
-searched offline at level 5 with a 20 s budget and stored at depth 8–9
-(`opening_book.py`'s `PROVENANCE`), so "book versus live search" at L5 asks
-whether a precomputed level-5 move beats a freshly computed level-5 move. That
-comparison starts out close to a null.
-
-**The offline probe.** The question worth asking before any win rate is whether
-the book changes the move at all. `ai_move(..., use_book=False)` answers it
-directly, for all 8 `OPENING_SECOND_MOVES`, in seconds:
-
-| Book side | Book hits | Move differs from live search | Real intervention |
-|---|---|---|---|
-| Black (move 3) | 8/8 | 5/8 | 5/8 |
-| White (move 4) | 4/8 | 2/8 | 2/8 |
-
-At level 1 — where the book should matter most — **56% of games have the book
-change nothing at all**. The hit counter added to `arena.py` confirms the
-arithmetic from the other end: 8 games produced 6 hits, and the bookless side
-produced 0.
-
-**The four misses at move 4 are structural.** The tree branches only on the
-opponent's turn, on the 4 replies picked by `neighbor_count` at build time —
-which is to say, the replies level 5 would play. A weak opponent goes off-tree on
-move 3, and the resulting position is no key for any entry. **The book helps
-least exactly where it is supposed to help most**, and more games cannot fix
-that: it is a property of the tree, per opening.
-
-**The lesson is the one already written above** in *A/B win rate: the criterion
-has to be measured at a budget where the treatment actually takes effect*: spend
-seconds on "does the treatment change the move" before spending hours on a win
-rate. A win rate taken over a sample where both arms played identical games
-converges on 50% and reads as "no effect", when the truth is that no effect was
-possible.
-
-**Decision: the experiment is not resumed.** The probe answers the question the
-31-hour run was meant to answer.
+Known limits: **disconnecting ends the game** (no reconnect or resume),
+spectators are not implemented, and joining the dedicated server is not wired
+into the UI.
 
 ---
 
-## 🧠 Engine design
+## Engine design notes
 
-### Mate scores and static scores are banded apart
+**Mate scores and static scores are banded apart.** Static scores clamp to
+±`STATIC_MAX`; mate scores start above `WIN_SCORE - MAX_PLY`, with a vacuum band
+of 128 between them. The old engine's mate score overlapped its own composite
+static range, so "dead in three" and "this looks bad" were numerically
+indistinguishable.
 
-Static scores are clamped to ±`STATIC_MAX`, mate scores start above
-`WIN_SCORE - MAX_PLY`, and a vacuum band of 128 sits between them — so "this is
-a forced mate" and "this position looks good" cannot be confused numerically, and
-`is_mate()`'s verdict is reliable rather than a guess.
+**Time is the hard limit; the depth cap is a safety valve.** `think` sets a hard
+deadline at `t0 + time × 0.85`, keeping 15% for the return trip and the UI.
+`max_depth` exists to stop a quiet-looking midgame full of fours from dragging
+even the low levels to 20 plies.
 
-The old engine's mate score (`-10000000 - depth`) **overlapped in range** with
-its own composite static score — the attack/defence weighting of the "desperate
-mode" could reach ±3.45e7, larger than the mate score. So "I am dead in three
-moves" and "this position is pretty bad" were numerically indistinguishable, and
-the UI just saw a large negative number. The key difference is not speed but
-**whether that number can be read**.
-
-### Time is the hard limit; the depth cap is a safety valve
-
-After taking the level, `think` sets a **hard** deadline (`t0 + time × 0.85`,
-keeping 15% for the return trip and the UI); iterative deepening goes as deep as
-it can before that deadline, and `max_depth` exists only to stop a midgame that
-"looks quiet but is full of fours everywhere" from dragging even the low levels
-to 20 plies.
-
-**The safety valve has to actually constrain.** Novice once did not: its time
-was only enough for ply 3, and on the midgame from that real lost game, ply 3
-and ply 4 gave **opposite** verdicts (ply 3 reported "slightly behind", ply 4
-reported "nearly dead"). `tests/test_difficulty.py::test_low_level_reaches_its_
-own_depth_cap` pins this down.
-
-### Why the threat-response layer was deleted
-
-The old version had a roughly 130-line `_check_immediate_threat` layer before
-the search, using seven heuristic rules to answer "what should I play now?" Its
-failure mode was structural: **the time saved when the heuristic is right is far
-smaller than the game lost when it is wrong.**
-
-The most typical criterion read `opp_win >= 2 or opp_live4 >= 2`, whereas the
-most common double-threat shape in real play is `opp_win == 1 and opp_live4 >= 1`
-— **which falls exactly outside it**. The patch was to add a rule, and rules can
-never be finished; the real problem is "approximating a decidable problem with a
-finite set of rules". The new engine splits it into two mechanisms that give
-deterministic verdicts: quiescence search counts the number of winning points
-(exact), and VCF handles longer forced sequences (equally exact, and able to
-distinguish clearly between "there is no mate" and "I could not finish").
-`tests/test_threat.py` asserts precisely that "**these names should no longer
-exist**" — the positions they used to handle must still be handled correctly, but
-no longer by heuristic.
+**The threat-response layer was deleted.** A 130-line heuristic layer answered
+"what do I play now?" with seven rules. Its failure mode was structural: the time
+saved when it was right was smaller than the game lost when it was wrong. The
+quiescence search and VCF replace it with deterministic verdicts, and
+`tests/test_threat.py` asserts that the heuristic names no longer exist while the
+positions they handled still resolve correctly.
 
 ---
 
-## 📁 Project layout
+## Project layout
 
 ```
 GomokuAI/
-├── main.py            # UI assembly + game-flow wiring (no search/eval logic)
-├── session.py         # authoritative game state machine: board / rules / undo policy (no Qt, no sockets)
-├── players.py         # PlayerSpec + HumanLocal / AIPlayer (AIPlayer wraps engine.ai_move)
-├── match.py           # headless Match: alternating play, opening prefix, cooperative cancel
-├── room.py            # one room = Session + seats + message routing (the rule authority for LAN)
-├── server.py          # RoomServer: listen, room registry, dedicated --server mode
-├── wire.py            # JSON + newline line protocol, hello handshake, error codes
-├── client.py          # RoomClient (reader thread) + LocalRoom (in-process room)
-├── engine.py          # engine façade: TCP client + silent degradation (**no algorithms**)
-├── engine_local.py    # the AI engine proper: bitboard / eval / search / VCF (no Qt, numpy only, unit-testable standalone)
-├── ban_rules.py       # RIF ban rules: the single implementation of forbidden-point detection (pure predicates)
-├── engine_ban.py      # engine_local.py forked with the ban check wired into the search (the ban fallback when C++ is unavailable)
-├── opening_book.py    # generated opening table (do not edit by hand; see tools/build_book.py)
-├── config.py          # locating the C++ binary and connection parameters (path resolution only, no IO)
-├── cpp/               # C++17 compute core (zero third-party deps, CMake)
-│   └── src/           # board / evaluate / search / vcf / opening / ban / tcp_server + json_util
-├── analysis.py        # score -> win-rate conversion, symlog mapping, readout formatting (pure functions, no Qt)
-├── charts.py          # the two self-drawn charts on the panel (line / grid / markers)
-├── anim.py            # UI transition animations (fade/slide), stopped explicitly on page teardown
-├── gamelog.py         # game logs and board-coordinate format
-├── theme.py           # design system: palette / font sizes / spacing / radii / QSS generation
-├── ui_kit.py          # reusable widget primitives (titles, info rows, buttons, page skeleton, tech texture)
-├── board_geometry.py  # pixel <-> cell conversion (pure math, no Qt)
-├── board_render.py    # offscreen board rendering (wood grain / stone sprites / layer cache)
-├── tests/             # pytest: geometry, incremental engine, position suite, session / room / wire, colour-literal guard
-├── tools/             # bench / selfplay / arena / positions / bot_client / gui_smoke / ui_e2e / build_book / ab_enhance …
-│   ├── BASELINE.md    # measured baselines and thresholds per stage
-│   ├── PLAN_SESSION.md   # the Session / Player / Room design + the M0–M4 records
-│   └── legacy_engine.py  # verbatim snapshot of the old engine (must not be modified; the A/B control)
-├── packaging/         # shared packaging recipe for the four Linux architectures (built in a container)
-├── installer/         # Windows installer script (Inno Setup, UTF-8 with BOM)
-├── AGENTS.md          # repo guide for coding agents (commands / architecture / do-not-touch / release)
-├── pyproject.toml     # dependency manifest (uv): numpy / PyQt5, no version pins
-└── uv.lock            # locked versions per platform and Python (committed)
+├── main.py            # UI assembly + game-flow wiring
+├── session.py         # authoritative state machine (no Qt, no sockets)
+├── players.py         # PlayerSpec: HumanLocal / AIPlayer
+├── match.py           # headless Match
+├── room.py            # one room = Session + seats + routing
+├── server.py          # RoomServer / dedicated --server mode
+├── wire.py            # JSON line protocol, hello handshake, error codes
+├── client.py          # RoomClient + LocalRoom
+├── engine.py          # engine façade: TCP client + silent degradation
+├── engine_local.py    # Python engine: bitboard / eval / search / VCF
+├── engine_ban.py      # ban variant of the Python engine
+├── ban_rules.py       # RIF forbidden-point predicates
+├── gomocup_book.py    # Gomocup 2026 book (generated data + D4 expansion)
+├── opening_book.py    # small four-ply book (generated)
+├── config.py          # binary lookup, port pools
+├── cpp/               # C++17 compute core + wasm demo (cpp/web)
+├── analysis.py        # score → win-rate conversion
+├── charts.py          # the two panel charts
+├── gamelog.py         # logs and coordinate format
+├── theme.py           # design system
+├── board_geometry.py  # pixel ↔ cell
+├── board_render.py    # offscreen board rendering
+├── updater.py         # auto-update: version.json → GitHub, Ed25519
+├── ed25519.py         # RFC 8032, pure Python
+├── tests/             # pytest
+├── tools/             # bench / selfplay / arena / ui_e2e / ab_* / build_book
+├── packaging/         # Linux packaging + AppImage
+├── installer/         # Windows installer (Inno Setup, UTF-8 with BOM)
+└── data/              # gomocup_2026.json
 ```
 
----
-
-## 🧪 Tests
+Build the C++ core:
 
 ```bash
-uv sync                              # runtime + dev dependencies (pytest / pyinstaller)
-uv run pytest -q                     # full suite, 453 tests
-uv run pytest -q -m "not perf"       # skip machine-speed-dependent thresholds (what CI runs, 432 tests)
+cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
+cmake --build cpp/build -j
+./cpp/build/gomoku_engine --selftest        # exit 0 = pass
 ```
 
-**About the `perf` marker**: a handful of thresholds test "has the engine
-regressed", but their readings are "how many nodes per second" or "what ply did
-it reach within 3 seconds" — on a slower machine, a regression and a slow machine
-are numerically indistinguishable. **Correctness, incremental consistency, time
-compliance, the position suite, VCF and pattern classification carry no marker**;
-they should pass on any machine — the time bounds are enforced by the engine
-itself, independent of machine speed.
-
-Main coverage: bitboard five-in-a-row detection and incremental state diffing
-(`test_win` / `test_incremental`), pattern partial ordering and zero-sumness
-(`test_eval`), transposition entry types and mate-score normalisation (`test_tt`),
-**finding mates and recognising lost positions** (`test_search_mate`), **not
-resigning when sentenced** (`test_escape`), VCF's three states and "all three
-levels really do have VCF on" (`test_vcf`), difficulty thresholds and **low
-levels reaching their own depth cap** (`test_difficulty`), cancellation latency
-(`test_cancel`), win-rate anchors having to be `engine` constants
-(`test_analysis`), the opening book's **wiring** (`test_opening_book`), the
-review's candidate table (`test_analyze`: the table is **complete**, its maximum
-equals the reported best value, collecting does not change the chosen move, and
-a fresh engine is used each time), and the colour-literal guard
-(`test_no_literal_colors`).
-
-**The session / network layer has its own set, and it is socket-level, not
-mocked**: the session's rules and undo policy (`test_session`), the **behaviour
-contracts** the M1 refactor had to preserve move for move (`test_game_flow`),
-headless matches (`test_match`), the line protocol and its error codes
-(`test_wire`), a real two-client game over loopback (`test_room`), the client
-under a dropped connection (`test_client` / `test_remote_client`), and
-C++↔Python parity on the pinned positions (`test_engine_parity`) — the
-agreement the `enhanced == 0` guarantee rests on. The UI's font-scale thresholds
-and theme rules have their own guards (`test_ui_scale` / `test_theme`).
-
-**The ban rules carry a parity suite of their own** (`test_ban_rules` /
-`test_ban_engine` / `test_ban_parity` / `test_ban_fork_guard` / `test_ban_ui`):
-the predicates, the session outcome, the **Python↔C++ agreement over hand-made
-and fixed-seed random positions** (asked through `bancheck`, which is answered
-without searching so the comparison is reproducible at all), and a fork guard
-that pins `engine_ban` to `engine_local` **move for move and score for score on
-positions where no foul can occur** — the mechanical proof that the ban fork
-changed nothing else.
-
-There is also `tools/gui_smoke.py` (headless UI smoke test, testing **wiring**)
-and `tools/ui_e2e.py` (**actually plays one full game at each of the five
-levels**, through the real click paths). The human side in the latter is a
-deterministic policy (tengen first move), so **the tengen first move makes the
-opening book genuinely get hit** — "the book takes effect in the UI" is therefore
-verifiable in the logs. Measured across the five levels:
-
-| Level | Moves | Max AI search depth | Book hits |
-|---|---|---|---|
-| 入门 | 10 | 2 | 2 moves |
-| 初级 | 10 | 4 | 2 moves |
-| 中级 | 10 | 6 | 2 moves |
-| 高级 | 10 | 8 | 2 moves |
-| 宗师 | 10 | 8 | 2 moves |
-
-**This is exactly the gradient that was supposed to open up, measured in real
-games** (2 / 4 / 6 / 8). The same table incidentally confirms the book is hit at
-every level (`0 ms`), and that **the Entry level's book reading is `dep=9`** —
-what the book stores is the true depth at build time, reported as-is, which is
-deliberately preserved behaviour.
+Eight binaries are produced (19/15/13/9 × free/ban). Every build runs
+`--verify-tables`, because an off-by-one in the 112-line numbering is the one
+failure mode in this port that is silent.
 
 ---
 
-## 📄 License
+## Tests
 
-Released under the **GNU General Public License, version 3 or later**; SPDX
-identifier `GPL-3.0-or-later`. Full text in [LICENSE](LICENSE).
+```bash
+uv sync
+uv run pytest -q                     # full suite
+uv run pytest -q -m "not perf"       # what CI runs
+uv run python tools/gui_smoke.py     # headless UI wiring
+uv run python tools/ui_e2e.py        # 4 sizes × 3 paths, real click paths
+```
+
+**About the `perf` marker**: those thresholds read "nodes per second" or "what ply
+in 3 seconds", so on a slower machine a regression and a slow machine look the
+same. Correctness, incremental consistency, time compliance, the position suite,
+VCF and pattern classification carry no marker.
+
+Coverage runs from bitboard win detection and incremental diffing through
+transposition entry types, mate normalisation, VCF's three states, difficulty
+caps, cancellation latency, the review's candidate table, and the colour-literal
+guard. The session and network layer is tested at socket level rather than
+mocked, including a real two-client game over loopback. Ban rules carry their own
+parity suite (predicates, session outcome, Python↔C++ agreement over hand-made
+and seeded random positions, and a fork guard pinning `engine_ban` to
+`engine_local` where no foul can occur).
+
+Four board sizes are covered by `tests/test_board_sizes.py` and by the
+`enhanced == 0` cross-language reconciliation, which runs at every size and
+demands the same move and same score, character for character.
+
+---
+
+## Licence
+
+**GNU General Public License, version 3 or later**; SPDX `GPL-3.0-or-later`.
+Full text in [LICENSE](LICENSE).
 
 ```
 Copyright (C) 2026 Lin Xuhan <2276677131@qq.com>
@@ -919,49 +612,43 @@ Copyright (C) 2026 YFY0109 <yfy0109@qq.com>
 
 ### Why GPLv3
 
-The UI is built on **PyQt5**, which is itself released under **GPLv3** (Riverbank
-offers only GPLv3 or a commercial licence). A binary that links it is therefore
-already covered by GPLv3 as a whole, so the source licence has to agree with it —
-the GPL-2.0 text this repository previously carried had no "or later" clause,
-reading as GPL-2.0-only, which is **incompatible with a GPLv3 PyQt5**. Both
-copyright holders agreed to move to GPL-3.0-or-later.
-
-If a permissive licence (MIT, say) is ever wanted, the real path is swapping
-PyQt5 for **PySide6** (LGPL), which an MIT project may call at runtime; that
-needs an API migration (`pyqtSignal` → `Signal`, `pyqtSlot` → `Slot`, and so on).
+The UI is built on **PyQt5**, released under GPLv3 (Riverbank offers GPLv3 or a
+commercial licence). A binary that links it is covered by GPLv3 as a whole. The
+previous GPL-2.0 text carried no "or later" clause, reading as GPL-2.0-only,
+which is incompatible with a GPLv3 PyQt5.
 
 ### Third-party data
 
-The Gomocup 2026 opening book (`data/gomocup_2026.json` and its two generated
-mirrors) transcribes the official opening coordinates published at
+The Gomocup 2026 opening lines (`data/gomocup_2026.json` and its two generated
+mirrors) transcribe the official coordinates published at
 <https://live.gomocup.org/openings>; the replies stored for each line's final
-position were computed by this project's own engine. Details are in
+position were computed by this project's own engine. Details in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Everything else in this
 repository is ours.
 
 ---
 
-## 📝 Changelog
+## Changelog
 
 | Version | Date | Contents |
 |---|---|---|
-| **v4.4.0** | 2026-11-13 | **Four board sizes, the official opening book, self-updating, and AppImage on Linux.** Board size is now selectable — 9/13/15/19, default **15×15**. On the C++ side each size is a separate compile (`-DGOMOKU_BOARD_SIZE`), eight binaries in all (19/15/13/9 × free/ban), so nothing in the hot path gained a branch; the pure-Python engine rebuilds its tables through `configure_size()`, and both paths derive Zobrist values from the same 19×19 table, so the `enhanced=0` verbatim reconciliation still holds at every size. The LAN protocol carries the size in `welcome` and `join`, and a mismatch is refused before the first move instead of surfacing as a game where one side reads the board as 19. **The Gomocup 2026 official openings** went into the book as all 24 published lines (12 freestyle15, 12 standard) together with every prefix position, so an opponent following a line is answered move by move rather than having to reach its end; the eight D4 transforms are expanded once at startup into a `key → move` table, and a lookup is a single hash at the root only. 15×15 and 19×19 carry the whole book (the 19×19 case is the same lines shifted by +2), 13×13 keeps the lines that fit, and 9×9 falls back to the small four-ply book. The book never fires in the ban variant — the official lines are published under free rules, and following one under RIF could walk black into a foul. **DFPN proof search**, in two flavours (VCF-only and VCT), runs as a `std::thread` beside the main PVS search with its own board and arena (allocated once, reset per search, nodes never freed). The A/B gate was not met: over 32 self-play games and 9 positions at 1.5 s/move, the VCT arm took over **0 times**, the win rate was 50.0%, and no move differed from the no-proof arm — so **`proof_mode` stays 0 at all six levels**, and the two modes are reachable only through explicit configuration. **Automatic updates** cover the Windows installer, the Windows portable build and the AppImage: the site's `version.json` is asked first with the GitHub `releases/latest` API as fallback, `SHA256SUMS` is fetched with its detached **Ed25519** signature, and nothing installs before the signature verifies against the key compiled into the program. CI now publishes a **draft** release that goes live only after the signature is uploaded offline; `.deb` and MSIX are left to their package managers. **Linux ships AppImage, and the eight bare executables are gone.** Logging is switched on with `--debug` or `GOMOKUAI_LOG=1` on any build, which is what made the separate `run_debug` file unnecessary. |
-| **v4.3.1** | 2026-11-01 | **The Windows installer is now a machine-wide install.** It goes to `C:\Program Files\GomokuAI` and registers its uninstall entry under HKLM, at the cost of one UAC prompt at install time. The reason has nothing to do with the program: the Microsoft Store package checker runs the installer in a different context, and a per-user install writing the uninstall entry to HKCU is invisible to it — the 'entry in Add or Remove Programs' and 'bundling' checks could only report that the app name and publisher were unidentified, which then surfaced as `PackageSet invalid` on submit. `ArchitecturesAllowed=x64compatible` is set as well, so 32-bit Windows refuses the package; the binary was always 64-bit. Nothing about the app changed: settings still go through QSettings (HKCU), and the installed build is the play variant, which writes no files beside the executable. |
-| **v4.3.0** | 2026-10-30 | **Review is no longer exclusive to games against the AI, and there is now a web version on Bilibili's Toy platform.** What gets reviewed depends on the mode: against the AI, only your moves, at a strength no lower than the one you played (a custom game reuses the snapshot taken at the start); in a **local two-player match every move by both colours** is re-computed, each row prefixed with who played it (`【Black】Move 3 …`); over the **LAN only your own moves**, the opponent's never enter the list. A two-player match has no "strength of this game", so its review page copies the difficulty page — all six levels plus custom, and the custom card does not open the settings dialog (a review is a look back; it re-computes with the current custom parameters). **The review scores under the rules the game was played with**: `ReviewWorker` gained a `variant`, and a ban game goes through the ban engine — otherwise forbidden moves would score as good ones. The web version compiles the same C++ search to WASM (`cpp/web`); `gm_think` hands back the evaluation table for every point at the root, and the engine runs in a Web Worker so the main thread only draws the board. The front end is four plain static files with relative paths, ready to run on Toy as-is. It carries both features: review (every move re-computed; click any row to put the board back as it stood, with the move you played as a ghost stone and the engine's pick ringed in red) and **online play**. Toy has no realtime channel, so nothing is deployed — the room code spells a public topic, `EventSource` receives and `fetch` publishes (ntfy, CORS wide open). The host plays black and is authoritative; guests send move intents that the host validates and broadcasts as a position. A visitor must be admitted by the host to take the open seat, otherwise they watch read-only; undo is disabled online, the host can restart, and an unreachable relay is stated in the panel rather than hidden. 639 tests (non-perf) and 224 `gui_smoke` checks; the web suite's 106 assertions run under both the real-DOM and fake-DOM harnesses |
-| **v4.2.0** | 2026-10-25 | **A sixth level, "Gomocup": 300 seconds a move, built for tournament-length thinking.** A new card follows "Grandmaster", with the per-move cap of the Gomocup finals (300 s), a depth ceiling raised to 40, a 30-second VCF budget and 16 plies of quiescence; the custom-level sentinel moves from slot 6 to 7. Turning the clock up alone would have changed nothing — the old 24-ply ceiling was exhausted well inside 20 seconds, so 280 of the new seconds would have sat unused; the level's parameters had to be widened with it. **The time reserve became a configurable absolute** rather than a ratio: `SearchConfig` gained `reserveSec` (0 keeps the 15%), because 15% of 300 seconds is 45 and this level keeps 20. The hard deadline and the soft-time-management prediction now both go through one `searchBudget()`, otherwise the soft stop budgets for 45 seconds of headroom that does not exist and opens an iteration that cannot finish. `engine.py` sends `reserve_sec` only when the config carries it, so the messages for the first five levels stay byte-identical — their verbatim parity with the Python reference engine rests on the same time semantics. Without the C++ engine the level falls back to the local Python one (15 s at most); the review path clamps the limit to the local ceiling, since a few dozen moves would otherwise mean 255 seconds of pure Python per move, and the panel says so. The difficulty page grew from six cards to seven and now wraps 4+3 instead of squeezing to 125 px, keeping the strength bar and the subtitles at full size. Local benchmarks (30/60/280 s over five complex middlegames) spent their budget to the second (28.0/56.0/261.3 s, exactly the limit minus the reserve) and ran on the C++ engine (0.5M–2.3M nps); depth grows slowly with the budget — roughly 3–4× the time per extra ply — and the 40-ply ceiling was never reached, so the search itself is the bottleneck. |
-| **v4.1.0** | 2026-10-14 | **Optional RIF ban rules for black, enforced by a second C++ engine behind the same protocol.** A new rules page follows the mode screen (no-ban / ban). Ban binds **only black**: a double three, a double four or an overline loses immediately, while **exactly five in a row wins and outranks every foul** (RIF 9.2, an overline included). The rule set exists once, in `ban_rules.py`; the session consults it *before* placing the stone, because each predicate assumes the point is still empty. The C++ side is the same sources built a second time — `cpp/src/ban.h` is header-only behind `#if GOMOKU_BAN` and the free build gets empty implementations, so its search is untouched (a normalised per-symbol disassembly diff of the two builds shows an identical instruction stream; the only new code is the protocol handler). Three protocol additions are deliberately *not* behind the guard: `hello` carries `rules`, `compute`/`analyze` **validate** it — a client claiming "free" against the ban server is refused rather than silently answered, because the two engines' score scales differ and mixing them would quietly ruin the stored charts — and a new **`bancheck`** returns a position's forbidden points. `bancheck` is answered in place in the reader loop: it searches nothing and never touches the transposition table, which is what makes the Python↔C++ reconciliation reproducible at all (the engine's search is wall-clock-bounded with a TT kept across positions, so two search results were never comparable). Forbidden points are drawn as a **geometric marker** — a ring with a cross over a translucent fill, cached per cell size and device pixel ratio — never as a character, which renders differently on every system; hovering one explains it and playing one asks for confirmation first. The side panel gained a rules row, the endgame overlay says 禁手判负 and rings the losing line, and the eleven new user-visible strings are translated into all five languages. 85 tests: the predicates, the session outcome, the fork guard, the UI, and the parity itself over 11 hand-made positions (each aimed at one predicate — double three, same-line double four, five beating an overline, edges, corners) plus 120 fixed-seed random ones |
-| **v4.0.1** | 2026-10-07 | **The language picker is one dropdown now, and "follow system" is always written in the system language.** The seven choices went from a two-column button grid to a dropdown, freeing four rows in the settings dialog; the option text is still each language's autonym (someone who reads only Japanese has to recognise 日本語). "Follow system" no longer follows the in-app language — it describes the system side, so its label is written in the **system** language: on a Chinese system, picking Russian leaves it reading 跟随系统 (the bug reported on 2026-10-07 was that it turned into Как в системе). The arrow is self-drawn in Python (QSS `::down-arrow` only accepts an image and this repo ships no bitmap assets); the first version passed points to `drawPolygon` in a form that corrupted memory and crashed later chart painting — an explicit `QPolygonF` fixed it |
-| **v4.0.0** | 2026-10-06 | **Settings became a modal dialog, custom difficulty became sliders, and the UI now speaks six languages.** Settings moved from a full page to a modal dialog: the page underneath never moves while it is open (entering and leaving settings no longer means switching pages back and forth), every choice takes effect and is persisted immediately, and the page underneath is rebuilt on close only if the font size or language changed. A new **Language** row offers Simplified Chinese / Traditional Chinese / English / Russian / Japanese / Korean / follow-system — keys are the Chinese source strings themselves and a missing entry falls back to Chinese rather than crashing; log lines and the engine-reported `reason` stay Chinese (they are diagnostics that historical logs and docs quote verbatim). **Custom difficulty became sliders**: time 10–60 s, depth cap 2–40, quiescence 2–24 plies, all step 1 — the previous version turned these continuous parameters into six buttons, and a user immediately found "you can only pick 1/3/7/15/20/30 seconds, not 12"; a slider is the shape they always had. VCF budget and enhanced search remain switches. **Long-language clipping is fixed across the board**: cards / side panel / review list / LAN screen / endgame overlay now derive their widths from the current language and font metrics (panel width is preheated over the runtime value range, `width=` on buttons is a floor, cards grow to their longest unbreakable word and wrap to extra rows when a row no longer fits) — the Simplified Chinese layout is unchanged, pixel for pixel |
-| **v4.0.0** (architecture &amp; LAN) | 2026-10-06 | **Three modes now, and one authoritative session behind all of them.** The mode screen gained a third card, **LAN play**: one player creates a room — the app binds a real `RoomServer` and shows `local IP:port` while waiting — and the other joins by typing that address; the two then play over plain TCP. A failed create/join is reported **in place** (the UI is Chinese-only) as `seat_taken` / `no_room` / `proto_mismatch` … and can be retried without leaving the page. **Underneath, the game state machine was lifted out of the UI** (M1–M4): rules, undo policy and review snapshots now live in an authoritative `Session` with **no Qt and no sockets**; `Player` abstracts a seat (human-local or AI, the latter just wrapping `engine.ai_move`); a `Room` holds one `Session` plus its seats and owns the game thread. **Single-player was rewired to be a built-in room** — the UI no longer drives `AIWorker` directly (the class survives for its own test; the main flow does not reference it), it attaches a `RoomClient` to an in-process room, so single-player and LAN run the *same* protocol path — Minecraft's "single-player is the built-in server". The line protocol is JSON + newline with a two-way `hello` check and a **hard version refusal** (no best-effort compatibility); the default room port is **48900**, kept clear of the engine's port pool. **`RoomConfig` travels down with `welcome` and its defaults are exactly the old single-player behaviour**, so a room can switch off undo / review / restart or hide the score charts, and the client greys out exactly those entries. **Undo across a network is a negotiation** (`undo_proposed` / `undo_response`) and **the game is frozen while one is pending** — a remote move arriving in that window is held, not dropped; a same-process opponent keeps the old "applies immediately" behaviour. An illegal move gets an error and a re-ask, never a dead game. There is also a headless dedicated server (`python server.py --port 48900 --room demo --black ai --white remote`) and a network bot client, so an AI on one machine can sit down against an AI on another. **Still not implemented**: reconnect / resume (a dropped connection ends the game), spectators, and joining the dedicated server from the UI. Separately, the licence moved from GPL-2.0 to **GPL-3.0-or-later** — the old text carried no "or later" clause, reading as GPL-2.0-only, which is incompatible with the GPLv3 PyQt5 the UI links against (see "Why GPLv3") |
-| **v3.0.8** | 2026-10-03 | **Fixed: the Windows build silently fell back to the Python engine.** A user reported the Windows version dropping to the local Python engine "for unknown reasons" — the symptom is an **AI that is visibly slower and weaker, with no hint anywhere in the UI**, because the fallback path only prints one line to stdout (`_note("local", exc)` in `engine.py`) and packaged builds write no log, so the user never sees it. **The cause was not the engine's algorithms but the seam between packaging and build**: a PyInstaller bundle's root contains `VCRUNTIME140.dll`, `VCRUNTIME140_1.dll` and `ucrtbase.dll` but **not `MSVCP140.dll`** (the copies Qt and numpy ship both sit in subdirectories, and `pyi_rth_pyqt5.py` only prepends the bundle root to PATH, so the child process's loader cannot reach them), while `gomoku_engine.exe` was built with MSVC's default **`/MD`** and therefore imports it. On a machine without the VC++ Redistributable the engine dies at load with **`STATUS_DLL_NOT_FOUND` (`0xC0000135`)**; on a machine that has it, everything works — which is exactly why some users were hit and others were not. **How to tell which engine a log came from**: the `reason` column is useless (both engines write `PVS搜索`), and the `引擎:` line only says the file was *found*, not that it ran — you have to look at **`val` + `dep`**: C++ level 1 is `time=0.5 / max_depth=2` while local Python level 1 is `time=3.0 / max_depth=4`, so on the same position C++ returns `val=-610 / dep=2` and local Python returns `val=-540 / dep=4`; the reported log showed `val=-540 / dep=4 / 1640ms`, **matching the local Python engine character for character**, with a `dep=4` that physically exceeds the C++ level's depth cap. **The fix**: `cpp/CMakeLists.txt` now sets `CMAKE_MSVC_RUNTIME_LIBRARY` to `MultiThreaded` under MSVC, **linking the runtime statically** so the engine carries everything it needs and no longer depends on the target machine having the Redistributable (the variable is read when `add_executable` runs, so it has to come first); and the `windows` job in `.github/workflows/build.yml` now scans the bytes of `gomoku_engine.exe` right after building and **fails if `MSVCP140.dll` is present** — this regression is silent, so CI has to go red on the spot rather than waiting for a user to report it. Linux is untouched (the whole block is inside `if(MSVC)`); the build plus `--verify-tables --selftest` and all 345 tests stay green |
-| **v3.0.7** | 2026-10-03 | **The review screen now lists every move, none skipped.** It used to show only the moves that were *not* optimal, but a review can run for minutes — coming back to check "where did I play on move 9?" found nothing, because that move wasn't in the list. Now **every move is a row**, good ones included, marked green and labelled "optimal", and the subtitle reads "N moves, M improvable". **The opening move on an empty board and "the search never finished a round" are now their own category**: they were *never compared*, not "compared and found fine", so they say so plainly ("no candidates to compare" / "could not compare") and are **excluded from the improvable count** — counting them would have the result screen accusing the player of mistakes they never made. **A tied optimum now rings the move you actually played**: `delta == 0` only means your move scored the same as the engine's best, and `best_idx` is merely one of the tied points — it can easily be a different one, and ringing elsewhere while the row says "optimal" reads like the program contradicting itself. On a tie the best point is repointed at your own stone, so the ghost stone and the ring coincide. **The move list must not break**: `ReviewWorker` used to drop an entire row whenever the candidate table came back empty; now only a cancel drops a row. Also fixed a page leak — clicking "Show position" repeatedly stacked one full board widget tree per move viewed (each with two layers of pixmap cache), the same bug `_drop_pages` documents as "one tree left behind per game restarted"; the previous board is now reclaimed on every switch. The list height shrinks to its content under the same 420px cap, so two records no longer sit in an empty 420px box |
-| **v3.0.6** | 2026-10-03 | **Local two-player mode**: a mode screen now sits between the splash and the colour screen ("Challenge the AI" / "Local match"). The latter involves no AI at all — two people take turns on one machine — so the turn hint and the final result both speak in stone colours ("Black wins" / "White wins" / "Draw"), and its endgame overlay offers no review, since with no AI there is no algorithm to review against. **Post-game algorithmic review**: after losing to the AI the overlay gains a "Review" button. Pick a strength no lower than the difficulty you played, and the engine re-computes each of *your* moves in turn, listing the ones that were not optimal (original point → best point + score difference), with a progress bar and a cancel that keeps whatever was already computed. "Show position" displays the board **as it stood before that move**, with the best point ringed and your actual move drawn as a ghost stone so the two can be compared on one board. The result screen ends with "Finish" / "Quit". **The engine side extended the TCP protocol**: a new `analyze` request carries fields byte-identical to `compute` (including the conditional `bias_*` and `enhanced/lmr/extend` — review must use the same configuration the game did) and replies with a `cands` array. Root candidates come from a new `outRoot` out-parameter on `Engine::think`; when `outRoot == nullptr`, `collectOn == biasOn`, so the entire old path is bit-for-bit unchanged and the `enhanced == 0` C++↔Python identity is untouched. An older C++ build answers `analyze` with "unknown type", which the Python side silently degrades to local analysis — both directions of the protocol are safe. Worth recording: **to get a complete candidate table you must disable the aspiration window while collecting** — a narrow window prunes some root moves, leaving them with no score to compare; missing that one spot raises no error, it just yields a half-filled table |
-| **v3.0.5** | 2026-10-02 | **Windows promoted to stable** (verified on real hardware, `_testing` dropped), and "log or not" moved from a platform-implied default to an explicit filename declaration: every platform now has `run_debug` (writes logs next to the executable) and `run_play` (writes none), with installers shipping play. The naming scheme was overhauled — `AMD` → `amd`, `x86_32` → `x32`, and ARM's family and bit-width merged into `aarch64` / `armv7`. Variants are baked in **at build time** (by injecting a `_build_flavor.py` line), not inferred back from the filename. Fixed the black console window that popped up when launching the engine from the GUI process (`CREATE_NO_WINDOW`). From earlier: `cpp/src/bitops.h` gathers the `__builtin_*` calls into a cross-compiler wrapper, falling back to `<intrin.h>` where MSVC lacks them — before this the C++ engine simply did not compile under MSVC; the workflow's manual dispatch gained a `linux` input so you can build amd64 only, or skip Linux entirely. **The Linux installers now ship an application icon**: previously they installed no icon file at all and the `.desktop` entry had no `Icon=` key, so the menu fell back to a blank one. All four architectures now generate per-size PNGs from the existing `.ico` at build time (`python3-pil` via apt, no new runtime dependency) and install them under `/usr/share/icons/hicolor/<size>/apps/gomoku-ai.png`; the `.deb` gained `hicolor-icon-theme` in `Depends:` so `index.theme` and the icon-cache trigger are present, and the `.tar.gz` `install.sh` copies the tree and refreshes the cache when the tool exists. **The window icon is now set by the program itself**: the `.desktop` alone could not fix it, because the titlebar and taskbar read the window's own icon property (`_NET_WM_ICON` on X11, `app_id` on Wayland) and only `setWindowIcon()` writes that — with the icon installed, a running window still showed X.Org's fallback logo. `main.py` now loads a PNG generated from the same `.ico` at build time, bundles it into all three PyInstaller variants via `--add-data`, and calls `setDesktopFileName("gomoku-ai")` so KWin ties the window to the menu entry. The icon is downscaled to 128×128 before being handed to `setWindowIcon()`: a 256×256 ARGB image is 262152 bytes and does not fit in a single X request (262140), so the `_NET_WM_ICON` write silently failed and left the titlebar blank while the taskbar — which goes through the `.desktop` — looked fine. Release asset names and count are unchanged |
-| **v3.0.4** | 2026-10-01 | The endgame now lights up the five first and settles afterwards: a red line sweeps across the five (extending half a cell past each end, scaled by √2/2 on diagonals), the overlay is delayed by one second, and "elapsed" stops the moment the stone lands — previously the overlay covered the whole screen and the player could not see where they had lost. Also removed the endgame "last move" ring (it sat right on the line's endpoint and cut a notch out of it). The panel's theme toggle became its own row: text 12px → 14px and centred, with the sun / moon now self-drawn (emoji never resolves to a colour font on most machines, yielding only monochrome glyphs that vary by machine) |
-| **v3.0.3** | 2026-09-26 | Two fixes on the difficulty screen: under the dark theme the strength bar takes its stone colour from the theme (black stones are only 1.11:1 against the dark card); the Grandmaster card's strength bar now compresses the box spacing instead of shrinking the stones (the original 191px did not fit the card's 136px inner area). The v3.0.2 tag failed `test` and produced no Release; its contents are folded into this version |
-| v3.0.1 | 2026-09-25 | Port pool (fixed 8888 → 15 ports, each passing a `hello` check); the panel gained two diagnostic values, "current TCP port" and "book"; artefact names split into family / bit-width / purpose, `.pkg` → `.tar.gz`; the release gate was rewritten (the original expanded a glob in an empty directory and reported "missing artefacts" with all 8 present) |
-| v3.0.0 | 2026-09-25 | Search core replaced with C++17, difficulty expanded from three levels to five, real search pruning enabled for Advanced/Grandmaster (LMR + forced-move extension + 2-way bucket TT); opening book added |
-| v2.0.2 | 2026-09-24 | Intermediate's time limit 5.0 s → 7.0 s (set by one real lost game, see "Difficulty") |
-| v2.0.1 | 2026-09-24 | Fixed an evaluation symmetry issue and a board-coordinate format issue |
-| v2.0.0 | 2026-09-19 | **Complete rewrite**: evaluation and search layers replaced wholesale, UI rebuilt as a unified design system. The old "layered TSS threat response", "multi-line defence", "desperate mode" and the GPU branch were all deleted |
-| v1.5 – v1.8.0 | — | Early versions. The old README had a 166-line game analysis covering mechanisms that have since been deleted; the full text is still in history: `git show d232fa7:README.md \| sed -n '236,401p'` |
+| **v4.4.0** | 2026-11-13 | **Four board sizes, the official opening book, self-updating, and AppImage on Linux.** Board size is selectable — 9/13/15/19, default **15×15**. On the C++ side each size is a separate compile (`-DGOMOKU_BOARD_SIZE`), eight binaries in all, so nothing in the hot path gained a branch; the pure-Python engine rebuilds its tables through `configure_size()`, and both paths derive Zobrist values from the same 19×19 table, so the `enhanced=0` reconciliation still holds at every size. The LAN protocol carries the size in `welcome` and `join`, and a mismatch is refused before the first move. **The Gomocup 2026 official openings** went in as all 24 published lines with every prefix position, so an opponent following a line is answered move by move; the eight D4 transforms are expanded once at startup into a `key → move` table, and a lookup is a single hash at the root only. 15×15 and 19×19 carry the whole book (713 entries), 13×13 keeps 22 lines (633), 9×9 keeps 8 (197). The book never fires in the ban variant. **DFPN proof search**, in VCF-only and VCT flavours, runs as a `std::thread` beside the main PVS search with its own board and arena. The A/B gate was not met — 32 self-play games and 9 positions at 1.5 s/move produced 50.0% and **0 takeovers** — so `proof_mode` stays 0 at all six levels. **Automatic updates** cover the Windows installer, the Windows portable build and the AppImage: the site's `version.json` first with the GitHub API as fallback, `SHA256SUMS` with a detached **Ed25519** signature, nothing installed before the signature verifies. CI now publishes a **draft** release that goes live only after the signature is uploaded offline. **Linux ships AppImage and the eight bare executables are gone**; logging is switched on with `--debug` or `GOMOKUAI_LOG=1` on any build. |
+| **v4.3.1** | 2026-11-01 | **The Windows installer is now a machine-wide install.** It goes to `C:\Program Files\GomokuAI` and registers its uninstall entry under HKLM, at the cost of one UAC prompt. The reason is the Microsoft Store package checker: a per-user install writing the uninstall entry to HKCU is invisible to it, and its 'entry in Add or Remove Programs' and 'bundling' checks could only report that the app name and publisher were unidentified, surfacing as `PackageSet invalid`. `ArchitecturesAllowed=x64compatible` is set too. Nothing about the app changed: settings still go through QSettings (HKCU), and the installed build is the play variant, which writes no files beside the executable. |
+| **v4.3.0** | 2026-10-30 | **Review is no longer exclusive to games against the AI, and there is a web version on Bilibili's Toy platform.** In a local two-player match every move by both colours is re-computed, each row prefixed with who played it; over the LAN only your own moves. A two-player match has no "strength of this game", so its review page copies the difficulty page — all six levels plus custom. **The review scores under the rules the game was played with**: `ReviewWorker` gained a `variant`, and a ban game goes through the ban engine. The web version compiles the same C++ search to WASM (`cpp/web`); `gm_think` hands back the evaluation table for every point at the root, and the engine runs in a Web Worker. It carries review and **online play**: Toy has no realtime channel, so a room code spells a public topic, `EventSource` receives and `fetch` publishes (ntfy). The host plays black and is authoritative; a visitor must be admitted to take the open seat, otherwise they watch read-only; undo is disabled online. |
+| **v4.2.0** | 2026-10-25 | **A sixth level, "Gomocup": 300 seconds a move.** A new card follows "Grandmaster", with the per-move cap of the Gomocup finals, a depth ceiling of 40, a 30-second VCF budget and 16 plies of quiescence. **The time reserve became an absolute** (`SearchConfig.reserveSec`), because 15% of 300 seconds is 45 and this level keeps 20; the hard deadline and the soft-time prediction now both go through one `searchBudget()`. Local benchmarks spent their budget to the second (28.0/56.0/261.3 s) and depth grows slowly with the budget — roughly 3–4× the time per extra ply — so the search itself is the bottleneck. |
+| **v4.1.0** | 2026-10-14 | **Optional RIF ban rules for black, enforced by a second C++ engine behind the same protocol.** Ban binds only black: a double three, a double four or an overline loses immediately, while exactly five in a row wins and outranks every foul. The rule set exists once, in `ban_rules.py`; the session consults it before placing the stone. The C++ side is the same sources built a second time — `ban.h` behind `#if GOMOKU_BAN` — so its search is untouched (a normalised disassembly diff shows an identical instruction stream). `hello` carries `rules`, `compute`/`analyze` validate it, and a new **`bancheck`** returns a position's forbidden points without searching, which is what makes the Python↔C++ reconciliation reproducible. Forbidden points are drawn as a geometric marker, never a character. |
+| **v4.0.1** | 2026-10-07 | The language picker became one dropdown, and "follow system" is always written in the system language. The arrow is self-drawn in Python (QSS `::down-arrow` only accepts an image); the first version passed points to `drawPolygon` in a form that corrupted memory and crashed chart painting. |
+| **v4.0.0** | 2026-10-06 | **Settings became a modal dialog, custom difficulty became sliders, and the UI now speaks six languages.** Keys are the Chinese source strings themselves; a missing entry falls back to Chinese. **Custom difficulty became sliders**: time 10–60 s, depth 2–40, quiescence 2–24 plies. Long-language clipping was fixed across cards, panel, review list, LAN screen and endgame overlay. |
+| **v4.0.0** (architecture & LAN) | 2026-10-06 | **Three modes, one authoritative session behind all of them.** The mode screen gained **LAN play**: one player creates a room, the other joins by address. The game state machine was lifted into `Session` (no Qt, no sockets); `Player` abstracts a seat; a `Room` holds one `Session` plus its seats and owns the game thread. **Single-player became a built-in room**, so both modes run the same protocol path. The line protocol is JSON + newline with a two-way `hello` check and a hard version refusal; default port **48900**. `RoomConfig` travels with `welcome`. Undo across a network is a negotiation and freezes the game while pending. A headless server and a bot client are included. Reconnect, spectators and joining the dedicated server from the UI are still missing. |
+| **v3.0.8** | 2026-10-03 | **Fixed: the Windows build silently fell back to the Python engine.** A PyInstaller bundle contains `VCRUNTIME140.dll` but not `MSVCP140.dll` at its root, while `gomoku_engine.exe` was built with `/MD` and imports it, so on a machine without the VC++ Redistributable the engine died at load. **The fix** links the MSVC runtime statically, and CI now scans the bytes of `gomoku_engine.exe` and fails if `MSVCP140.dll` is present. How to tell which engine a log came from: the `reason` column is useless (both write `PVS搜索`), so compare `val` + `dep`. |
+| **v3.0.7** | 2026-10-03 | **The review screen now lists every move.** It used to show only non-optimal moves, but a review can run for minutes and "where did I play on move 9?" found nothing. The opening move and "the search never finished a round" are their own category and excluded from the improvable count. A tied optimum now rings the move you actually played. Also fixed a page leak that stacked one board widget tree per viewed move. |
+| **v3.0.6** | 2026-10-03 | **Local two-player mode** and **post-game algorithmic review**, with the `analyze` protocol request carrying fields byte-identical to `compute`. Root candidates come from an `outRoot` out-parameter, and when `outRoot == nullptr` the entire old path is bit-for-bit unchanged. Getting a complete candidate table requires disabling the aspiration window while collecting. |
+| **v3.0.5** | 2026-10-02 | Windows promoted to stable. Every platform gained `run_debug` / `run_play` with variants baked in at build time. Fixed the console window that popped up when launching the engine, gathered `__builtin_*` into `bitops.h` so MSVC could compile, and shipped per-size icons plus `setWindowIcon()` (a 256×256 ARGB image does not fit in one X request). |
+| **v3.0.4** | 2026-10-01 | The endgame lights up the five first and settles afterwards, with a red line sweeping across it and the overlay delayed by one second. The theme toggle became its own row with self-drawn sun / moon glyphs. |
+| **v3.0.3** | 2026-09-26 | Under the dark theme the strength bar takes its stone colour from the theme; the Grandmaster card compresses box spacing instead of shrinking stones. |
+| v3.0.1 | 2026-09-25 | Port pool (fixed 8888 → 15 ports, each passing a `hello` check); two diagnostic values on the panel; artefact names split into family / bit-width / purpose; the release gate was rewritten. |
+| v3.0.0 | 2026-09-25 | Search core replaced with C++17, difficulty expanded to five levels, LMR + forced-move extension + 2-way bucket TT for Advanced/Grandmaster; opening book added. |
+| v2.0.2 | 2026-09-24 | Intermediate's time limit 5.0 s → 7.0 s. |
+| v2.0.1 | 2026-09-24 | Fixed an evaluation symmetry issue and a board-coordinate format issue. |
+| v2.0.0 | 2026-09-19 | **Complete rewrite**: evaluation and search replaced wholesale, UI rebuilt as a unified design system; the old layered threat response, multi-line defence, desperate mode and GPU branch were deleted. |
+| v1.5 – v1.8.0 | — | Early versions. The old README's 166-line game analysis is in history: `git show d232fa7:README.md \| sed -n '236,401p'` |
