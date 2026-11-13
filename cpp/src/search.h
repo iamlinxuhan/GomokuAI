@@ -99,6 +99,25 @@ struct SearchConfig {
     int enhanced = 0;               // 总开关：LMR + 延伸 + TT 桶 + 排序改进 + 时间管理
     int lmr = 0;                    // 晚着法削减（`enhanced=0` 时无意义）
     int extend = 0;                 // 强制着法延伸（`enhanced=0` 时无意义）
+
+    //: Gomocup 开局书。**默认 0 = 不查**，所以老报文（以及低档 1–2）的
+    //: 搜索路径逐位不变。只有中级及以上由 Python 下发 1。
+    //:
+    //: 命中时 `score=0`、`nodes/nps/depth=0`，与 Python 镜像同一套规则 ——
+    //: 这样 `enhanced == 0` 的跨语言护栏在两边都走书时仍然比分一致。
+    int useBook = 0;
+
+    // ---- DFPN 证明搜索（默认全关） ----
+    //
+    // 与主搜索**并行**跑的独立证明器：只信 WIN，不碰 TT / history / killer，
+    // 结论在 `reason="DFPN证明"` 里说明。`proofMode = 0` 时连线程都不起，
+    // 于是老报文、低档、单核机器上的路径与"没有这套东西"逐位相同。
+    //
+    // A/B（`tools/ab_proof.py`）证明有收益之前，Python 侧不下发这三个键；
+    // 这里的默认值是"关"，不是"随手写的兜底"。
+    int proofMode = 0;              // 0 关，1 VCF-only，2 VCT
+    double proofTime = 1.0;         // 秒；同时被剩余预算的一半封顶
+    int64_t proofNodes = 1000000;   // 节点上限，用尽即 UNKNOWN
 };
 
 //: 一次搜索的诊断结果。字段名与 Python `info` 逐字对应 —— 它是跨进程契约，

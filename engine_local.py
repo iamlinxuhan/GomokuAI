@@ -74,7 +74,8 @@ import numpy as np
 #: 静默退回"没有开局库"是最坏的失败方式 —— 表没生效与表里没有这个局面在
 #: 行为上完全一样，而后者是正常的（对手走出标准开局集就回落搜索）。把
 #: "没装上"伪装成"查不到"，就再也没有任何线索能指出真正的原因。
-from opening_book import BOOK, BOOK_STONES  # noqa: E402
+import gomocup_book  # noqa: E402
+from opening_book import BOOKS, BOOK_STONES  # noqa: E402
 
 # 这里曾有一行 `from gamelog import GameLogger`（注释称"ai_move 的 top_moves
 # 诊断用其格式化坐标"）。实际上诊断信息只用了 `info` 里已经存好的字符串，
@@ -272,28 +273,65 @@ def _build_five_starts():
 _FIVE_STARTS = _build_five_starts()
 
 
-def _has_five_bits(bits):
+#: ``size -> (_DIR_STEPS, _FIVE_STARTS)`` 的按尺寸缓存。会话层（``session.py``）
+#: 会在**不切换模块全局尺寸**的情况下对一张 9×9 盘判胜 —— 同一进程里可能有
+#: 多个尺寸的会话，不能靠 ``configure_size`` 这种全局操作。这里按尺寸现算一次、
+#: 之后只查表；结果与 ``configure_size(n)`` 重建出来的逐位相同。
+_FIVE_STARTS_BY_SIZE = {}
+
+
+def _five_starts_for(size):
+    hit = _FIVE_STARTS_BY_SIZE.get(size)
+    if hit is not None:
+        return hit
+    steps = (1, size, size + 1, size - 1)
+    starts = []
+    for dr, dc in _DIRS:
+        m = 0
+        for r in range(size):
+            for c in range(size):
+                if (0 <= r + dr * 4 < size and 0 <= c + dc * 4 < size):
+                    m |= 1 << (r * size + c)
+        starts.append(m)
+    hit = (steps, tuple(starts))
+    _FIVE_STARTS_BY_SIZE[size] = hit
+    return hit
+
+
+def _has_five_bits(bits, size=None):
     """位图里是否存在五连（含长连）。四个方向各 9 次大整数运算，无逐格循环。
 
     **这是全局唯一的胜负判定实现**：``check_win``、``Board.has_five``、
     ``Board.makes_five`` 与 Phase 3 的搜索都收敛到它或它的增量版本。
+
+    ``size=None`` 用当前模块尺寸；显式传 ``size`` 时按该尺寸的窗口起点判，
+    不要求 ``configure_size`` 已经切过去（见 ``_five_starts_for``）。
     """
-    for d, s in enumerate(_DIR_STEPS):
+    if size is None or size == BOARD_SIZE:
+        steps, starts = _DIR_STEPS, _FIVE_STARTS
+    else:
+        steps, starts = _five_starts_for(int(size))
+    for d, s in enumerate(steps):
         t = bits
         t &= bits >> s
         t &= bits >> (2 * s)
         t &= bits >> (3 * s)
         t &= bits >> (4 * s)
-        if t & _FIVE_STARTS[d]:
+        if t & starts[d]:
             return True
     return False
 
 
-def _bits_from_array(board, player):
-    """ndarray → 该方的 361 位位图。用 packbits 走 C 层，避免 361 次标量索引。"""
+def _bits_from_array(board, player, size=None):
+    """ndarray → 该方的位图。用 packbits 走 C 层，避免逐格标量索引。
+
+    ``size=None`` 用当前 ``_FULL_MASK``；显式传 ``size`` 时按该尺寸截断，
+    于是即使模块全局还停在 19，也能正确读一张 9×9 盘（反之亦然）。
+    """
     flat = np.asarray(board).ravel() == player
     packed = np.packbits(flat, bitorder='little').tobytes()
-    return int.from_bytes(packed, 'little') & _FULL_MASK
+    mask = _FULL_MASK if size is None else (1 << (int(size) ** 2)) - 1
+    return int.from_bytes(packed, 'little') & mask
 
 
 # ==================== 棋型分类器（Phase 3） ====================
@@ -533,12 +571,18 @@ _line_cache = {}
 _LINE_CACHE_MAX = 200_000
 
 
-def line_score(my, opp, length=BOARD_SIZE):
+def line_score(my, opp, length=None):
     """线上某方的 ``(分值, 等级)``。``my``/``opp`` 是**整条线**的局部位图。
 
     返回等级是给跨线组合计数用的（``threat_agg``）—— 分值本身分不清
     "两个冲四"与"一个活四"，而这两者在棋理上完全不同。
+
+    ``length=None`` 取**当前** ``BOARD_SIZE``。不能写成默认参数
+    ``length=BOARD_SIZE``：那会在 import 时钉死 19，``configure_size`` 之后
+    9/13/15 的调用会按 19 的窗口表切段。
     """
+    if length is None:
+        length = BOARD_SIZE
     if not my:
         return 0, LV_NONE
     seg = _segment(my, opp, length)
@@ -1052,6 +1096,10 @@ def book_lookup(board, player):
     "第 2/3/4 手"建的，中盘局面的哈希不可能命中；这道闸只是省掉每次搜索前的
     一次哈希计算，不是正确性的一部分。
 
+    **按本局尺寸取表。** 线性格索引与 Zobrist 都是尺寸相关的量，19 路建出来
+    的键在 15 路上一个都命中不了（这正是"默认尺寸改成 15 之后开局库里没有
+    这一手"的原因）。表由 ``tools/build_book.py --size n`` 逐尺寸生成。
+
     命中时**分值如实回传**，不填 0：那是这个局面的真实评估（建库时由宗师在
     完整预算下算出）。代价是入门档在开局头几手会显示出高手级读数 —— 详见
     ``tools/build_book.py`` 的模块文档。
@@ -1059,7 +1107,8 @@ def book_lookup(board, player):
     bd = Board.from_array(board)
     if bd.stone_count > BOOK_STONES:
         return None
-    return BOOK.get(bd.hash ^ (0 if player == 1 else _TT_SALT_W))
+    table = BOOKS.get(BOARD_SIZE) or {}
+    return table.get(bd.hash ^ (0 if player == 1 else _TT_SALT_W))
 
 
 # ==================== 搜索（Phase 3+4） ====================
@@ -2084,16 +2133,17 @@ class Engine:
 _ENGINE = Engine()
 
 
-def check_win(board, player):
+def check_win(board, player, size=None):
     """公开接口：检查玩家是否获胜。
 
     与搜索内部的增量判定共用 ``_has_five_bits`` —— 全局只有一份胜负判定实现，
-    覆盖它即覆盖搜索内判定。
+    覆盖它即覆盖搜索内判定。``size=None`` 用模块当前尺寸；会话层显式传本局
+    尺寸，于是同一进程里 9×9 与 19×19 的会话互不干扰。
     """
-    return _has_five_bits(_bits_from_array(board, player))
+    return _has_five_bits(_bits_from_array(board, player, size), size)
 
 
-def win_line(board, player):
+def win_line(board, player, size=None):
     """获胜连珠的坐标序列 ``[(r, c), ...]``（长连返回整段）；无五连返回 ``[]``。
 
     供 UI 在终局高亮那条五连。纯函数、零 Qt 依赖，与 ``check_win`` 共用
@@ -2101,19 +2151,20 @@ def win_line(board, player):
     子 —— 前驱是对手子时该段仍是极大的，不能跳过），返回第一条长度 ≥5 的。
     对局在成五瞬间结束，所以终局时五连至多一条。
     """
+    n = BOARD_SIZE if size is None else int(size)
     b = np.asarray(board)
     for dr, dc in _DIRS:
-        for r in range(BOARD_SIZE):
-            for c in range(BOARD_SIZE):
+        for r in range(n):
+            for c in range(n):
                 pr, pc = r - dr, c - dc
-                if (0 <= pr < BOARD_SIZE and 0 <= pc < BOARD_SIZE
+                if (0 <= pr < n and 0 <= pc < n
                         and b[pr][pc] == player):
                     continue        # 前驱是本方子 → 不是极大段的段首
                 if b[r][c] != player:
                     continue
                 run = []
                 rr, cc = r, c
-                while (0 <= rr < BOARD_SIZE and 0 <= cc < BOARD_SIZE
+                while (0 <= rr < n and 0 <= cc < n
                         and b[rr][cc] == player):
                     run.append((int(rr), int(cc)))
                     rr += dr
@@ -2167,6 +2218,21 @@ def ai_move(board, ai_player, depth, cancel=None, use_book=True):
                      'threat_detail': 'book',
                      'time_ms': (time.monotonic() - t0) * 1000.0})
         return (r, c, info)
+
+    # Gomocup 2026 官方开局集：中级（3）及以上才查，与 C++ 侧 `book=1` 的
+    # 下发条件一致。命中报 score=0 / depth=0 / nodes=0 —— 与 C++ 的
+    # `info->bestVal = 0` 同一套规则，`enhanced == 0` 的跨语言护栏在两边都
+    # 走书时比分仍然一致（见 search.h 的 `useBook`）。
+    if use_book and depth >= 3:
+        gidx = gomocup_book.lookup(board, ai_player, BOARD_SIZE)
+        if gidx is not None:
+            r, c = divmod(gidx, BOARD_SIZE)
+            info.update({'reason': '开局库', 'best_val': 0,
+                         'depth': 0, 'actual_depth': 0,
+                         'nodes': 0, 'nps': 0,
+                         'threat_detail': 'gomocup',
+                         'time_ms': (time.monotonic() - t0) * 1000.0})
+            return (r, c, info)
 
     idx, info = _ENGINE.think(board, ai_player, depth, cancel=cancel)
     if idx < 0:
@@ -2229,3 +2295,55 @@ def new_game():
     不同着法"的来源）。
     """
     _ENGINE.reset()
+
+
+def configure_size(n):
+    """把本模块的棋盘常量与全部预计算表切到 ``n×n``。
+
+    **只允许在两局之间调用。** 这是模块级全局状态：`Board` 实例、`_ENGINE`
+    的置换表与历史表都按旧尺寸建。调用后旧 Board 一律作废；本函数会
+    ``_ENGINE.reset()``，但**不**会去改调用方手里已有的 Board 对象。
+
+    ``n == BOARD_SIZE`` 时立即返回，所以热路径可以随手调（引擎门面在每次
+    本地回退前都会调一次）。
+
+    **Zobrist 与 C++ 逐位一致**：C++ 的 ``zobrist_table.inc`` 是 19×19 的
+    361 项表，小盘取前 ``n²`` 项；这里用同一个 seed 重新生成，MT19937 的
+    前 ``n²`` 个输出与 19 版完全相同 —— 不是"另一张表"，是同一张表的前缀。
+    """
+    global BOARD_SIZE, CELLS, _FULL_MASK, _CENTER_IDX, _DIR_STEPS
+    global _ZOBRIST, _LINE_MASKS, _CELL_LINES, _WIN_MASKS, _NEIGHBORS
+    global _FIVE_STARTS, _LINE_VIEWS, _CELL_LINE_POS, _N_LINES
+    global _LINE_WINDOWS_BY_LEN
+
+    n = int(n)
+    if n == BOARD_SIZE:
+        return
+    if n not in (9, 13, 15, 19):
+        raise ValueError("棋盘尺寸只支持 9/13/15/19，收到 %r" % (n,))
+
+    BOARD_SIZE = n
+    CELLS = n * n
+    _FULL_MASK = (1 << CELLS) - 1
+    _CENTER_IDX = (n // 2) * n + n // 2
+    _DIR_STEPS = (1, n, n + 1, n - 1)
+
+    _ZOBRIST = (_zobrist_row(_ZOBRIST_SEED_BB),
+                _zobrist_row(_ZOBRIST_SEED_BB + 1))
+    _LINE_MASKS, _CELL_LINES = _build_lines()
+    _WIN_MASKS = _build_win_masks()
+    _NEIGHBORS = _build_neighbors()
+    _FIVE_STARTS = _build_five_starts()
+    _LINE_VIEWS, _CELL_LINE_POS = _build_line_views()
+    _N_LINES = len(_LINE_VIEWS)
+    _LINE_WINDOWS_BY_LEN = {
+        L: tuple(0b11111 << i for i in range(L - 4))
+        for L in range(n + 1)
+    }
+    # 线评分缓存的键是"局部段"，跨尺寸理论上仍可复用；清掉是为了让
+    # "切换尺寸后的第一次评分"走一遍完整路径，排障时不会看到旧条目。
+    _line_cache.clear()
+    _ENGINE.reset()
+    # 预建 Gomocup 开局书在这个尺寸上的表（纯只读、按尺寸缓存，见
+    # gomocup_book.py）。放在最后：查询要用的 Zobrist 此刻已经就位。
+    gomocup_book.configure_size(n)

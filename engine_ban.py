@@ -117,7 +117,7 @@ import ban_rules as _ban
 #: 静默退回"没有开局库"是最坏的失败方式 —— 表没生效与表里没有这个局面在
 #: 行为上完全一样，而后者是正常的（对手走出标准开局集就回落搜索）。把
 #: "没装上"伪装成"查不到"，就再也没有任何线索能指出真正的原因。
-from opening_book import BOOK, BOOK_STONES  # noqa: E402
+from opening_book import BOOKS, BOOK_STONES  # noqa: E402
 
 # 这里曾有一行 `from gamelog import GameLogger`（注释称"ai_move 的 top_moves
 # 诊断用其格式化坐标"）。实际上诊断信息只用了 `info` 里已经存好的字符串，
@@ -576,12 +576,17 @@ _line_cache = {}
 _LINE_CACHE_MAX = 200_000
 
 
-def line_score(my, opp, length=BOARD_SIZE):
+def line_score(my, opp, length=None):
     """线上某方的 ``(分值, 等级)``。``my``/``opp`` 是**整条线**的局部位图。
 
     返回等级是给跨线组合计数用的（``threat_agg``）—— 分值本身分不清
     "两个冲四"与"一个活四"，而这两者在棋理上完全不同。
+
+    ``length=None`` 取**当前** ``BOARD_SIZE``：默认参数会在 import 时钉死 19，
+    ``configure_size`` 之后就错了。
     """
+    if length is None:
+        length = BOARD_SIZE
     if not my:
         return 0, LV_NONE
     seg = _segment(my, opp, length)
@@ -1268,7 +1273,8 @@ def book_lookup(board, player):
     bd = Board.from_array(board)
     if bd.stone_count > BOOK_STONES:
         return None
-    return BOOK.get(bd.hash ^ (0 if player == 1 else _TT_SALT_W))
+    table = BOOKS.get(BOARD_SIZE) or {}
+    return table.get(bd.hash ^ (0 if player == 1 else _TT_SALT_W))
 
 
 # ==================== 搜索（Phase 3+4） ====================
@@ -2537,6 +2543,48 @@ def new_game():
     哈希碰撞概率上升而命中错误的杀棋分（这就是旧版"同一局面在冷/热 TT 下给出
     不同着法"的来源）。
     """
+    _ENGINE.reset()
+
+
+def configure_size(n):
+    """把本模块的棋盘常量与全部预计算表切到 ``n×n``。
+
+    这是 ``engine_local.configure_size`` 的禁手分支副本：两份文件是整份分支
+    （见文件头），全局状态也各有一份，所以必须各配各的。语义、约束与
+    Zobrist 前缀的说明与那边逐字相同，改一处必须同时改另一处。
+
+    **只允许在两局之间调用**；``n == BOARD_SIZE`` 时立即返回。
+    """
+    global BOARD_SIZE, CELLS, _FULL_MASK, _CENTER_IDX, _DIR_STEPS
+    global _ZOBRIST, _LINE_MASKS, _CELL_LINES, _WIN_MASKS, _NEIGHBORS
+    global _FIVE_STARTS, _LINE_VIEWS, _CELL_LINE_POS, _N_LINES
+    global _LINE_WINDOWS_BY_LEN
+
+    n = int(n)
+    if n == BOARD_SIZE:
+        return
+    if n not in (9, 13, 15, 19):
+        raise ValueError("棋盘尺寸只支持 9/13/15/19，收到 %r" % (n,))
+
+    BOARD_SIZE = n
+    CELLS = n * n
+    _FULL_MASK = (1 << CELLS) - 1
+    _CENTER_IDX = (n // 2) * n + n // 2
+    _DIR_STEPS = (1, n, n + 1, n - 1)
+
+    _ZOBRIST = (_zobrist_row(_ZOBRIST_SEED_BB),
+                _zobrist_row(_ZOBRIST_SEED_BB + 1))
+    _LINE_MASKS, _CELL_LINES = _build_lines()
+    _WIN_MASKS = _build_win_masks()
+    _NEIGHBORS = _build_neighbors()
+    _FIVE_STARTS = _build_five_starts()
+    _LINE_VIEWS, _CELL_LINE_POS = _build_line_views()
+    _N_LINES = len(_LINE_VIEWS)
+    _LINE_WINDOWS_BY_LEN = {
+        L: tuple(0b11111 << i for i in range(L - 4))
+        for L in range(n + 1)
+    }
+    _line_cache.clear()
     _ENGINE.reset()
 
 

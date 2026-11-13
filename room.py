@@ -48,6 +48,17 @@ class RoomConfig:
     #: 胜/判负）与每个 AI 席位（搜索用哪台引擎），两处同源，见 ``Room.__init__``
     #: 与 ``Room._await_move``。
     rules: str = "free"
+    #: 棋盘边长。**属于房间**，加入方只认房主的尺寸：15×15 的房间里接进一个
+    #: 以为是 19×19 的旧客户端，双方对同一串索引的理解立刻分叉，而且直到
+    #: 某一方"莫名其妙赢了"才会暴露。默认 19 让所有旧构造点行为不变。
+    board_size: int = 19
+
+    def __post_init__(self):
+        n = int(self.board_size)
+        if n not in (9, 13, 15, 19):
+            raise ValueError("棋盘尺寸只支持 9/13/15/19，收到 %r"
+                             % (self.board_size,))
+        self.board_size = n
 
     def to_json(self) -> dict:
         return {
@@ -57,6 +68,7 @@ class RoomConfig:
             "allow_restart": self.allow_restart,
             "show_ai_scores": self.show_ai_scores,
             "rules": self.rules,
+            "board_size": self.board_size,
         }
 
 
@@ -81,8 +93,10 @@ class Room:
         self.specs = {1: black, 2: white}
         self.config = config if config is not None else RoomConfig()
         self.session = Session()
-        # 规则在开赛前就定死（本局的判胜/判负口径），席位在它之后才定胜负。
-        self.session.configure("pvp", rules=self.config.rules)   # 无人类席位：不记复盘快照
+        # 规则与尺寸在开赛前就定死（本局的判胜/判负口径、棋盘形状），席位在
+        # 它之后才定胜负。无人类席位：不记复盘快照。
+        self.session.configure("pvp", rules=self.config.rules,
+                               board_size=self.config.board_size)
         self.session.reset()
         self.result = None              # {"winner","reason","moves"}
         self.started = False
@@ -109,10 +123,18 @@ class Room:
 
     # ------------------------------------------------------------ 成员
 
-    def attach(self, stone: int, conn) -> None:
+    def attach(self, stone: int, conn, board_size: int = 19) -> None:
         with self._cv:
             if stone not in self.specs:
                 raise WireError("bad_seat", "未知席位")
+            # 尺寸必须在开局前对上。旧客户端不带这个字段 → 按 19 读，于是
+            # 它进不了 15/13/9 的房间（而不是进来看一张错位的盘）。
+            if int(board_size) != self.config.board_size:
+                raise WireError(
+                    "board_size_mismatch",
+                    "棋盘尺寸不一致：房间是 %d×%d，你请求的是 %d×%d"
+                    % (self.config.board_size, self.config.board_size,
+                       int(board_size), int(board_size)))
             if self.specs[stone].kind != "remote":
                 raise WireError("seat_not_remote", "该席位由服务端 AI 占用")
             if self._conns[stone] is not None:
@@ -151,6 +173,7 @@ class Room:
     def state_payload(self):
         return {
             "board": self.session.board.tolist(),
+            "board_size": self.session.board_size,
             "move_no": self.session.move_count,
             "turn": 1 if self.session.move_count % 2 == 0 else 2,
             "result": self.session.gamerule,

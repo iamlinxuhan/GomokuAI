@@ -20,7 +20,7 @@ import socket
 import threading
 import time
 
-from room import Room, SeatSpec
+from room import Room, RoomConfig, SeatSpec
 from wire import PROTO_VERSION, SERVER_NAME, WireConnection, WireError
 
 #: 房间服务的默认端口。与引擎端口池（config.PORT_POOL，49001–49093）
@@ -85,6 +85,10 @@ class RoomServer:
                            "message": "协议版本不匹配：服务端 %d，客户端 %r"
                                       % (PROTO_VERSION, msg.get("proto"))})
                 return
+            #: 新客户端会在 hello 里声明"我懂棋盘尺寸"。它决定 join 缺省
+            #: ``board_size`` 时的含义：懂的 = 接受房主的尺寸，不懂的 = 旧
+            #: 客户端，按 19 理解并在尺寸不符时拒绝。
+            size_aware = bool(msg.get("size_aware"))
             wire.send({"type": "hello_ok", "proto": PROTO_VERSION,
                        "server": SERVER_NAME})
 
@@ -101,10 +105,30 @@ class RoomServer:
                            "message": "没有这个房间：%r" % (msg.get("room"),)})
                 room = None
                 return
+            # 尺寸必须在 attach 之前判：否则对端会先收到一张它以为是
+            # 19×19 的 welcome。三种来源，语义各不相同：
+            #   显式 board_size → 加入方指定；必须与房间一致；
+            #   缺省 + size_aware → 加入方接受房主的尺寸；
+            #   缺省 + 旧客户端 → 按 19 理解（旧版只认识 19 路）。
+            if "board_size" in msg:
+                req_size = int(msg["board_size"])
+            elif size_aware:
+                req_size = room.config.board_size
+            else:
+                req_size = 19
+            if req_size != room.config.board_size:
+                wire.send({"type": "error", "code": "board_size_mismatch",
+                           "message": "棋盘尺寸不一致：房间是 %d×%d，"
+                                      "你请求的是 %d×%d"
+                                      % (room.config.board_size,
+                                         room.config.board_size,
+                                         req_size, req_size)})
+                room = None
+                return
             seat_name = msg.get("seat") or "auto"
             if seat_name in ("black", "white"):
                 stone = {"black": 1, "white": 2}[seat_name]
-                room.attach(stone, wire)
+                room.attach(stone, wire, req_size)
             elif seat_name == "auto":
                 # 房主在开房时已经选过颜色，加入方不再选 —— 服务端把剩下
                 # 的那一席给他。两个 auto 同时进来时靠 `attach` 的
@@ -113,7 +137,7 @@ class RoomServer:
                 last = None
                 for cand in candidates:
                     try:
-                        room.attach(cand, wire)
+                        room.attach(cand, wire, req_size)
                     except WireError as exc:
                         last = exc
                         continue
@@ -191,15 +215,20 @@ def main():
     ap.add_argument("--black-level", type=int, default=1)
     ap.add_argument("--white", choices=("remote", "ai"), default="remote")
     ap.add_argument("--white-level", type=int, default=1)
+    ap.add_argument("--board-size", type=int, default=19,
+                    choices=(9, 13, 15, 19),
+                    help="棋盘边长；加入方的 join 尺寸不符会被拒绝")
     args = ap.parse_args()
 
     srv = RoomServer(args.host)
     srv.add_room(Room(args.room,
                       _parse_seat(args.black, args.black_level),
-                      _parse_seat(args.white, args.white_level)))
+                      _parse_seat(args.white, args.white_level),
+                      config=RoomConfig(board_size=args.board_size)))
     port = srv.start(args.port)
-    print("房间服务端已启动：%s:%d 房间=%s 黑=%s 白=%s"
-          % (args.host, port, args.room, args.black, args.white), flush=True)
+    print("房间服务端已启动：%s:%d 房间=%s %d×%d 黑=%s 白=%s"
+          % (args.host, port, args.room, args.board_size, args.board_size,
+             args.black, args.white), flush=True)
     try:
         while True:
             time.sleep(1)

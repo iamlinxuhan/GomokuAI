@@ -17,15 +17,19 @@
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <set>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include "ban.h"
 #include "board.h"
 #include "constants.h"
+#include "dfpn.h"
 #include "evaluate.h"
 #include "opening.h"
+#include "opening_book.h"
 #include "search.h"
 #include "tables.h"
 #include "tcp_server.h"
@@ -79,8 +83,8 @@ void testTables() {
     // 必须在盘外，且线上相邻格步长恒为一个 DIR_STEP。
     //
     // ⚠️ 不能靠 `cells[1] - cells[0]` 判方向 —— 盘上存在 **4 条长度为 1 的线**
-    // （两个对角方向的 (0,18) 与 (18,0)），它们没有"第二个格"，那样判会全部
-    // 落到方向 0，数出 23/19/35/35。这正是"只看前两位"的经典陷阱。
+    // （两个对角方向的 (0,B-1) 与 (B-1,0)），它们没有"第二个格"，那样判会全部
+    // 落到方向 0。这正是"只看前两位"的经典陷阱。
     int perDir[4] = {0, 0, 0, 0};
     int lenOne = 0;
     bool ok = true;
@@ -112,8 +116,8 @@ void testTables() {
 
         int d = -1;
         if (len >= 2) {
-            // 方向取自格间步长。四个 DIR_STEP 互不相同（1/19/20/18），所以
-            // 这是**无歧义**的，不需要再去猜。
+            // 方向取自格间步长。四个 DIR_STEP 互不相同（1/B/(B+1)/(B-1)），
+            // 所以这是**无歧义**的，不需要再去猜。
             const int step = static_cast<int>(lv.cells[1]) -
                              static_cast<int>(lv.cells[0]);
             for (int k = 0; k < 4; ++k) {
@@ -163,11 +167,13 @@ void testTables() {
     }
     check(ok, ok ? std::string("每条线都极大且步长一致")
                  : ("线表不一致: " + detail));
-    check(perDir[0] == 19 && perDir[1] == 19 && perDir[2] == 37 &&
-              perDir[3] == 37,
-          "四方向线数 19/19/37/37（实得 " + std::to_string(perDir[0]) + "/" +
-              std::to_string(perDir[1]) + "/" + std::to_string(perDir[2]) + "/" +
-              std::to_string(perDir[3]) + "）");
+    const int diagLines = 2 * gomoku::BOARD_SIZE - 1;
+    check(perDir[0] == gomoku::BOARD_SIZE && perDir[1] == gomoku::BOARD_SIZE &&
+              perDir[2] == diagLines && perDir[3] == diagLines,
+          "四方向线数 B/B/(2B-1)/(2B-1)（实得 " + std::to_string(perDir[0]) +
+              "/" + std::to_string(perDir[1]) + "/" +
+              std::to_string(perDir[2]) + "/" + std::to_string(perDir[3]) +
+              "）");
     check(lenOne == 4, "长度为 1 的线恰好 4 条（实得 " + std::to_string(lenOne) +
                            "）");
 }
@@ -225,9 +231,21 @@ void testIncremental() {
     // 这类一致性检查**依然全绿**（两边都是同一个常量），但置换表会把整个
     // 搜索变成随机数发生器。所以必须单独断言"不同局面 → 不同哈希"。
     {
+        // 小盘上随机撒 1..60 子很容易**重复生成同一个盘面**（9×9 只有 81
+        // 格），而重复盘面的哈希当然相同。断言的对象必须是"不同局面"，所以
+        // 这里按 cells 去重，只把新盘面计入。
         std::vector<uint64_t> hashes;
-        hashes.push_back(Board().hash);
-        for (int trial = 0; trial < 400; ++trial) {
+        std::set<std::string> seenBoards;
+        auto addBoard = [&](const uint8_t* cells, const Board& bd) {
+            const std::string key(reinterpret_cast<const char*>(cells), CELLS);
+            if (!seenBoards.insert(key).second) return;
+            hashes.push_back(bd.hash);
+        };
+        uint8_t emptyCells[CELLS] = {0};
+        addBoard(emptyCells, Board());
+        int attempts = 0;
+        while (hashes.size() < 401 && attempts < 100000) {
+            ++attempts;
             uint8_t cells[CELLS] = {0};
             Board bd;
             const int n = 1 + rng.below(60);
@@ -238,13 +256,13 @@ void testIncremental() {
                 cells[idx] = static_cast<uint8_t>(p);
                 bd.make(idx, p);
             }
-            hashes.push_back(bd.hash);
+            addBoard(cells, bd);
         }
         std::sort(hashes.begin(), hashes.end());
         const size_t uniq =
             static_cast<size_t>(std::unique(hashes.begin(), hashes.end()) -
                                 hashes.begin());
-        check(uniq == hashes.size(),
+        check(hashes.size() == 401 && uniq == hashes.size(),
               "400 个不同局面的哈希互不相同（实得 " + std::to_string(uniq) +
                   "/" + std::to_string(hashes.size()) + "）");
 
@@ -263,10 +281,12 @@ void testIncremental() {
 void testFive() {
     section("成五判定");
     using namespace gomoku;
-    // 五行皆测：横、竖、撇、捺，以及贴在盘边的一条。
+    // 五行皆测：横、竖、撇、捺，以及贴在盘边的一条。坐标全部由 B 现算，
+    // 9/13/15/19 都能跑。
     struct Case { int r, c, dr, dc; };
-    const Case cases[] = {{9, 3, 0, 1}, {3, 9, 1, 0}, {4, 5, 1, 1}, {4, 14, 1, -1},
-                          {0, 0, 0, 1}};
+    const int mid = BOARD_SIZE / 2;
+    const Case cases[] = {{mid, 2, 0, 1}, {2, mid, 1, 0}, {2, 2, 1, 1},
+                          {2, BOARD_SIZE - 3, 1, -1}, {0, 0, 0, 1}};
     for (const auto& cs : cases) {
         Board bd;
         for (int k = 0; k < 4; ++k) {
@@ -284,10 +304,11 @@ void testFive() {
     // ban 版不跑这一段，否则同一次 `--selftest` 的输出会自相矛盾。
 #if !GOMOKU_BAN
     Board bd;
+    const int row = BOARD_SIZE / 2;
     for (int k = 0; k < 5; ++k) {
-        bd.make((9 * BOARD_SIZE) + 3 + k, 1);
+        bd.make(row * BOARD_SIZE + k, 1);
     }
-    check(bd.make(9 * BOARD_SIZE + 8, 1), "长连也判成五");
+    check(bd.make(row * BOARD_SIZE + 5, 1), "长连也判成五");
 #endif
 }
 
@@ -307,17 +328,23 @@ void testPatterns() {
     using namespace gomoku;
     Rng rng(0x5EED12345678ULL);
 
-    auto windowHasN = [](const Bits361& mine, int r0, int c0, int dr, int dc,
-                         int need) {
+    //: 窗口内**不得有对方子**——这是 `hotPoints` 与 `fivePoints` 的共同前提：
+    //: 窗口里混着对方子时，"4 颗己方"并不构成四连威胁（对方那颗把窗口截断了）。
+    //: 井字棋/五子棋的"四"必须落在一条无对方子的 5 连窗口里。
+    auto windowHasN = [](const Bits361& mine, const Bits361& opp, int r0,
+                         int c0, int dr, int dc, int need) {
         int cnt = 0;
         for (int k = 0; k < 5; ++k) {
             const int r = r0 + dr * k, c = c0 + dc * k;
-            if (mine.test(r * BOARD_SIZE + c)) ++cnt;
+            const int idx = r * BOARD_SIZE + c;
+            if (opp.test(idx)) return false;
+            if (mine.test(idx)) ++cnt;
         }
         return cnt >= need;
     };
-    //: 含 idx 的 5 连窗口中，是否有 ≥need 颗 `mine`。
-    auto anyWindow = [&](const Bits361& mine, int idx, int need) {
+    //: 含 idx 的无对方子 5 连窗口中，是否有 ≥need 颗 `mine`。
+    auto anyWindow = [&](const Bits361& mine, const Bits361& opp, int idx,
+                         int need) {
         const int r0 = idx / BOARD_SIZE, c0 = idx % BOARD_SIZE;
         for (int d = 0; d < 4; ++d) {
             const int dr = DIRS[d][0], dc = DIRS[d][1];
@@ -328,7 +355,7 @@ void testPatterns() {
                     continue;
                 if (re < 0 || re >= BOARD_SIZE || ce < 0 || ce >= BOARD_SIZE)
                     continue;
-                if (windowHasN(mine, r, c, dr, dc, need)) return true;
+                if (windowHasN(mine, opp, r, c, dr, dc, need)) return true;
             }
         }
         return false;
@@ -369,8 +396,8 @@ void testPatterns() {
                                  (got.test(idx) ? "真" : "假") + " 实际=" +
                                  (wantFive ? "真" : "假");
                 }
-                // 四子连窗：落子后存在一个含 ≥4 颗己方子的窗口。
-                const bool wantHot = anyWindow(after, idx, 4);
+                // 四子连窗：落子后存在一个无对方子、含 ≥4 颗己方子的窗口。
+                const bool wantHot = anyWindow(after, opp, idx, 4);
                 const Bits361 gotHot = hotPoints(mine, opp);
                 if (gotHot.test(idx) != wantHot) {
                     ++hotBad;
@@ -393,24 +420,25 @@ void testPatterns() {
                                  (mk ? "真" : "假") + " 实际=" +
                                  (wantFive ? "真" : "假");
                 }
-                // 对侧的五点必须为空（对称性）。
-                if (fivePoints(opp, mine).test(idx) && !hasFiveBits(opp)) {
+                // 五点是四窗的子集：落子即成五，必然也落在某个无对方子的
+                // 5 连窗口里（且该窗口内已有 4 颗己方子）。
+                if (got.test(idx) && !gotHot.test(idx)) {
                     ++fiveBad2;
                 }
             }
         }
     }
     check(fiveBad == 0, fiveBad ? "五点判定: " + exFive
-                                : "五点 = 落子即成五（40 盘 × 361 格全一致）");
+                                : "五点 = 落子即成五（40 盘 × CELLS 格全一致）");
     check(hotBad == 0, hotBad ? "四子连窗: " + exHot
                               : "四子连窗 = 落子后含 4 颗己方子的窗口");
     check(makeBad == 0, makeBad ? "make 返回值: " + exMake
                                 : "Board::make 的返回值与成五判定一致");
-    check(fiveBad2 == 0, "对方无五连时其五点集为空（对称性）");
+    check(fiveBad2 == 0, "五点是四窗的子集");
 }
 #endif  // !GOMOKU_BAN
 
-#if GOMOKU_BAN
+#if GOMOKU_BAN && GOMOKU_BOARD_SIZE == 19
 //: 禁手规则的固定局面表 —— 直接对应 `tests/test_ban_rules.py`。
 //:
 //: 每条都是**手工推演过**的局面（不是"跑一遍记下输出"）：恰好五连优先、长连、
@@ -606,15 +634,144 @@ void testOpening() {
     check(openingMove(many, 1) == -1, "两子以上 → 交由正规搜索");
 }
 
+//: DFPN 的三态与预算。四个尺寸都跑（局面全部按 `CENTER_IDX` 现算）。
+//:
+//: **这里不断言"算得出多深的杀"**，只断言三件事：证明的结论对、算不完一律
+//: UNKNOWN、arena 不跨搜索残留。深度能力属于 A/B（`tools/ab_proof.py`）。
+void testDfpn() {
+    section("DFPN 证明搜索");
+    using namespace gomoku;
+    const int row = BOARD_SIZE / 2;
+    const int c0 = BOARD_SIZE / 2 - 2;
+
+    DfpnConfig cfg;
+    cfg.mode = 1;
+    cfg.timeLimit = 1.0;
+    cfg.nodeCap = 200000;
+
+    // 1) 活四：黑连四、两端皆空 —— 一手成五，必须 WIN，且 dist=1。
+    {
+        uint8_t cells[CELLS] = {0};
+        for (int k = 0; k < 4; ++k) cells[row * BOARD_SIZE + c0 + k] = 1;
+        cells[0] = 2;
+        const Board bd = Board::fromArray(cells);
+        const ProofResult r = dfpnSearch(bd, 1, cfg, nullptr);
+        const int a = row * BOARD_SIZE + c0 - 1;
+        const int b = row * BOARD_SIZE + c0 + 4;
+        check(r.state == PROOF_WIN,
+              "活四局面 → WIN（state=" + std::to_string(r.state) + "）");
+        check(r.move == a || r.move == b,
+              "返回的正是两个成五点之一（实得 " + std::to_string(r.move) + "）");
+        check(r.dist == 1, "dist=1（根上就成五）");
+        check(r.nodes > 0, "节点数被记录（" + std::to_string(r.nodes) + "）");
+    }
+
+    // 1b) 跳三补成活四：一手做双五点，对手挡一端，第三手成五。**这一条才真正
+    //     走一遍展开与证明数更新** —— 上面那条是根上现成的五，只碰 terminal。
+    {
+        uint8_t cells[CELLS] = {0};
+        const int gap = BOARD_SIZE / 2;
+        cells[row * BOARD_SIZE + gap - 1] = 1;
+        cells[row * BOARD_SIZE + gap + 1] = 1;
+        cells[row * BOARD_SIZE + gap + 2] = 1;
+        cells[0] = 2;
+        const Board bd = Board::fromArray(cells);
+        const ProofResult r = dfpnSearch(bd, 1, cfg, nullptr);
+        check(r.state == PROOF_WIN,
+              "跳三补成双活四 → WIN（state=" + std::to_string(r.state) + "）");
+        check(r.move == row * BOARD_SIZE + gap,
+              "落点就是那个跳点（实得 " + std::to_string(r.move) + "）");
+        check(r.dist == 3, "dist=3：冲四 · 挡 · 成五（实得 " +
+                               std::to_string(r.dist) + "）");
+        check(r.nodes > 1, "展开了不止根节点（" + std::to_string(r.nodes) + "）");
+    }
+
+    // 2) 没有四可做：一子对一子 → VCF 口径下明确 NO_WIN。
+    {
+        uint8_t cells[CELLS] = {0};
+        cells[CENTER_IDX] = 1;
+        cells[CENTER_IDX + 1] = 2;
+        const Board bd = Board::fromArray(cells);
+        const ProofResult r = dfpnSearch(bd, 1, cfg, nullptr);
+        check(r.state == PROOF_NO_WIN,
+              "无威胁局面 → NO_WIN（state=" + std::to_string(r.state) + "）");
+        check(r.move == -1, "NO_WIN 不返回着法");
+    }
+
+    // 3) 节点上限：一个三连，展开就要子节点，上限 3 个必然不够。
+    {
+        uint8_t cells[CELLS] = {0};
+        for (int k = 0; k < 3; ++k) cells[row * BOARD_SIZE + c0 + k] = 1;
+        cells[0] = 2;
+        const Board bd = Board::fromArray(cells);
+        DfpnConfig small = cfg;
+        small.nodeCap = 3;
+        const ProofResult r = dfpnSearch(bd, 1, small, nullptr);
+        check(r.state == PROOF_UNKNOWN,
+              "节点上限用尽 → UNKNOWN（state=" + std::to_string(r.state) +
+                  "）");
+    }
+
+    // 4) 时间上限：1 纳秒，第一个节点就过点。
+    {
+        uint8_t cells[CELLS] = {0};
+        for (int k = 0; k < 3; ++k) cells[row * BOARD_SIZE + c0 + k] = 1;
+        cells[0] = 2;
+        const Board bd = Board::fromArray(cells);
+        DfpnConfig quick = cfg;
+        quick.timeLimit = 1e-9;
+        const ProofResult r = dfpnSearch(bd, 1, quick, nullptr);
+        check(r.state == PROOF_UNKNOWN, "时间到 → UNKNOWN");
+    }
+
+    // 5) 取消位：一进搜索就该停。
+    {
+        uint8_t cells[CELLS] = {0};
+        for (int k = 0; k < 3; ++k) cells[row * BOARD_SIZE + c0 + k] = 1;
+        cells[0] = 2;
+        const Board bd = Board::fromArray(cells);
+        std::atomic<bool> cancelFlag{true};
+        const ProofResult r = dfpnSearch(bd, 1, cfg, &cancelFlag);
+        check(r.state == PROOF_UNKNOWN, "取消位置位 → UNKNOWN");
+    }
+
+    // 6) arena 不跨搜索残留：同一局面连跑两次，结论与节点数一致。
+    {
+        uint8_t cells[CELLS] = {0};
+        for (int k = 0; k < 4; ++k) cells[row * BOARD_SIZE + c0 + k] = 1;
+        cells[0] = 2;
+        const Board bd = Board::fromArray(cells);
+        const ProofResult a = dfpnSearch(bd, 1, cfg, nullptr);
+        const ProofResult b = dfpnSearch(bd, 1, cfg, nullptr);
+        check(a.state == b.state && a.move == b.move && a.nodes == b.nodes,
+              "两次独立搜索结论与节点数一致（arena 已重置）");
+    }
+
+    // 7) 证明搜索不能改动传给它的棋盘。
+    {
+        uint8_t cells[CELLS] = {0};
+        cells[CENTER_IDX] = 1;
+        cells[CENTER_IDX + BOARD_SIZE] = 2;
+        const Board before = Board::fromArray(cells);
+        const Board after = Board::fromArray(cells);
+        const uint64_t h = before.hash;
+        (void)after;
+        const Board bd = before;
+        dfpnSearch(bd, 1, cfg, nullptr);
+        check(bd.hash == h && bd.stoneCount() == 2, "输入棋盘未被改动");
+    }
+}
+
 void testSearchSmoke() {
     section("搜索冒烟");
     using namespace gomoku;
     uint8_t cells[CELLS] = {0};
-    // 黑在 (9,5)..(9,8) 连四，两端皆空；黑先手必须一手成五。
-    for (int k = 0; k < 4; ++k) cells[9 * BOARD_SIZE + 5 + k] = 1;
+    const int row = BOARD_SIZE / 2;
+    // 黑在 (row,2)..(row,5) 连四，两端皆空；黑先手必须一手成五。
+    for (int k = 0; k < 4; ++k) cells[row * BOARD_SIZE + 2 + k] = 1;
     // 白给一点干扰，但不成大威胁。
-    cells[5 * BOARD_SIZE + 5] = 2;
-    cells[13 * BOARD_SIZE + 13] = 2;
+    cells[2 * BOARD_SIZE + 2] = 2;
+    cells[(BOARD_SIZE - 3) * BOARD_SIZE + (BOARD_SIZE - 3)] = 2;
 
     SearchConfig cfg;
     cfg.timeLimit = 3.0;
@@ -625,7 +782,7 @@ void testSearchSmoke() {
     Info info;
     const int mv = engine.think(cells, 1, cfg, nullptr, &info);
     const int r = mv / BOARD_SIZE, c = mv % BOARD_SIZE;
-    check(mv == 9 * BOARD_SIZE + 4 || mv == 9 * BOARD_SIZE + 9,
+    check(mv == row * BOARD_SIZE + 1 || mv == row * BOARD_SIZE + 6,
           "连四局面下一手补成五（实得 r=" + std::to_string(r) +
               " c=" + std::to_string(c) + "）");
     check(info.depth >= 1 && info.nodes > 0, "诊断字段已填充");
@@ -635,7 +792,7 @@ void testSearchSmoke() {
 
     // 对手有活四时，引擎必须识别出已无解（分值落在杀棋带）。
     uint8_t lost[CELLS] = {0};
-    for (int k = 0; k < 4; ++k) lost[9 * BOARD_SIZE + 4 + k] = 2;   // 白活四
+    for (int k = 0; k < 4; ++k) lost[row * BOARD_SIZE + 2 + k] = 2;   // 白活四
     lost[0] = 1;
     Info lInfo;
     Engine e2;
@@ -675,6 +832,7 @@ void testSearchSmoke() {
 //:
 //: 因此这条用例是**强度回归**而不是正确性回归：它同时钉住"引擎找得到这个
 //: 三手杀"和"杀棋分的数值编码 = WIN_SCORE - k"。
+#if GOMOKU_BOARD_SIZE == 19
 void testMateTruth() {
     section("短杀与杀棋分编码");
     using namespace gomoku;
@@ -723,7 +881,46 @@ void testMateTruth() {
     check(mv2 == mv && isMate(info2.bestVal),
           "同一引擎二次搜索结论一致（第二次 val=" +
               std::to_string(info2.bestVal) + "）");
+
+    // DFPN 独立复核同一局面：VCF-only 必须给出同一个三手杀。
+    {
+        DfpnConfig pc;
+        pc.mode = 1;
+        pc.timeLimit = 2.0;
+        pc.nodeCap = 500000;
+        const ProofResult pr = dfpnSearch(bd, 1, pc, nullptr);
+        check(pr.state == PROOF_WIN && pr.move == 8 * BOARD_SIZE + 12 &&
+                  pr.dist == 3,
+              "DFPN（VCF-only）独立证出同一三手杀 dist=3（state=" +
+                  std::to_string(pr.state) + " move=" +
+                  std::to_string(pr.move) + " dist=" +
+                  std::to_string(pr.dist) + "）");
+        std::printf("    dfpn nodes=%lld\n",
+                    static_cast<long long>(pr.nodes));
+
+        // 并行接入：主搜索压到 1 层（看不到三手杀），结论必须由 DFPN 接管。
+        if (std::thread::hardware_concurrency() >= 2u) {
+            SearchConfig pcfg = cfg;
+            pcfg.maxDepth = 1;
+            // 静止搜索也要关掉：`qply` 开着时它自己就能沿着冲四把三手杀搜出来
+            // （上面那次 `dep=1` 就是它干的），那样这条用例就测不到 DFPN。
+            pcfg.qply = 0;
+            pcfg.proofMode = 1;
+            pcfg.proofTime = 2.0;
+            Engine e4;
+            Info pInfo;
+            const int pmv = e4.think(cells, 1, pcfg, nullptr, &pInfo);
+            check(pmv == 8 * BOARD_SIZE + 12 &&
+                      std::string(pInfo.reason) == "DFPN证明",
+                  "并行 DFPN 在浅搜索下接管结论（reason=" +
+                      std::string(pInfo.reason) + " move=" +
+                      std::to_string(pmv) + " val=" +
+                      std::to_string(pInfo.bestVal) + " dep=" +
+                      std::to_string(pInfo.depth) + "）");
+        }
+    }
 }
+#endif  // BOARD_SIZE == 19
 
 //: **增强搜索会不会把杀棋算丢？** —— LMR 的全部风险就在这里。
 //:
@@ -739,6 +936,7 @@ void testMateTruth() {
 //:
 //: 另外顺带钉住三件"开了增强也不许变"的事：返回合法着法、时间不超、取消仍
 //: 生效 —— LMR 与延伸都不该动到调度层。
+#if GOMOKU_BOARD_SIZE == 19
 void testEnhancedSearch() {
     section("增强搜索（LMR + 强制着法延伸）");
     using namespace gomoku;
@@ -833,7 +1031,9 @@ void testEnhancedSearch() {
     check(cms < 1500.0,
           "增强开启后取消仍迅速返回（" + std::to_string(cms) + " ms）");
 }
+#endif  // BOARD_SIZE == 19
 
+#if GOMOKU_BOARD_SIZE == 19
 void testAnalyze() {
     section("根节点候选表（战后复盘用）");
     using namespace gomoku;
@@ -932,6 +1132,7 @@ void testAnalyze() {
     check(fmv == -1, "满盘时返回 -1（实得 " + std::to_string(fmv) + "）");
     check(stale.empty(), "无候选时候选表被清空");
 }
+#endif  // BOARD_SIZE == 19
 
 }  // namespace
 
@@ -939,6 +1140,7 @@ int main(int argc, char** argv) {
     gomoku::ServerOptions opt;
     bool verifyTables = false;
     bool selftest = false;
+    bool dumpBook = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -957,8 +1159,11 @@ int main(int argc, char** argv) {
             verifyTables = true;
         } else if (a == "--selftest") {
             selftest = true;
+        } else if (a == "--dump-book") {
+            dumpBook = true;
         } else if (a == "--version") {
-            std::printf("gomoku_engine 1.0.0\n");
+            std::printf("gomoku_engine 1.0.0 (board %dx%d)\n", gomoku::BOARD_SIZE,
+                        gomoku::BOARD_SIZE);
             return 0;
         } else if (a == "-h" || a == "--help") {
             std::printf(
@@ -967,6 +1172,7 @@ int main(int argc, char** argv) {
                 "  --port <n>         监听端口（默认 8888）\n"
                 "  --verify-tables    只做预计算表自检后退出\n"
                 "  --selftest         表自检 + 增量/零和/开局/搜索 冒烟\n"
+                "  --dump-book        打印展开后的开局书条目（跨语言对拍用）\n"
                 "  --version          打印版本\n"
                 "  -h, --help         显示本帮助\n");
             return 0;
@@ -978,6 +1184,11 @@ int main(int argc, char** argv) {
 
     gomoku::tables::init();
 
+    if (dumpBook) {
+        gomoku::openingBookDump();
+        return 0;
+    }
+
     if (verifyTables || selftest) {
         testTables();
         if (selftest) {
@@ -988,16 +1199,23 @@ int main(int argc, char** argv) {
             // 五点的判据，那是无禁手口径 —— 在禁手 `--selftest` 里会与
             // `testBan` 的"六连是长连负"自相矛盾。五点/四窗的位运算本身在
             // free 版的 `--selftest` 里已全覆盖（同一份源码）。
+  #if GOMOKU_BOARD_SIZE == 19
             testBan();
+  #endif
 #else
             testPatterns();
 #endif
             testEvaluate();
             testOpening();
-            testMateTruth();
+            testDfpn();
             testSearchSmoke();
+#if GOMOKU_BOARD_SIZE == 19
+            // 下面三条的固定局面是 19×19 的坐标；小盘只跑通用的表 / 增量 /
+            // 成五 / 评估 / 开局 / 搜索冒烟。
+            testMateTruth();
             testEnhancedSearch();
             testAnalyze();
+#endif
         }
         std::printf("\n%s（%d 项失败）\n", g_failed == 0 ? "自检通过" : "自检失败",
                     g_failed);

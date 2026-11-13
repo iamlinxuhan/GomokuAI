@@ -422,13 +422,24 @@ def render_static(geom, w: float, h: float, dpr: float) -> QPixmap:
 
 
 def _star_points(n: int):
-    """19 路是传统九星；其他尺寸取等距三点网格（棋盘尺寸若将来可变）。"""
+    """星位：19 路是传统九星；9/13/15 路取四角 + 天元。
+
+    四角星位在离边第四条线上（9 路棋盘窄，用第三条线 —— 第四条会紧贴天元，
+    九个点挤成中间一块，看起来像画歪了）。19 路保留传统九星（含四边中点），
+    其余尺寸按四分点兜底。
+    """
     if n == 19:
         return [(3, 3), (3, 9), (3, 15), (9, 3), (9, 9), (9, 15),
                 (15, 3), (15, 9), (15, 15)]
-    a, b = 3, n - 4
+    if n == 9:
+        a = 2
+    elif n in (13, 15):
+        a = 3
+    else:
+        a = max(1, (n - 1) // 4)
+    b = n - 1 - a
     m = n // 2
-    return [(r, c) for r in (a, m, b) for c in (a, m, b)]
+    return [(a, a), (a, b), (m, m), (b, a), (b, b)]
 
 
 def _draw_coords(p: QPainter, geom) -> None:

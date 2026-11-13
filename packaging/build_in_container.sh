@@ -16,7 +16,10 @@
 #                ARM 两边**合并成一个 token**：`arm_x86_64` / `arm_x32` 这种
 #                组合自相矛盾（ARM 怎么会有 x86 的位数），所以直接叫 aarch64
 #                与 armv7（后者是 32 位 ARM 的实际架构名，与 `uname -m` 一致）。
-#   EXT          安装包容器格式，也是它的后缀：deb | tar.gz
+#   EXT          安装包容器格式，也是它的后缀：deb | tar.gz | appimage
+#                appimage 只给 amd_x86_64 / aarch64 —— 那两个架构有官方
+#                appimagetool，且是自动更新的唯一 Linux 载体（见 updater.py）。
+#                32 位与 armv7 继续发 deb / tar.gz，只提示下载页。
 #   DEB_ARCH     EXT=deb 时的 Architecture 字段：amd64 / i386 / arm64 / armhf
 #                **与 STEM 是两回事**：文件名那格给人看（`amd_x32`），这一格
 #                给 dpkg 看（`i386`），两者的词表不是一套。
@@ -24,9 +27,12 @@
 #
 # 产物名（写在 /src 下）：
 #
-#   GomokuAI_Linux_<STEM>_run_debug   裸可执行文件，开发版：写到 exe 同目录
-#   GomokuAI_Linux_<STEM>_run_play    裸可执行文件，使用版：不留任何文件
 #   GomokuAI_Linux_<STEM>_setup.<EXT> 安装包（由 dist/gomoku-ai 的 onedir 收成）
+#   GomokuAI_Linux_<STEM>.AppImage    EXT=appimage 时的单个可执行文件
+#
+# **v4.4.0 起不再发裸可执行文件**（旧的 `_run_debug` / `_run_play` 共 8 个）。
+# Linux 的便携形态改由 AppImage 承担；需要日志时用 `--debug` 或
+# `GOMOKUAI_LOG=1`，不必再为"要不要写日志"单独构建一份。
 #
 # 早先这套名字是 `GomokuAI_For_Linux_<SUFFIX>`，SUFFIX ∈ AMD / X86 / ARM / ARM32
 # —— **一格既当族名又当位数，而位数恰恰是最容易装错的那个信息**：`_AMD` 与
@@ -36,22 +42,26 @@
 set -euo pipefail
 
 : "${STEM:?需要一个架构格，如 amd_x86_64 / amd_x32 / aarch64 / armv7}"
-: "${EXT:?需要 EXT=deb 或 EXT=tar.gz}"
+: "${EXT:?需要 EXT=deb / tar.gz / appimage}"
 : "${APP_VERSION:=0.0.0}"
 DEB_ARCH="${DEB_ARCH:-amd64}"
 
-if [ "$EXT" != "deb" ] && [ "$EXT" != "tar.gz" ]; then
-    echo "EXT 只能是 deb 或 tar.gz，收到 '$EXT'" >&2
+if [ "$EXT" != "deb" ] && [ "$EXT" != "tar.gz" ] && [ "$EXT" != "appimage" ]; then
+    echo "EXT 只能是 deb / tar.gz / appimage，收到 '$EXT'" >&2
     exit 2
 fi
 if [ "$EXT" = "deb" ] && [ -z "${DEB_ARCH:-}" ]; then
     echo "EXT=deb 时必须给 DEB_ARCH" >&2
     exit 2
 fi
+if [ "$EXT" = "appimage" ] && [ "$STEM" != "amd_x86_64" ] && [ "$STEM" != "aarch64" ]; then
+    # 32 位与 armv7 没有官方 appimagetool 的对应构建，也不在自更新的支持范围
+    # 内；硬发一个跑不起来的 AppImage 比不发更糟。
+    echo "EXT=appimage 只支持 amd_x86_64 / aarch64，收到 '$STEM'" >&2
+    exit 2
+fi
 
 BASE="GomokuAI_Linux_${STEM}"               # 产物名的公共前缀
-RUN_DEBUG="${BASE}_run_debug"               # 开发版裸文件：写到 exe 同目录
-RUN_PLAY="${BASE}_run_play"                 # 使用版裸文件：不留任何文件
 PKG_NAME="${BASE}_setup"                    # 安装包基名，实际文件还要接 ".${EXT}"
 cd /src
 
@@ -100,13 +110,27 @@ apt-get install -y -qq --no-install-recommends \
 echo "---- 构建 C++ 计算核心 ----"
 cmake -S cpp -B cpp/build -DCMAKE_BUILD_TYPE=Release
 cmake --build cpp/build -j"$(nproc)"
-./cpp/build/gomoku_engine --verify-tables --selftest
-file cpp/build/gomoku_engine
 
-# 禁手版是同一批源码编第二遍（`GOMOKU_BAN=1`），照旧要过表自检与自检 ——
-# 它的 `--selftest` 少跑几段无禁手口径的比对，其余相同，所以这是一条独立的门槛。
+# **八个二进制全都要验**（19/15/13/9 × free/ban）。只验 19 的话，9×9 的端口
+# 池里少一份二进制不会有任何构建错误 —— 用户选 9×9 之后 AI 静默退回 Python
+# 参考实现，面板还会如实写着"Python (本地)"，正是最难被发现的那类退化。
+#
+# POST_BUILD 已经对每个 target 跑了 `--verify-tables`（表枚举错了是唯一会静默
+# 出错的地方）；这里对 19 再跑完整 `--selftest`（含跨尺寸无关的增量/成五
+# 自检），其余尺寸只跑 `--verify-tables` —— 它们的差异全在编译期常量上，
+# 自检用例本身与尺寸无关，多跑一遍只是把 CI 时间拉长。
+ENGINE_BINS="gomoku_engine gomoku_engine_ban"
+for _size in 15 13 9; do
+    ENGINE_BINS="${ENGINE_BINS} gomoku_engine_${_size} gomoku_engine_${_size}_ban"
+done
+
+./cpp/build/gomoku_engine --verify-tables --selftest
 ./cpp/build/gomoku_engine_ban --verify-tables --selftest
-file cpp/build/gomoku_engine_ban
+for _bin in $ENGINE_BINS; do
+    [ -x "cpp/build/${_bin}" ] || { echo "!! 缺引擎 ${_bin}" >&2; exit 1; }
+    ./cpp/build/${_bin} --verify-tables >/dev/null
+    file "cpp/build/${_bin}" | sed 's/,.*//'
+done
 
 # ---------------------------------------------------------------------------
 # ③ Python 侧
@@ -196,13 +220,14 @@ done
     || { echo "!! 打进包的窗口图标缺失：${ICON_OUT}/${APP_ICON_NAME}" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
-# ④ 三份产物
+# ④ 产物：onedir
 #
 # `--add-binary "cpp/build/gomoku_engine:."` 把引擎放到包的根（_MEIPASS 下），
-# 正是 _candidates() 第一个去找的位置。三份都要带：onedir 是安装包的原料，
-# 两个 onefile 是免安装裸文件，少了引擎那一份就是"AI 明显变弱"而没有别的症状。
+# 正是 _candidates() 第一个去找的位置。**八个二进制全部都要带**（四个尺寸各
+# free/ban）；少任何一个，对应尺寸会静默退回 Python 参考实现 —— AI 明显变弱
+# 而且面板照样写着"Python (本地)"，没有别的症状。
 #
-# **禁手版（`gomoku_engine_ban`）同样要带，而且三份都要。** 两个引擎各自独立
+# **禁手版（`gomoku_engine_ban`）同样要带。** 两个引擎各自独立
 # 存在，只带 free 版的话，包里的禁手局会退回 `engine_ban.py` 那份本地 Python
 # 实现 —— 后果不只是慢：本机 `test_ban_fork_guard` 钉的是"两条实现同着同分"，
 # 而一旦用户装了包，实际跑的是没被那份护栏覆盖过的第三条路（包里的
@@ -210,86 +235,72 @@ done
 # "选了禁手之后 AI 突然变笨"，与 v3.0.8 那次 MSVCP140 是同一类静默退化。
 #
 # `--add-data "${ICON_OUT}/gomoku-ai.png:."` 同理，落点也是包的根，由
-# main.py 的 `_icon_candidates()` 第一个去找。**三份同样都要带**：漏了它
-# 窗口就没有图标（X11 上退回 X.Org 的兜底 logo），而构建与运行都不报错 ——
-# 与漏引擎同一类静默退化，所以下面也有断言。
+# main.py 的 `_icon_candidates()` 第一个去找。漏了它窗口就没有图标（X11 上
+# 退回 X.Org 的兜底 logo），而构建与运行都不报错 —— 与漏引擎同一类静默退化，
+# 所以下面也有断言。
 #
-# 三份用不同的 --name，否则共用 build/ 与 dist/ 下的同名中间目录，后一次
-# 构建会捡前一次的缓存而漏东西。
+# **注入模块走 `--paths`**：往临时目录写两个一行的模块，让 PyInstaller 把它
+# 加进分析期的模块搜索路径。写临时目录是为了不在仓库工作区留下生成物 ——
+# 这份脚本在 CI 里跑检出版、在本地跑真工作树，两边都不该多出需要 gitignore
+# 的文件。
 #
-# **debug / play 的差别在构建期烘焙**，不由文件名倒推（理由见 gamelog.py 顶部
-# 那段）：往临时目录写一个一行的 `_build_flavor.py`，再用 `--paths` 让
-# PyInstaller 把那个目录加进分析期的模块搜索路径。写临时目录是为了不在仓库
-# 工作区留下生成物 —— 这份脚本在 CI 里跑检出版、在本地跑真工作树，两边都不该
-# 多出一个需要 gitignore 的文件。
+#   _build_flavor.py    FLAVOR = "play"（发布产物只有 play；排障用 `--debug`）
+#   _build_version.py   APP_VERSION / BUILD_CHANNEL，见 version_info.py
 #
 # 安装包装的是 **play**：普通用户那边不该堆 game_log。
 # ---------------------------------------------------------------------------
 FLAVOR_DIR="$(mktemp -d)"
-
-#: 写进 FLAVOR_DIR 再跑一次 PyInstaller。`$1` = 变体，`$2` = 产物名。
-pyi_onefile() {
-    printf 'FLAVOR = "%s"\n' "$1" > "${FLAVOR_DIR}/_build_flavor.py"
-    .venv-build/bin/pyinstaller --onefile --windowed --name "$2" \
-        --paths "${FLAVOR_DIR}" \
-        --add-binary "cpp/build/gomoku_engine:." \
-        --add-binary "cpp/build/gomoku_engine_ban:." \
-        --add-data "${ICON_OUT}/${APP_ICON_NAME}:." main.py
-}
-
-echo "---- PyInstaller: onedir（安装包原料，play）----"
 printf 'FLAVOR = "play"\n' > "${FLAVOR_DIR}/_build_flavor.py"
+printf 'APP_VERSION = "%s"\nBUILD_CHANNEL = "github"\n' "$APP_VERSION" \
+    > "${FLAVOR_DIR}/_build_version.py"
+
+PYI_ARGS=()
+for _bin in $ENGINE_BINS; do
+    PYI_ARGS+=(--add-binary "cpp/build/${_bin}:.")
+done
+
+echo "---- PyInstaller: onedir（安装包 / AppImage 的唯一原料，play）----"
 .venv-build/bin/pyinstaller --onedir --windowed --name "gomoku-ai" \
     --paths "${FLAVOR_DIR}" \
-    --add-binary "cpp/build/gomoku_engine:." \
-    --add-binary "cpp/build/gomoku_engine_ban:." \
+    "${PYI_ARGS[@]}" \
     --add-data "${ICON_OUT}/${APP_ICON_NAME}:." main.py
-
-echo "---- PyInstaller: onefile debug（裸文件，写日志）----"
-pyi_onefile debug "${RUN_DEBUG}"
-
-echo "---- PyInstaller: onefile play（裸文件，不写日志）----"
-pyi_onefile play "${RUN_PLAY}"
 
 rm -rf "${FLAVOR_DIR}"
 
-ls -lh "dist/${RUN_DEBUG}" "dist/${RUN_PLAY}"
-file "dist/${RUN_DEBUG}" "dist/${RUN_PLAY}"
+ls -lh "dist/gomoku-ai/gomoku-ai"
+file "dist/gomoku-ai/gomoku-ai"
 
-# 断言 `_build_flavor` 真的被收进了包。
+# 断言注入的两个模块真的被收进了包。
 #
-# **这是这套变体机制唯一会静默失败的地方**：`--paths` 若没生效，`gamelog.py`
-# 里那个 `try: from _build_flavor import FLAVOR` 会把它当 ImportError 吞掉，
-# 于是 debug 版退化成 play —— 不报错、不崩，只是**用户开一局之后才发现日志
-# 没出来**。
+# **这是这套机制唯一会静默失败的地方**：`--paths` 若没生效，`gamelog.py` 与
+# `version_info.py` 里那两个 `try: from _build_... import ...` 会把 ImportError
+# 吞掉，于是程序照常启动 —— 只是版本号显示成 `0.0.0-dev`、更新检查永远说
+# "用 git pull 升级"。不报错、不崩，查起来要绕一大圈。
 #
 # 查的是 PyInstaller 自己写下的分析产物（`build/<name>/*.toc` 里列着收进去的
-# 模块名），而不是最终二进制：onefile 的 PYZ 是 zlib 压缩过的，直接对二进制
-# `grep` 一个字符串既可能假阴也可能假阳。**它证明的是"PyInstaller 把注入的
-# 模块收进来了"**，不证明最终产物里的取值 —— 取值由上面那两行 `printf` 直接
-# 写定，紧挨着构建，没有中间环节。
-for _name in "${RUN_DEBUG}" "${RUN_PLAY}"; do
-    if ! grep -rqs --include='*.toc' '_build_flavor' "build/${_name}"; then
-        echo "!! ${_name} 的分析产物里没有 _build_flavor —— --paths 没生效" >&2
-        echo "   照这样发出去，debug 版会静默退化成 play（不写日志、不报错）" >&2
+# 模块名），而不是最终二进制：onedir 的 PYZ 同样是压缩过的，直接对二进制
+# `grep` 一个字符串既可能假阴也可能假阳。
+for _mod in _build_flavor _build_version; do
+    if ! grep -rqs --include='*.toc' "$_mod" "build/gomoku-ai"; then
+        echo "!! 分析产物里没有 ${_mod} —— --paths 没生效" >&2
         exit 1
     fi
 done
-echo "两个变体都带上了 _build_flavor"
+echo "注入模块都带上了：_build_flavor / _build_version（${APP_VERSION}）"
 
 # 断言引擎确实进包了。**这是最容易静默漏掉的一环**：漏了不会报错，只会让
-# 所有档位的 AI 都退回 Python 参考实现。onedir 与 onefile 用的是同一个
-# --add-binary，而 --add-binary 指向不存在的文件时 PyInstaller 会硬错，
-# 所以验 onedir 这一份就足以证明这条路径是通的。
+# 对应尺寸的 AI 退回 Python 参考实现。`--add-binary` 指向不存在的文件时
+# PyInstaller 会硬错，所以这里验的是"落点对不对"与"八个是不是都在"。
 # `-print -quit`：找到第一个就停。**这不是提速，是消掉同一类 SIGPIPE 隐患**
 # —— `grep -q` 一命中就退出并关管道，find 若还要继续写就会被 141 干掉，
 # `pipefail` 于是把整条管道判成失败，`if !` 随之翻转为"引擎没进包"并 `exit 1`：
 # 一个**假警报**把已经成功的构建判死。（实测这条 find 的输出只有一行、
 # 写完即退，所以侥幸没炸过 —— 但"侥幸"不是能留在 CI 里的东西。）
-# **两个名字都验。** `-name gomoku_engine` 是精确匹配，匹配不到
-# `gomoku_engine_ban`：只验 free 版的话，禁手引擎漏进包时这条断言照样绿，
-# 用户选中禁手之后才发现 AI 退回本地 Python 实现。
-for engine in gomoku_engine gomoku_engine_ban; do
+# **八个名字都验。** `-name gomoku_engine` 是精确匹配，匹配不到
+# `gomoku_engine_ban` 也匹配不到 `gomoku_engine_15`：只验 19 的 free 版，
+# 其余七个漏进包时这条断言照样绿，用户选中该尺寸之后才发现 AI 退回本地
+# Python 实现。
+for engine in $ENGINE_BINS; do
     if ! find dist/gomoku-ai -type f -name "${engine}" -print -quit | grep -q .; then
         echo "!! C++ 引擎 ${engine} 没有进包 —— 检查 --add-binary" >&2
         exit 1
@@ -297,8 +308,7 @@ for engine in gomoku_engine gomoku_engine_ban; do
     echo "引擎已进包：$(find dist/gomoku-ai -type f -name "${engine}")"
 done
 
-# 断言窗口图标同样进了包 —— 用的还是上面那条 `--add-data`，三份产物共用，
-# 所以验 onedir 这一份就够。**这是"标题栏与任务栏仍然没有图标"唯一会静默
+# 断言窗口图标同样进了包 —— 用的还是上面那条 `--add-data`，验 onedir 这份就够。**这是"标题栏与任务栏仍然没有图标"唯一会静默
 # 发生的地方**：漏了它桌面环境只会拿 X.Org 的兜底 logo 顶上，不报错、
 # 不影响启动，用户只看到"图标不对"。
 if ! find dist/gomoku-ai -type f -name "${APP_ICON_NAME}" -print -quit | grep -q .; then
@@ -352,7 +362,112 @@ DEB_DEPENDS="libc6 (>= 2.28), libgl1, libglib2.0-0, libxkbcommon0, hicolor-icon-
 
 DEB_DESC="五子棋AI - 位棋盘增量评估 + Negamax/PVS + 置换表 + 静止搜索/VCF 连续冲四 (纯 CPU)"
 
-if [ "$EXT" = "deb" ]; then
+if [ "$EXT" = "appimage" ]; then
+    # -------------------------------------------------------------------
+    # AppImage：一个**可执行文件**，也是 Linux 上唯一支持自动更新的形态。
+    #
+    # 更新时 updater.py 对正在运行的这个文件做 `os.replace` —— 运行中的 ELF
+    # 已经映射进内存，替换目录项不会影响当前进程，下次启动就是新版本。这要求
+    # 产物是"单个自挂载文件"（AppImage type 2），不能是解包目录，所以这里
+    # 从头组装 AppDir 而**不复用 .deb 的暂存树**。
+    #
+    # PyInstaller 的 onedir 原样放进 `usr/bin/`：`gomoku-ai` 与 `_internal/`
+    # 必须相邻（bootloader 按自身路径找 `_internal`），所以整个目录一起搬，
+    # 不拆。
+    # -------------------------------------------------------------------
+    echo "---- 打包 AppImage (${STEM}) ----"
+
+    # mksquashfs 是 appimagetool 的硬依赖；1.9.x 的 AppImage 里虽然自带一份，
+    # 但显式装上不贵，也避免"某个发行版镜像里恰好缺了"这种只在 CI 炸的问题。
+    apt-get install -y -qq --no-install-recommends squashfs-tools
+
+    APPDIR="AppDir"
+    rm -rf "$APPDIR"
+    mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/share/applications" \
+             "${APPDIR}/usr/share/icons"
+
+    cp -r "dist/${APP_DIR_NAME}/." "${APPDIR}/usr/bin/"
+    chmod -R 755 "${APPDIR}/usr/bin"
+
+    # `.desktop` 与 deb/tar.gz 共用同一份内容，只把 Exec 换成 AppImage 内的
+    # 相对入口名 —— AppRun 会把 `gomoku-ai` 解析到 `usr/bin/gomoku-ai`。
+    printf '%s\n' "$DESKTOP_ENTRY" | sed 's|^Exec=.*|Exec=gomoku-ai|' \
+        > "${APPDIR}/gomoku-ai.desktop"
+    cp "${APPDIR}/gomoku-ai.desktop" \
+       "${APPDIR}/usr/share/applications/gomoku-ai.desktop"
+
+    # 图标：usr/share/icons 下保留七档（装进系统后菜单用），AppDir 根下再放
+    # 一份最大的 —— appimagetool 会把根目录的 `gomoku-ai.png` 当作 .DirIcon，
+    # 文件管理器与桌面集成靠它显示图标。
+    cp -r "${ICON_OUT}/hicolor" "${APPDIR}/usr/share/icons/"
+    chmod -R u=rwX,go=rX "${APPDIR}/usr/share/icons"
+    cp "${ICON_OUT}/hicolor/256x256/apps/gomoku-ai.png" "${APPDIR}/gomoku-ai.png"
+    ln -sf gomoku-ai.png "${APPDIR}/.DirIcon"
+
+    cat > "${APPDIR}/AppRun" <<'EOF'
+#!/bin/sh
+# AppImage 的入口。readlink -f 解析 $0：从符号链接、PATH 或桌面启动器进来
+# 时 $0 不是 AppImage 内的绝对路径，dirname 会指错地方。
+HERE="$(dirname "$(readlink -f "$0")")"
+exec "$HERE/usr/bin/gomoku-ai" "$@"
+EOF
+    chmod 755 "${APPDIR}/AppRun"
+
+    # 断言：桌面入口、图标、可执行体三者齐全。漏任何一个都可能"能跑但没图标"，
+    # 而 AppImage 的失败是静默的 —— 构建不报错，用户只看到空白图标。
+    grep -q '^Icon=gomoku-ai$' "${APPDIR}/gomoku-ai.desktop" \
+        || { echo "!! AppDir 的 .desktop 里没有 Icon=gomoku-ai" >&2; exit 1; }
+    [ -x "${APPDIR}/usr/bin/${APP_DIR_NAME}" ] \
+        || { echo "!! AppDir 里没有可执行入口 ${APP_DIR_NAME}" >&2; exit 1; }
+    [ -s "${APPDIR}/gomoku-ai.png" ] \
+        || { echo "!! AppDir 根下缺 gomoku-ai.png（.DirIcon）" >&2; exit 1; }
+    for _s in "${ICON_SIZES[@]}"; do
+        [ -s "${APPDIR}/usr/share/icons/hicolor/${_s}x${_s}/apps/gomoku-ai.png" ] \
+            || { echo "!! AppDir 里缺 ${_s}x${_s} 图标" >&2; exit 1; }
+    done
+
+    # --- appimagetool：固定 1.9.1，按架构校验 SHA-256 ---------------------
+    #
+    # **不跟 `continuous`**：那是一个每天变的滚动 tag，哈希无法固定，"校验下载"
+    # 就退化成"下载什么信什么"。1.9.1 是 2025-11-18 的正式发布。
+    #
+    # 哈希从官方 Release 下载后本地算得；换版本必须同时改 URL 与哈希。
+    APPIMAGETOOL_VERSION="1.9.1"
+    APPIMAGETOOL_SHA256_amd_x86_64="8e5a55a3740f92ebf77f1c88c3aa466ace6ad9739ed173d288023bac61457525"
+    APPIMAGETOOL_SHA256_aarch64="5ebab677bb0532e7e342487e5e3a40d648963d7a7faa299001c8ab5b3ca3ba7c"
+    case "$STEM" in
+        amd_x86_64) TOOL_ARCH="x86_64";  TOOL_SHA="$APPIMAGETOOL_SHA256_amd_x86_64" ;;
+        aarch64)    TOOL_ARCH="aarch64"; TOOL_SHA="$APPIMAGETOOL_SHA256_aarch64" ;;
+        *) echo "!! 没有 ${STEM} 的 appimagetool" >&2; exit 2 ;;
+    esac
+
+    TOOL_DIR="$(mktemp -d)"
+    TOOL="${TOOL_DIR}/appimagetool-${TOOL_ARCH}.AppImage"
+    URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${TOOL_ARCH}.AppImage"
+    echo "下载 appimagetool ${APPIMAGETOOL_VERSION} (${TOOL_ARCH}) …"
+    # --retry 是给 GitHub releases 的 5xx/断流：CI 上一次偶发失败会让整条
+    # 发布流水线红掉，而重试三次基本都过。
+    curl -fsSL --retry 3 --retry-delay 2 -o "$TOOL" "$URL"
+    echo "${TOOL_SHA}  ${TOOL}" | sha256sum -c -
+    chmod 755 "$TOOL"
+
+    # 容器里没有 FUSE，直接执行 AppImage 会 `dlopen libfuse` 失败；
+    # `--appimage-extract-and-run` 让运行时先解包到临时目录再执行，不碰 FUSE。
+    # `ARCH` 必须显式给：appimagetool 从 `uname -m` 猜，而它本身跑在
+    # extract-and-run 的临时目录里。
+    ARCH="$TOOL_ARCH" "$TOOL" --appimage-extract-and-run --no-appstream \
+        "$APPDIR" "${BASE}.AppImage"
+
+    rm -rf "$TOOL_DIR"
+    chmod 755 "${BASE}.AppImage"
+    [ -s "${BASE}.AppImage" ] || { echo "!! AppImage 没有产出" >&2; exit 1; }
+    ls -lh "${BASE}.AppImage"
+    # 文件头必须是 AppImage 的 ELF：若 appimagetool 静默失败留下一个
+    # 空壳或纯 squashfs 镜像，这一步能当场抓住。
+    file "${BASE}.AppImage" | grep -q ELF \
+        || { echo "!! ${BASE}.AppImage 不是可执行文件" >&2; exit 1; }
+
+elif [ "$EXT" = "deb" ]; then
     echo "---- 打包 .deb (${DEB_ARCH}) ----"
     PKG_DIR="deb_build"
     rm -rf "$PKG_DIR"
@@ -499,5 +614,9 @@ rm -rf "${ICON_OUT}"
 
 echo "=============================================================="
 echo " 完成："
-ls -lh "dist/${RUN_DEBUG}" "dist/${RUN_PLAY}" "${PKG_NAME}".* 2>/dev/null || true
+if [ "$EXT" = "appimage" ]; then
+    ls -lh "${BASE}.AppImage"
+else
+    ls -lh "${PKG_NAME}.${EXT}"
+fi
 echo "=============================================================="

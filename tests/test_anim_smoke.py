@@ -88,6 +88,9 @@ class _DummyLogger:
     def close(self):
         self.f.close()
 
+    def flush(self):
+        pass
+
     def log_human(self, *a, **k):
         pass
 

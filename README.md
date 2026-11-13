@@ -25,7 +25,7 @@ reference for A/B comparisons.
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-4.3.1-brightgreen)
+![Version](https://img.shields.io/badge/version-4.4.0-brightgreen)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
 ---
@@ -120,21 +120,22 @@ macOS build** (this project has never been developed or verified on macOS).
 > Windows / Linux binaries and cannot run on macOS; that other repository is the
 > older pure-Python engine and provides `.dmg` / `.pkg` for both arm64 and Intel.
 
-Filenames look like: `GomokuAI_<platform>_<arch>_<setup|run>[_debug|_play].<ext>`.
+Filenames look like: `GomokuAI_<platform>_<arch>_<setup|run_play>.<ext>`, plus
+`GomokuAI_Linux_<arch>.AppImage` for the two 64-bit Linux builds.
 
-**Three builds per platform**, differing only in whether they write logs:
+**Since v4.4.0 there is no separate debug build.** Every platform used to ship
+both `run_debug` and `run_play`, differing only in whether they wrote logs. Any
+build can now be switched into logging with `--debug` or `GOMOKUAI_LOG=1`, and
+the log lands in `game_log_*.txt` next to the program. Dropping those eight
+files means adding an architecture no longer doubles the release.
 
-| Middle segment | What it is | Writes logs? |
-|---|---|---|
-| `..._setup.*` | Installer, recommended for ordinary users | No |
-| `..._run_play.*` | Standalone single file | No |
-| `..._run_debug.*` | Standalone single file, for showing someone the scene | **Yes**, to `game_log_*.txt` next to the executable |
-
-When something goes wrong, download the `debug` build — the log lands right
-beside the executable, so you don't need to set environment variables or know
-where you installed it. The logs exist for developers diagnosing AI decisions
-(they are the source of the position suite in `tools/positions.py`); ordinary
-use doesn't need them, which is why the installers ship `play`.
+| Platform | Arch | File | How to install / run |
+|---|---|---|---|
+| Windows | `amd_x86_64` | `..._setup.exe` | Double-click; installs to `C:\Program Files\GomokuAI` (one UAC prompt) |
+| Windows | `amd_x86_64` | `..._run_play.exe` | Standalone single file |
+| Linux | `amd_x86_64` / `aarch64` | `GomokuAI_Linux_<arch>.AppImage` | `chmod +x`, then run; recommended |
+| Linux | `amd_x86_64` / `amd_x32` | `..._setup.deb` | `sudo dpkg -i` → 「五子棋AI」 in the menu |
+| Linux | `aarch64` / `armv7` | `..._setup.tar.gz` | Unpack, then `sudo ./install.sh` |
 
 **Match the arch segment with `uname -m`**: `x86_64` → `amd_x86_64`, `i686` →
 `amd_x32`, `aarch64` → `aarch64`, `armv7l` / `armv6l` → `armv7`. `amd` covers
@@ -142,31 +143,39 @@ the whole x86 family (Intel, AMD and virtual machines all take this one). **The
 two ARM entries are merged into one name**, rather than a self-contradictory
 combination like `arm_x86_64`.
 
-| Platform | Arch | Installer | How to install |
-|---|---|---|---|
-| Linux | `amd_x86_64` | `GomokuAI_Linux_amd_x86_64_setup.deb` | `sudo dpkg -i` → 「五子棋AI」 in the menu |
-| Linux | `amd_x32` | `GomokuAI_Linux_amd_x32_setup.deb` | Same |
-| Linux | `aarch64` | `GomokuAI_Linux_aarch64_setup.tar.gz` | Unpack, then `sudo ./install.sh` |
-| Linux | `armv7` | `GomokuAI_Linux_armv7_setup.tar.gz` | Same |
-| Windows | `amd_x86_64` | `GomokuAI_Windows_amd_x86_64_setup.exe` | Double-click; installs to `C:\Program Files\GomokuAI` (one UAC prompt) |
-
-If unsure, take the installer: it declares the graphics libraries, a CJK font
-candidate chain and `hicolor-icon-theme` in `Depends:`, and installs its icon
-under `/usr/share/icons/hicolor/` alongside the menu entry, so the app shows up
-with its real icon rather than a blank one. A bare file cannot
-declare dependencies — it just reports whatever is missing. Bare files also need
-the executable bit set by hand (Release assets do not carry file permissions):
+The installers declare the graphics libraries, a CJK font candidate chain and
+`hicolor-icon-theme` in `Depends:`, and install their icon under
+`/usr/share/icons/hicolor/` alongside the menu entry, so the app shows up with
+its real icon. An AppImage cannot declare dependencies — it just reports
+whatever is missing. AppImages need the executable bit set by hand (Release
+assets do not carry file permissions):
 
 ```bash
-chmod +x GomokuAI_Linux_amd_x86_64_run_play
-./GomokuAI_Linux_amd_x86_64_run_play
+chmod +x GomokuAI_Linux_amd_x86_64.AppImage
+./GomokuAI_Linux_amd_x86_64.AppImage
 ```
 
-**Everything runs on CPU only — no GPU driver, no PyTorch/CUDA.** `play` and the
-installer builds leave no files on disk at all (no logs, no config, no cache
-directory); `debug` writes only `game_log_*.txt`. To point any build at a log
-directory (say you temporarily want logs from `play`), use an environment
-variable: `GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_amd_x86_64_run_play`.
+### Automatic updates
+
+**Only three builds update themselves**: the Windows installer, the Windows
+portable build, and the Linux AppImage. Settings has a "Check for updates"
+button, and the program also checks silently 2.5 s after startup (a network
+failure pops up nothing at all). `.deb`, `.tar.gz` and MSIX are handled by their
+package managers; for those, settings shows the version and a download link.
+
+The trust root is an **Ed25519 signature**: the client fetches `SHA256SUMS` and
+`SHA256SUMS.sig`, verifies the signature against the public key compiled into
+the program, and only then checks the downloaded file against the hash. A
+missing signature, a bad signature and a hash mismatch all refuse the install
+and leave the current version untouched. The private key never leaves the
+maintainer's machine: CI produces a **draft** release, and it only goes live
+after the signature is uploaded offline.
+
+**Everything runs on CPU only — no GPU driver, no PyTorch/CUDA.** The installer
+and AppImage builds leave no files on disk at all (no logs, no config, no cache
+directory); `game_log_*.txt` is written only when you pass `--debug` or set
+`GOMOKUAI_LOG=1`. To point a build at a specific log directory, use
+`GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_amd_x86_64.AppImage`.
 
 **On Windows on ARM, take the x64 build.** The OS ships x64 emulation and it
 runs fine; **there is no native Windows ARM package** — PyQt5 has no `win_arm64`
@@ -190,7 +199,7 @@ Dependencies are managed with **uv** (`pyproject.toml` + a committed
 
 ## 🎯 Rules
 
-1. Standard Gomoku rules, 19×19 board
+1. Standard Gomoku rules on a **9×9 / 13×13 / 15×15 (default) / 19×19** board
 2. Black moves first; whoever first gets **five in a row** horizontally,
    vertically or diagonally wins
 3. Players alternate, and a point cannot be played twice
@@ -921,12 +930,22 @@ If a permissive licence (MIT, say) is ever wanted, the real path is swapping
 PyQt5 for **PySide6** (LGPL), which an MIT project may call at runtime; that
 needs an API migration (`pyqtSignal` → `Signal`, `pyqtSlot` → `Slot`, and so on).
 
+### Third-party data
+
+The Gomocup 2026 opening book (`data/gomocup_2026.json` and its two generated
+mirrors) transcribes the official opening coordinates published at
+<https://live.gomocup.org/openings>; the replies stored for each line's final
+position were computed by this project's own engine. Details are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Everything else in this
+repository is ours.
+
 ---
 
 ## 📝 Changelog
 
 | Version | Date | Contents |
 |---|---|---|
+| **v4.4.0** | 2026-11-13 | **Four board sizes, the official opening book, self-updating, and AppImage on Linux.** Board size is now selectable — 9/13/15/19, default **15×15**. On the C++ side each size is a separate compile (`-DGOMOKU_BOARD_SIZE`), eight binaries in all (19/15/13/9 × free/ban), so nothing in the hot path gained a branch; the pure-Python engine rebuilds its tables through `configure_size()`, and both paths derive Zobrist values from the same 19×19 table, so the `enhanced=0` verbatim reconciliation still holds at every size. The LAN protocol carries the size in `welcome` and `join`, and a mismatch is refused before the first move instead of surfacing as a game where one side reads the board as 19. **The Gomocup 2026 official openings** went into the book as all 24 published lines (12 freestyle15, 12 standard) together with every prefix position, so an opponent following a line is answered move by move rather than having to reach its end; the eight D4 transforms are expanded once at startup into a `key → move` table, and a lookup is a single hash at the root only. 15×15 and 19×19 carry the whole book (the 19×19 case is the same lines shifted by +2), 13×13 keeps the lines that fit, and 9×9 falls back to the small four-ply book. The book never fires in the ban variant — the official lines are published under free rules, and following one under RIF could walk black into a foul. **DFPN proof search**, in two flavours (VCF-only and VCT), runs as a `std::thread` beside the main PVS search with its own board and arena (allocated once, reset per search, nodes never freed). The A/B gate was not met: over 32 self-play games and 9 positions at 1.5 s/move, the VCT arm took over **0 times**, the win rate was 50.0%, and no move differed from the no-proof arm — so **`proof_mode` stays 0 at all six levels**, and the two modes are reachable only through explicit configuration. **Automatic updates** cover the Windows installer, the Windows portable build and the AppImage: the site's `version.json` is asked first with the GitHub `releases/latest` API as fallback, `SHA256SUMS` is fetched with its detached **Ed25519** signature, and nothing installs before the signature verifies against the key compiled into the program. CI now publishes a **draft** release that goes live only after the signature is uploaded offline; `.deb` and MSIX are left to their package managers. **Linux ships AppImage, and the eight bare executables are gone.** Logging is switched on with `--debug` or `GOMOKUAI_LOG=1` on any build, which is what made the separate `run_debug` file unnecessary. |
 | **v4.3.1** | 2026-11-01 | **The Windows installer is now a machine-wide install.** It goes to `C:\Program Files\GomokuAI` and registers its uninstall entry under HKLM, at the cost of one UAC prompt at install time. The reason has nothing to do with the program: the Microsoft Store package checker runs the installer in a different context, and a per-user install writing the uninstall entry to HKCU is invisible to it — the 'entry in Add or Remove Programs' and 'bundling' checks could only report that the app name and publisher were unidentified, which then surfaced as `PackageSet invalid` on submit. `ArchitecturesAllowed=x64compatible` is set as well, so 32-bit Windows refuses the package; the binary was always 64-bit. Nothing about the app changed: settings still go through QSettings (HKCU), and the installed build is the play variant, which writes no files beside the executable. |
 | **v4.3.0** | 2026-10-30 | **Review is no longer exclusive to games against the AI, and there is now a web version on Bilibili's Toy platform.** What gets reviewed depends on the mode: against the AI, only your moves, at a strength no lower than the one you played (a custom game reuses the snapshot taken at the start); in a **local two-player match every move by both colours** is re-computed, each row prefixed with who played it (`【Black】Move 3 …`); over the **LAN only your own moves**, the opponent's never enter the list. A two-player match has no "strength of this game", so its review page copies the difficulty page — all six levels plus custom, and the custom card does not open the settings dialog (a review is a look back; it re-computes with the current custom parameters). **The review scores under the rules the game was played with**: `ReviewWorker` gained a `variant`, and a ban game goes through the ban engine — otherwise forbidden moves would score as good ones. The web version compiles the same C++ search to WASM (`cpp/web`); `gm_think` hands back the evaluation table for every point at the root, and the engine runs in a Web Worker so the main thread only draws the board. The front end is four plain static files with relative paths, ready to run on Toy as-is. It carries both features: review (every move re-computed; click any row to put the board back as it stood, with the move you played as a ghost stone and the engine's pick ringed in red) and **online play**. Toy has no realtime channel, so nothing is deployed — the room code spells a public topic, `EventSource` receives and `fetch` publishes (ntfy, CORS wide open). The host plays black and is authoritative; guests send move intents that the host validates and broadcasts as a position. A visitor must be admitted by the host to take the open seat, otherwise they watch read-only; undo is disabled online, the host can restart, and an unreachable relay is stated in the panel rather than hidden. 639 tests (non-perf) and 224 `gui_smoke` checks; the web suite's 106 assertions run under both the real-DOM and fake-DOM harnesses |
 | **v4.2.0** | 2026-10-25 | **A sixth level, "Gomocup": 300 seconds a move, built for tournament-length thinking.** A new card follows "Grandmaster", with the per-move cap of the Gomocup finals (300 s), a depth ceiling raised to 40, a 30-second VCF budget and 16 plies of quiescence; the custom-level sentinel moves from slot 6 to 7. Turning the clock up alone would have changed nothing — the old 24-ply ceiling was exhausted well inside 20 seconds, so 280 of the new seconds would have sat unused; the level's parameters had to be widened with it. **The time reserve became a configurable absolute** rather than a ratio: `SearchConfig` gained `reserveSec` (0 keeps the 15%), because 15% of 300 seconds is 45 and this level keeps 20. The hard deadline and the soft-time-management prediction now both go through one `searchBudget()`, otherwise the soft stop budgets for 45 seconds of headroom that does not exist and opens an iteration that cannot finish. `engine.py` sends `reserve_sec` only when the config carries it, so the messages for the first five levels stay byte-identical — their verbatim parity with the Python reference engine rests on the same time semantics. Without the C++ engine the level falls back to the local Python one (15 s at most); the review path clamps the limit to the local ceiling, since a few dozen moves would otherwise mean 255 seconds of pure Python per move, and the panel says so. The difficulty page grew from six cards to seven and now wraps 4+3 instead of squeezing to 125 px, keeping the strength bar and the subtitles at full size. Local benchmarks (30/60/280 s over five complex middlegames) spent their budget to the second (28.0/56.0/261.3 s, exactly the limit minus the reserve) and ran on the C++ engine (0.5M–2.3M nps); depth grows slowly with the budget — roughly 3–4× the time per extra ply — and the 40-ply ceiling was never reached, so the search itself is the bottleneck. |

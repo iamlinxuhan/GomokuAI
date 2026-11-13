@@ -89,6 +89,41 @@ def _neutral_ui_language():
     main._load_language = lambda: None
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _neutral_board_size():
+    """测试进程不继承开发者机器上存着的棋盘尺寸。
+
+    ``GomokuGame.__init__`` 会从 QSettings 读 ``board_size``（出厂默认 15）。
+    既有用例全部按 19×19 写死了坐标与棋盘形状，读回 15 就会红一片，而失败点
+    与改动的代码无关 —— 与 ``_neutral_ui_scale`` / ``_neutral_ui_language``
+    是同一条。这里钉死 19；**别的尺寸由 ``tests/test_board_sizes.py`` 显式造**，
+    不靠这条默认值。
+    """
+    import main
+    main._load_board_size = lambda: 19
+
+
+@pytest.fixture(autouse=True)
+def _restore_local_engine_size():
+    """每个用例结束后把本地引擎的尺寸表复位到 19。
+
+    ``engine_local`` / ``engine_ban`` 的尺寸是**模块级全局**（``configure_size``
+    重建全部表）。任何一条用例只要让引擎按 9/13/15 路的盘跑过一次，后面按
+    19×19 写的用例就会在越界处炸开 —— 而单独跑同一条用例又是绿的。复位放在
+    用例**之后**（yield 之后），这样用例内部可以自由切尺寸。
+    """
+    yield
+    for name in ("engine_local", "engine_ban"):
+        try:
+            mod = __import__(name)
+        except ImportError:
+            continue
+        try:
+            mod.configure_size(19)
+        except Exception:     # noqa: BLE001 — 复位失败不该掩盖真正的失败
+            pass
+
+
 @pytest.fixture(scope="session")
 def legacy_engine():
     """冻结的旧引擎（A/B 基线）。"""

@@ -58,6 +58,9 @@ class _DummyLogger:
     def close(self):
         self.f.close()
 
+    def flush(self):
+        pass
+
     def log_human(self, *a, **k):
         pass
 
@@ -108,16 +111,18 @@ def _pump(qapp, n=5):
 
 
 def _goto_game(win, qapp):
-    """本地双人一路走到对局页：模式 → 规则 → 开局。
+    """本地双人一路走到对局页：模式 → 规则 → 尺寸 → 开局。
 
     2026-10-14 起三种模式后面都插了一页规则选择（用户要求"放在选择对战模式
     之后"），所以"选本地双人就到了对局页"这句话不再成立 —— 这些用例原本借
     "一步到对局页"省事，现在必须把那一步补上，否则它们断言的是**规则页**上
-    的弹窗行为，而那是另一件事。
+    的弹窗行为，而那是另一件事。尺寸页同理：它在规则页之后、开局之前。
     """
     win._on_mode_selected(1)
     _pump(qapp)
     win._on_rules_selected(0)
+    _pump(qapp)
+    win._on_size_selected(19)
     _pump(qapp)
 
 
@@ -203,6 +208,8 @@ def test_gear_is_hidden_only_on_the_loading_screen(win, qapp):
     win._on_mode_selected(1)
     _pump(qapp)
     win._on_rules_selected(0)
+    _pump(qapp)
+    win._on_size_selected(19)
     _pump(qapp)
     assert win.settings_btn.isVisible()
 

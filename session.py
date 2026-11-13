@@ -27,7 +27,11 @@ from dataclasses import dataclass
 import numpy as np
 
 import ban_rules as _ban
-from engine_local import BOARD_SIZE, check_win, win_line
+from engine_local import check_win, win_line
+
+#: 合法尺寸与 ``config.BOARD_SIZES`` 同一套；这里不 import config 是为了让
+#: session 保持零项目依赖（它被 room/服务器与纯单测直接引用）。
+_BOARD_SIZES = (9, 13, 15, 19)
 
 #: 悔棋次数上限。原 ``main.py`` 的 ``self.output = 3``。
 UNDO_LIMIT = 3
@@ -93,19 +97,32 @@ class Session:
         self.human_stone = 0
         self.ai_stone = 0
         self.rules = "free"
+        #: 本局棋盘边长。默认 19 是为了让所有**没有显式传尺寸**的旧调用方
+        #: （测试、工具、房间默认配置）行为逐字不变；UI 新局显式传。
+        self.board_size = 19
         self.reset()
 
     # ------------------------------------------------------------ 生命周期
 
     def configure(self, mode: str, human_stone: int = 0,
-                  ai_stone: int = 0, rules: str = "free") -> None:
+                  ai_stone: int = 0, rules: str = "free",
+                  board_size: int = 19) -> None:
         self.mode = mode
         self.human_stone = int(human_stone)
         self.ai_stone = int(ai_stone)
         self.rules = _rules_name(rules)
+        n = int(board_size)
+        if n not in _BOARD_SIZES:
+            raise ValueError("棋盘尺寸只支持 %r，收到 %r"
+                             % (_BOARD_SIZES, board_size))
+        if n != self.board_size:
+            # 换尺寸必须重开一张盘；旧盘上的落子与历史在新尺寸下没有意义。
+            self.board_size = n
+            self.reset()
 
     def reset(self) -> None:
-        self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+        n = self.board_size
+        self.board = np.zeros((n, n), dtype=int)
         self.move_history = []      # 每步落子后的棋盘快照
         self.move_count = 0
         self.last_move = None
@@ -194,9 +211,10 @@ class Session:
             else:
                 self.gamerule = 2
             return MoveResult(stone, "forbidden", self.winner,
-                              tuple(win_line(self.board, stone)), int(foul))
+                              tuple(win_line(self.board, stone,
+                                             self.board_size)), int(foul))
 
-        if check_win(self.board, stone):
+        if check_win(self.board, stone, self.board_size):
             self.game_over = True
             self.winner = stone
             if self.mode == "ai":
@@ -204,9 +222,10 @@ class Session:
             else:
                 self.gamerule = 2
             return MoveResult(stone, "win", stone,
-                              tuple(win_line(self.board, stone)))
+                              tuple(win_line(self.board, stone,
+                                             self.board_size)))
 
-        if self.move_count >= BOARD_SIZE * BOARD_SIZE:
+        if self.move_count >= self.board_size * self.board_size:
             self.game_over = True
             self.gamerule = 0
             self.winner = 0
@@ -265,5 +284,6 @@ class Session:
                 removed += 1
         self.move_count -= removed
         self.board = (self.move_history[-1].copy() if self.move_history
-                      else np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int))
+                      else np.zeros((self.board_size, self.board_size),
+                                    dtype=int))
         return removed

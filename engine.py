@@ -97,6 +97,7 @@ __all__ = [
     "LINE_SCORES", "LV_FOUR", "LV_FOUR_LIVE", "LV_ONE", "LV_THREE_LIVE",
     "LV_THREE_SLEEP", "LV_TWO_LIVE", "LV_TWO_SLEEP", "STATIC_MAX",
     "engine_label", "current_port", "note_book", "binary_path",
+    "static_eval", "candidates_for",
     "DIFFICULTY", "DIFFICULTY_NAMES", "GOMOCUP_LEVEL",
     "difficulty_name",
     "CUSTOM_LEVEL", "custom_config", "custom_defaults",
@@ -126,7 +127,7 @@ DIFFICULTY = {
     # 新加的档，位置在原来三档之下。**偏置最强的一档**：它的容差带是 0，于是
     # 只在"分值完全相同"的着法之间重排，一分不牺牲。
     1: dict(name="入门", time=0.5, max_depth=2, vcf_budget=0.0, qply=2,
-            enhance=False,
+            enhance=False, proof_mode=0,
             bias=dict(attack=1.5, defence=0.5, tolerance=0.0)),
     # ---- 以下三档是**旧三档的原值平移**，一个数字都没动 ----
     #
@@ -177,23 +178,23 @@ DIFFICULTY = {
     # 入门档的 `bias` 是另一回事：它在本轮之前就存在，且是那一档**刻意的性格**
     # （"贪吃系数"，深度 2 的贪心），本轮不动它。它唯一的真实缺陷是 B23。
     2: dict(name="初级", time=3.0, max_depth=4, vcf_budget=0.3, qply=4,
-            enhance=False, bias=None),
+            enhance=False, proof_mode=0, bias=None),
     3: dict(name="中级", time=7.0, max_depth=10, vcf_budget=0.5, qply=8,
-            enhance=False, bias=None),
+            enhance=False, proof_mode=0, bias=None),
     # ---- 以下两档开启增强搜索 ----
     #
     # 增强 = LMR（只削减安静着法）+ 强制着法延伸 + 双路桶置换表 + 时间管理。
     # 时限**一分没涨**：15 s 与 20 s 是原值，所以层数的提升只可能来自算法。
     # 这是用户那句"要真的提升算法强度，不是把时限堆高"的直接落实。
     4: dict(name="高级", time=15.0, max_depth=24, vcf_budget=1.5, qply=10,
-            enhance=True, bias=None),
+            enhance=True, proof_mode=0, bias=None),
     # 宗师：全火力。**它的棋力要靠算法改进挣，不靠把时间堆到 20 秒** ——
     # 实测过堆时间这条路：预算 6.5s→14.5s 只多 1 层，15s→20s 在宽局面上
     # 0 层，B4 上古与宗师给出逐字相同的着法与分值。当前算法在约 6 层饱和，
     # 所以这一档的真正上限由搜索能到多深决定 —— 兑现它的就是这一档的
     # `enhance=True`（见 `cpp/src/search.cpp` 的 LMR 段与延伸段）。
     5: dict(name="宗师", time=20.0, max_depth=24, vcf_budget=3.0, qply=12,
-            enhance=True, bias=None),
+            enhance=True, proof_mode=0, bias=None),
     # Gomocup：**长考档**，为 2027 年参加 Gomocup 做铺垫，同时也是项目本身的一次
     # 算力压榨。单手上限取该赛事的决赛圈口径（300 秒一手 / 1000 秒一局）。
     #
@@ -221,7 +222,7 @@ DIFFICULTY = {
     # 下来深度在预算远未用尽时就停住，问题在算法不在时钟** —— 那时要动的是
     # 着法排序与剪枝，不是把这一档的数字再堆高。
     6: dict(name="Gomocup", time=300.0, max_depth=40, vcf_budget=30.0,
-            qply=16, enhance=True, bias=None, reserve_sec=20.0),
+            qply=16, enhance=True, proof_mode=0, bias=None, reserve_sec=20.0),
 }
 
 #: 档位 → 中文名。UI 的难度卡与面板读数都用它，避免"3 级"这种脱离语境的编号。
@@ -324,7 +325,8 @@ CUSTOM_LEVEL = 7
 #: 重排"都输 6—14，见 ``DIFFICULTY`` 里 B24 那段注释）。把它做成旋钮，等于请
 #: 用户亲手把 AI 调坏。
 _CUSTOM_DEFAULT = dict(name="自定义", time=20.0, max_depth=24,
-                       vcf_budget=3.0, qply=12, enhance=True, bias=None)
+                       vcf_budget=3.0, qply=12, enhance=True, proof_mode=0,
+                       bias=None)
 
 _CUSTOM_CFG = dict(_CUSTOM_DEFAULT)
 
@@ -361,8 +363,8 @@ def reset_custom_config() -> None:
     _CUSTOM_CFG = dict(_CUSTOM_DEFAULT)
 
 
-def binary_path(variant: str = "free"):
-    """该变体的 C++ 可执行文件路径；这台机器上找不到则返回 ``None``。
+def binary_path(variant: str = "free", size: int = 19):
+    """该变体、该尺寸的 C++ 可执行文件路径；找不到则返回 ``None``。
 
     给日志与手工排查用。它答的是"**能不能**走 C++"，不是"这次实际用了谁" ——
     后者要等第一次搜索之后才有答案（见 ``engine_label``）。两者刻意分开：在
@@ -372,7 +374,7 @@ def binary_path(variant: str = "free"):
     两个可执行文件**各自独立存在**。按默认值问一遍，禁手局的日志会写上一份
     与本局无关的文件的路径 —— 它存在的意义正是"事后唯一说得清现场"。
     """
-    return config.find_binary(variant)
+    return config.find_binary(variant, size)
 
 
 def difficulty_name(level: int) -> str:
@@ -401,6 +403,22 @@ def _cfg_for(level: int) -> dict:
     return DIFFICULTY.get(level, DIFFICULTY[max(DIFFICULTY)])
 
 
+def _cfg_with_book(cfg: dict, level, variant: str) -> dict:
+    """给配置补上 ``book``：中级（3）及以上、无禁手变体才下发。
+
+    低档与禁手变体拿到的仍是原对象（不复制、不加键），报文逐字节保持原样。
+    官方开局线是按无禁手口径公布的，套到 RIF 禁手上可能让黑方走出禁手，所以
+    C++ 的 ban 二进制也一律忽略这个键 —— 两边收口在同一条规则上。
+
+    对局（``compute``）与复盘（``analyze``）共用这一个函数：复盘路径上
+    C++ 不会查书（``outRoot != nullptr``），带着这个键只是为了守住"两份配置
+    逐字段相同"的既有不变量，不是一个会生效的开关。
+    """
+    if variant == "free" and int(level) >= 3:
+        return dict(cfg, book=1)
+    return cfg
+
+
 # ---------------------------------------------------------------------------
 # 3. 引擎状态指示
 # ---------------------------------------------------------------------------
@@ -427,6 +445,11 @@ VARIANTS = ("free", "ban")
 #: 全局量会让面板在禁手局里报出上一个无禁手局的状态。
 _ENGINE_ACTIVE = {"free": None, "ban": None}
 
+#: 每个变体**最近一次**实际用过的棋盘尺寸。`current_port` 靠它找到该读哪条
+#: 连接 —— 一局 15×15 的棋不该去问 19×19 的客户端要端口。由 `_client()` 在
+#: 每次取连接时更新；初值 19 与旧行为一致。
+_LAST_SIZE = {"free": 19, "ban": 19}
+
 #: ``"book"`` 是**开局库**：那一手是查表得来的，既没进过搜索、也没走过 TCP。
 #: 标成 ``C++`` 或 ``Python (本地)`` 都是假话 —— 而这两个当中的一个恰好是
 #: 用户最需要区分的（"是不是降级了"），拿它去盖住一次查表会让面板失去意义。
@@ -448,14 +471,20 @@ _LABELS = {
 _UNKNOWN = "—"
 
 
-def current_port(variant: str = "free"):
+def current_port(variant: str = "free", size=None):
     """当前这条 TCP 连接用的服务端端口；**没有连接时返回 ``None``**。
 
     与 `engine_label` 一样**不探测**：只读已经建立的那条连接。连接是惰性的
     （第一次真正的远程搜索才建立），所以开局头几手这里必然是 ``None`` ——
     那一刻确实还没有端口，报一个"还在池子里"的号就是编。
+
+    ``size=None`` 取该变体最近用过的尺寸（见 ``_LAST_SIZE``）；调用方在
+    一局进行中显式传 ``self.board_size`` 更稳。
     """
-    sock = _client(variant)._sock
+    variant = config.variant_of(variant)
+    if size is None:
+        size = _LAST_SIZE[variant]
+    sock = _client(variant, size)._sock
     if sock is None:
         return None
     try:
@@ -524,7 +553,7 @@ class _RemoteError(RuntimeError):
     """
 
 
-def _port_candidates(variant: str = "free") -> list:
+def _port_candidates(variant: str = "free", size: int = 19) -> list:
     """按顺序给出该变体的候选端口：显式覆盖（``config.PORT``）**或**端口池 —— 二者互斥。
 
     * **设了 ``config.PORT``** —— 调用方（``tools/ab_enhance.py``、
@@ -548,7 +577,7 @@ def _port_candidates(variant: str = "free") -> list:
     """
     if config.PORT:
         return [int(config.PORT)]
-    return list(config.VARIANT_PORT_POOL[config.variant_of(variant)])
+    return list(config.port_pool(config.variant_of(variant), size))
 
 
 def _connect_to(port):
@@ -626,11 +655,14 @@ class _ServerClient:
     这种半对半的错配（见 ``config.VARIANT_BINARY_STEM``）。
     """
 
-    def __init__(self, variant: str = "free") -> None:
+    def __init__(self, variant: str = "free", size: int = 19) -> None:
         self._variant = config.variant_of(variant)
+        self._size = config.board_size_of(size)
         self._sock = None
         self._proc = None
         self._desc = ""            # 已连上的服务端版本信息，供日志/排查
+        self.book_entries = 0      # 开局书条目数（hello 自报，老引擎为 0）
+        self.book_lines = 0
         self._needs_reset = False
         self._write_mu = threading.Lock()
         self._conn_mu = threading.Lock()
@@ -643,6 +675,11 @@ class _ServerClient:
         """本连接认的变体（``"free"`` / ``"ban"``）。只读 —— 建连之后它就是
         这个实例的身份，改它等于换一台服务端。"""
         return self._variant
+
+    @property
+    def size(self) -> int:
+        """本连接认的棋盘尺寸（9/13/15/19）。与变体一样是身份的一部分。"""
+        return self._size
 
     def mark_reset_needed(self) -> None:
         """请求下一次搜索前先清空服务端的跨局面状态。**不发送、不阻塞。**"""
@@ -687,7 +724,7 @@ class _ServerClient:
         """
         # ① 端口池逐个试（顺序见 config.PORT_POOL）。每个端口都是"先看有没有
         #    人在监听，再决定是复用还是自己拉"，见 `_try_port`。
-        for port in _port_candidates(self._variant):
+        for port in _port_candidates(self._variant, self._size):
             sock = self._try_port(port)
             if sock is not None:
                 return sock
@@ -769,10 +806,11 @@ class _ServerClient:
         hello 校验，校验不过的那一份要由调用方收拾掉，也不该让 ``atexit``
         的 ``shutdown`` 以后还惦记着它。
         """
-        path = config.find_binary(self._variant)
+        path = config.find_binary(self._variant, self._size)
         if path is None:
-            raise _RemoteError("找不到 %s（先跑 cmake --build cpp/build）"
-                               % config.binary_name(self._variant))
+            raise _RemoteError(
+                "找不到 %s（先跑 cmake --build cpp/build）"
+                % config.binary_name(self._variant, self._size))
         try:
             proc = subprocess.Popen(
                 [path, "--host", config.HOST, "--port", str(port)],
@@ -827,9 +865,14 @@ class _ServerClient:
         rep = self._exchange(sock, {"type": "hello"}, config.CONNECT_TIMEOUT)
         if rep.get("type") != "hello":
             raise _RemoteError("hello 的应答不是 hello: %r" % (rep.get("type"),))
-        if rep.get("board_size") != BOARD_SIZE:
+        if rep.get("board_size") != self._size:
             raise _RemoteError("棋盘尺寸不一致: %r != %d"
-                               % (rep.get("board_size"), BOARD_SIZE))
+                               % (rep.get("board_size"), self._size))
+        # n_lines 是第二道尺寸校验：老引擎可能只回 board_size，此时不比对。
+        n_lines = rep.get("n_lines")
+        if n_lines is not None and int(n_lines) != 6 * self._size - 2:
+            raise _RemoteError("线数不一致: %r != %d（尺寸对但表不对？）"
+                               % (n_lines, 6 * self._size - 2))
         if rep.get("win_score") != _local.WIN_SCORE:
             raise _RemoteError("分值刻度不一致: WIN_SCORE %r != %d（接错程序？）"
                                % (rep.get("win_score"), _local.WIN_SCORE))
@@ -846,8 +889,13 @@ class _ServerClient:
                                % (rules, self._variant))
         if rules is None and self._variant != "free":
             raise _RemoteError("服务端没有 rules 字段，不能用于 %r" % (self._variant,))
-        self._desc = "%s v%s" % (config.binary_name(self._variant),
-                                 rep.get("version", "?"))
+        self._desc = "%s v%s" % (
+            config.binary_name(self._variant, self._size),
+            rep.get("version", "?"))
+        # 开局书覆盖量（老引擎没有这两个字段，按 0 读）。只用于排障与日志：
+        # "为什么这一手没有秒下" 的答案常常就是这本书在这个尺寸上是空的。
+        self.book_entries = int(rep.get("book_entries", 0) or 0)
+        self.book_lines = int(rep.get("book_lines", 0) or 0)
 
     def _ensure(self):
         """返回可用连接；已连上的直接返回。**调用方不能持有 ``_conn_mu``。**"""
@@ -960,6 +1008,11 @@ class _ServerClient:
             # 取值，见 `readConfig`），所以下发它不会让任何可用引擎失配。
             "rules": self._variant,
         }
+        # 非 19 才带尺寸：19 的报文必须逐字节与旧版相同（护栏依赖它），而
+        # 小盘的 C++ 服务端本来就会按自己的 BOARD_SIZE 校验 board 的形状；
+        # 这个字段是给将来的引擎一份显式证据，老引擎忽略未知键。
+        if self._size != 19:
+            req["board_size"] = self._size
         # 绝对秒数的缓冲（「Gomocup」档的 20 秒）。**只有带这个键的档位才下发。**
         # 前五档没有它，报文因此逐字节与从前相同 —— 那正是"低档与 `engine_local`
         # 逐字同着"那条护栏依赖的东西（见 `constants.h` 里 `RESERVE` 的注释）。
@@ -985,6 +1038,26 @@ class _ServerClient:
             req["enhanced"] = 1
             req["lmr"] = 1
             req["extend"] = 1
+        # Gomocup 开局书。**只在 compute 下发，analyze 永不查** —— 复盘要的是
+        # 逐候选分值，书给不出，混进去会让"最优点"的来源不可解释。
+        # C++ 侧默认 0，所以不发这个键的档位（1–2）报文逐字节不变。
+        if kind == "compute" and cfg.get("book"):
+            req["book"] = 1
+        # DFPN 证明搜索。**出厂全部为 0，等于不下发** —— 老报文逐字节不变，
+        # C++ 侧连证明线程都不起（见 search.h 的 `proofMode`）。只有在
+        # `tools/ab_proof.py` 证明"同预算下更强"之后，才允许把某一档的
+        # `proof_mode` 打开。
+        #
+        # **初/中两档必须永远保持 0。** 它们的 `enhance=False` 是 C++ 与
+        # `engine_local` 逐字一致的护栏，而 Python 侧根本没有 DFPN —— 一旦
+        # 下发，两边就不再是同一个搜索。计划里"VCT 只在 Gomocup 档开"的
+        # 那条闸门，也在这里有机械保证。
+        if kind == "compute" and cfg.get("proof_mode"):
+            req["proof_mode"] = int(cfg["proof_mode"])
+            if "proof_time" in cfg:
+                req["proof_time"] = max(0.0, float(cfg["proof_time"]))
+            if "proof_nodes" in cfg:
+                req["proof_nodes"] = max(0, int(cfg["proof_nodes"]))
         return req
 
     def _run(self, req, cancel):
@@ -1041,6 +1114,8 @@ class _ServerClient:
         """
         req = {"type": "bancheck", "board": _board_to_json(board),
                "player": int(player), "rules": self._variant}
+        if self._size != 19:
+            req["board_size"] = self._size
         rep = self._request(req, config.CONNECT_TIMEOUT)
         return [(int(rc[0]), int(rc[1])) for rc in rep.get("forbidden") or ()]
 
@@ -1174,6 +1249,44 @@ def _local_engine(variant: str = "free"):
     return _BAN_MODULE
 
 
+def _board_size(board) -> int:
+    """从棋盘对象本身取尺寸。ndarray 看 ``shape[0]``，list 看 ``len``。"""
+    shape = getattr(board, "shape", None)
+    if shape is not None and len(shape) >= 2:
+        return int(shape[0])
+    return len(board)
+
+
+def _local_for(board, variant: str = "free"):
+    """取该变体的本地引擎，并把它切到**这张盘**的尺寸。
+
+    ``configure_size`` 在尺寸没变时立即返回，所以每次调用都调一遍是安全的；
+    它只在两局之间真正重建表（见 ``engine_local.configure_size``）。
+    """
+    mod = _local_engine(variant)
+    mod.configure_size(_board_size(board))
+    return mod
+
+
+def static_eval(board, player, variant: str = "free"):
+    """按**这张盘自己的尺寸**算静态估值。
+
+    ``engine_local.evaluate`` 读的是模块级表（线、Zobrist、邻接），那些表由
+    ``configure_size`` 重建。直接 ``from engine_local import evaluate`` 再调用，
+    表可能还停在上一个尺寸上 —— 小盘评估会按 19×19 的线去算，分数**不会报错**，
+    只是错的。所以凡是从棋盘形状推尺寸的调用点一律走这里，不要自己 import
+    ``evaluate``。
+    """
+    mod = _local_for(board, variant)
+    return mod.evaluate(mod.Board.from_array(board), player)
+
+
+def candidates_for(board, variant: str = "free"):
+    """该局面下的候选点索引（与搜索同源，按当前尺寸的表算）。"""
+    mod = _local_for(board, variant)
+    return mod.Board.from_array(board).candidates()
+
+
 class LocalAIPlayer:
     """本地 Python 引擎。**永远是可用答案**，也是降级的目标。"""
 
@@ -1188,7 +1301,8 @@ class LocalAIPlayer:
         # 它的合法性没有被验证过）。传 False 之后那一手的 ``reason`` 从
         # 「开局库」变成「开局规则」—— 面板上不能让一次没发生的查表冒充成
         # 发生过的。
-        return _local_engine(self._variant).ai_move(
+        mod = _local_for(board, self._variant)
+        return mod.ai_move(
             board, me, level, cancel=cancel, use_book=(self._variant == "free"))
 
 
@@ -1205,34 +1319,90 @@ class RemoteAIPlayer:
         self._variant = client.variant
 
     def ai_move(self, board, me, level, cancel=None):
-        cfg = _cfg_for(level)
+        cfg = _cfg_with_book(_cfg_for(level), level, self._variant)
         idx, info = self._client.compute(board, me, cfg, cancel)
+        # 尺寸从盘面取 —— 棋盘形状是唯一真源，假客户端（测试里顶替 socket 的
+        # 那个）不必为了这个属性多长一根轴。
+        n = int(board.shape[0])
         if idx < 0:
             # 服务端返回了"没有合法着法"。本地引擎在同样情形下会退到
             # ``bd.candidates()[0]``，这里也照做 —— 让调用方永远拿到一个
             # 走法，而不是一个需要它自己判断的 -1。
-            fallback = _local_engine(self._variant).Board.from_array(
-                board).candidates()[0]
-            return (fallback // BOARD_SIZE, fallback % BOARD_SIZE, info)
-        return (idx // BOARD_SIZE, idx % BOARD_SIZE, info)
+            local = _local_for(board, self._variant)
+            fallback = local.Board.from_array(board).candidates()[0]
+            return (fallback // n, fallback % n, info)
+        return (idx // n, idx % n, info)
 
 
 _LOCAL_PLAYER = LocalAIPlayer()
 _LOCAL_PLAYER_BAN = LocalAIPlayer("ban")
-_CLIENT = _ServerClient()
-_CLIENT_BAN = _ServerClient("ban")
+
+#: 19×19 的两条连接保持模块级句柄 —— 旧测试用 monkeypatch 直接换掉它们
+#: （``tests/test_remote_client.py`` / ``test_custom_difficulty.py``），
+#: ``_client()`` 对 19 必须返回这两个对象，而不是缓存里的副本。
+_CLIENT = _ServerClient("free", 19)
+_CLIENT_BAN = _ServerClient("ban", 19)
 _REMOTE_PLAYER = RemoteAIPlayer(_CLIENT)
 _REMOTE_PLAYER_BAN = RemoteAIPlayer(_CLIENT_BAN)
 
 atexit.register(_CLIENT.shutdown)
 atexit.register(_CLIENT_BAN.shutdown)
 
+#: 非 19 的连接按 ``(variant, size)`` 缓存。**同一变体只保留一个尺寸的进程**
+#: —— 每份服务端常驻 48 MiB 置换表，四个尺寸同时开着就是四倍。
+_CLIENTS = {}
+_CLIENT_LOCK = threading.Lock()
 
-def _client(variant: str = "free") -> _ServerClient:
-    """该变体的连接。**变体名不合法就抛**（``config.variant_of``），不静默取
-    默认的那一个 —— 一个拼错的变体名接到无禁手引擎上，症状是"禁手开关没
-    生效"，而那一头隔着整个搜索。"""
-    return _CLIENT_BAN if config.variant_of(variant) == "ban" else _CLIENT
+
+def _client(variant: str = "free", size: int = 19) -> _ServerClient:
+    """该 ``(变体, 尺寸)`` 的连接。**变体名不合法就抛**（``config.variant_of``），
+    不静默取默认的那一个 —— 一个拼错的变体名接到无禁手引擎上，症状是
+    "禁手开关没生效"，而那一头隔着整个搜索。尺寸同理（``config.board_size_of``）。
+
+    19 返回模块级 ``_CLIENT`` / ``_CLIENT_BAN``（测试的 monkeypatch 缝）。
+    其它尺寸按需创建，并把**同变体其它尺寸**的连接收掉：一局棋同一时刻只有
+    一个尺寸，留着上一个尺寸的服务端只占内存。
+    """
+    variant = config.variant_of(variant)
+    size = config.board_size_of(size)
+    _LAST_SIZE[variant] = size
+    if size == 19:
+        return _CLIENT_BAN if variant == "ban" else _CLIENT
+    key = (variant, size)
+    cl = _CLIENTS.get(key)
+    if cl is not None:
+        return cl
+    with _CLIENT_LOCK:
+        cl = _CLIENTS.get(key)
+        if cl is not None:
+            return cl
+        for k, old in list(_CLIENTS.items()):
+            if k[0] == variant and k != key:
+                old.shutdown()
+                del _CLIENTS[k]
+        # 19 的进程也收掉（对象保留，下次用 19 会惰性重连）。
+        if variant == "ban":
+            _CLIENT_BAN.shutdown()
+        else:
+            _CLIENT.shutdown()
+        cl = _ServerClient(variant, size)
+        _CLIENTS[key] = cl
+        atexit.register(cl.shutdown)
+        return cl
+
+
+def _remote_player(variant: str = "free", size: int = 19) -> "RemoteAIPlayer":
+    """取该 ``(变体, 尺寸)`` 的远程玩家。
+
+    19 返回模块级 ``_REMOTE_PLAYER`` / ``_REMOTE_PLAYER_BAN`` —— 旧测试用
+    monkeypatch 换掉它们的 client，这条缝必须保留。其它尺寸现建（对象很轻，
+    重的是它持有的连接，而连接由 ``_client`` 缓存）。
+    """
+    variant = config.variant_of(variant)
+    size = config.board_size_of(size)
+    if size == 19:
+        return _REMOTE_PLAYER_BAN if variant == "ban" else _REMOTE_PLAYER
+    return RemoteAIPlayer(_client(variant, size))
 
 
 # ---------------------------------------------------------------------------
@@ -1278,7 +1448,8 @@ def ai_move(board, ai_player, depth, cancel=None, *, variant="free"):
     走"空盘本地 → 开局库本地 → 远程 → 降级本地"这四段，差别全在
     ``_local_engine`` / ``_client`` 取到的那一对实现上。
     """
-    eng = _local_engine(variant)
+    size = _board_size(board)
+    eng = _local_for(board, variant)
     if not _has_stones(board):
         # 面板上记「开局库」（禁手变体下这一格显示的是「开局规则」），**不记
         # "Python (本地)"**：查表不是降级，标成 Python 会让面板在整局第一步就
@@ -1293,8 +1464,8 @@ def ai_move(board, ai_player, depth, cancel=None, *, variant="free"):
         return eng.ai_move(board, ai_player, depth, cancel=cancel)
 
     try:
-        out = (_REMOTE_PLAYER_BAN if config.variant_of(variant) == "ban"
-               else _REMOTE_PLAYER).ai_move(board, ai_player, depth, cancel)
+        out = _remote_player(variant, size).ai_move(
+            board, ai_player, depth, cancel)
     except Exception as exc:
         # 兜住所有 Exception：这一层是纯粹的性能优化，没有资格让一局棋中断。
         # BaseException（KeyboardInterrupt / SystemExit）不在此列，照常穿透。
@@ -1337,8 +1508,10 @@ def analyze(board, me, level, cancel=None, cfg=None, variant="free"):
         return -1, 0, [], {}
     if cfg is None:
         cfg = _cfg_for(level)
+    cfg = _cfg_with_book(cfg, level, variant)
     try:
-        idx, info, cands = _client(variant).analyze(board, me, cfg, cancel)
+        idx, info, cands = _client(
+            variant, _board_size(board)).analyze(board, me, cfg, cancel)
     except Exception as exc:
         # 与 `ai_move` 同一条兜底哲学：这一层是性能优化，没有资格让复盘中断。
         # BaseException 照常穿透。
@@ -1346,7 +1519,7 @@ def analyze(board, me, level, cancel=None, cfg=None, variant="free"):
             _analyze_warned = True
             print(f"[复盘] 降级到本地 Python 引擎：{type(exc).__name__}: {exc}",
                   file=sys.stderr)
-        local = _local_engine(variant)
+        local = _local_for(board, variant)
         # **`time_limit` 钳到本地引擎自己的最高档。** 本地 Python 引擎只有三档，
         # 顶格 15 秒（`engine_local.DIFFICULTY`），而这里的 `cfg` 可能是
         # 「Gomocup」那一份（300 秒）—— 原样转发会让"没有 C++ 引擎的机器上复盘
@@ -1388,5 +1561,11 @@ def new_game():
         # 没导入过就说明从没开过禁手局，那个模块里也就没有任何状态要清 ——
         # 而 import 它是 115ms 冷启动，走的是 UI 主线程的启动路径。
         _BAN_MODULE.new_game()
-    _CLIENT.mark_reset_needed()
-    _CLIENT_BAN.mark_reset_needed()
+    # 所有尺寸、两个变体的连接都打上 reset 标记：下一局可能换尺寸，旧尺寸的
+    # 置换表同样不能带过去。同一对象只标记一次（19 的两个句柄也在 _CLIENTS 外）。
+    seen = set()
+    for cl in list(_CLIENTS.values()) + [_CLIENT, _CLIENT_BAN]:
+        if id(cl) in seen:
+            continue
+        seen.add(id(cl))
+        cl.mark_reset_needed()

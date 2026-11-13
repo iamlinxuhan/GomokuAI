@@ -1,18 +1,19 @@
-// 361 位位图 —— Python 大整数的逐位替换。
+// CELLS 位位图 —— Python 大整数的逐位替换。
 //
 // 位 i 对应 ``(r, c) = divmod(i, BOARD_SIZE)``，与 engine_local 完全一致。
-// 6 个 uint64：字 0..4 各 64 位，字 5 只用低 41 位（320+41 = 361）。
+// WORDS = ceil(CELLS/64)：19×19 是 6 个 uint64（末字用低 41 位），
+// 15×15 是 4 个（末字 33 位），13×13 是 3 个（末字 41 位），9×9 是 2 个（末字 17 位）。
 //
-// **为什么不用 std::bitset<361>**：本引擎的热路径需要 `>>`（`_five_points` /
+// **为什么不用 std::bitset<CELLS>**：本引擎的热路径需要 `>>`（`_five_points` /
 // `_hot_points` 每节点各做 4 组、每组 4 次移位）、`& -` 语义的"取最低位"、
 // 以及跨 64 位边界的任意移位。`std::bitset` 的 `>>` 返回的是新对象但底层实现
 // 是逐位搬移，而这里需要的是**字对齐的整字移位**；自己写 6 个字反而更短更快，
 // 也更容易与 Python 的语义逐条对上。
 //
-// **所有 `~` 都必须带 361 位掩码。** Python 的 `~0` 是无限个 1，`~x` 对任意
+// **所有 `~` 都必须带 CELLS 位掩码。** Python 的 `~0` 是无限个 1，`~x` 对任意
 // 非负大整数都成立；C++ 的 `~` 只有 64 位。`_five_points` / `_hot_points` 里的
 // `~0` 是"这一项不计入”，语义上是"全 1"，所以这里提供 `all()` 并让
-// `operator~` 主动掩掉高位 —— 漏掉这一步会让 361 位之外的位混进来，而
+// `operator~` 主动掩掉高位 —— 漏掉这一步会让 CELLS 位之外的位混进来，而
 // 结果最终还要 `& ~occ`，症状会表现为"某些点被误判成四/五点"而非崩溃。
 
 #pragma once
@@ -25,19 +26,27 @@
 namespace gomoku {
 
 struct Bits361 {
-    static constexpr int WORDS = 6;
-    static constexpr int BITS = CELLS;                  // 361
-    //: 字 5 的有效位数：361 - 5*64 = 41
+    static constexpr int WORDS = (CELLS + 63) / 64;
+    static constexpr int BITS = CELLS;
+    //: 末字的有效位数。CELLS 是奇数，所以它永远落在 1..63，不会是 64。
     static constexpr int TOP_BITS = BITS - 64 * (WORDS - 1);
     static constexpr uint64_t TOP_MASK = (uint64_t(1) << TOP_BITS) - 1;
+    static_assert(TOP_BITS > 0 && TOP_BITS < 64, "末字位数必须落在 1..63");
 
     uint64_t w[WORDS];
 
     // ------------------------------------------------------------ 构造
 
-    static Bits361 zero() { return Bits361{{0, 0, 0, 0, 0, 0}}; }
+    static Bits361 zero() {
+        Bits361 r;
+        for (int i = 0; i < WORDS; ++i) r.w[i] = 0;
+        return r;
+    }
     static Bits361 all() {
-        return Bits361{{~0ULL, ~0ULL, ~0ULL, ~0ULL, ~0ULL, TOP_MASK}};
+        Bits361 r;
+        for (int i = 0; i < WORDS; ++i) r.w[i] = ~0ULL;
+        r.w[WORDS - 1] &= TOP_MASK;
+        return r;
     }
     static Bits361 bit(int idx) {
         Bits361 r = zero();
@@ -105,7 +114,7 @@ struct Bits361 {
     Bits361 operator&(const Bits361& o) const { Bits361 r = *this; r &= o; return r; }
     Bits361 operator^(const Bits361& o) const { Bits361 r = *this; r ^= o; return r; }
 
-    //: 按位取反，**掩到 361 位**（见文件头）。
+    //: 按位取反，**掩到 CELLS 位**（见文件头）。
     Bits361 operator~() const {
         Bits361 r;
         for (int i = 0; i < WORDS; ++i) r.w[i] = ~w[i];
@@ -165,6 +174,7 @@ inline void forEachBitAscending(const Bits361& b, F&& f) {
     }
 }
 
-static_assert(sizeof(Bits361) == 48, "Bits361 应为 6 个 uint64，无填充");
+static_assert(sizeof(Bits361) == Bits361::WORDS * 8,
+              "Bits361 应为 WORDS 个 uint64，无填充");
 
 }  // namespace gomoku

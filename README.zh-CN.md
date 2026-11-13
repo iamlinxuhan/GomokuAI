@@ -15,7 +15,7 @@
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-4.3.1-brightgreen)
+![Version](https://img.shields.io/badge/version-4.4.0-brightgreen)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
 ---
@@ -82,47 +82,52 @@ Windows 与 Linux 各有稳定版；**没有 macOS 版**（这个项目从未在
 > 本仓库的 C++ 计算核心只发布 Windows / Linux 的二进制，macOS 上跑不起来；
 > 上面那个仓库是纯 Python 引擎的旧版，有 arm64 与 Intel 两个架构的 `.dmg` / `.pkg`。
 
-文件名是：`GomokuAI_<平台>_<架构>_<setup|run>[_debug|_play].<后缀>`。
+文件名是：`GomokuAI_<平台>_<架构>_<setup|run_play>.<后缀>`，另外 Linux 的
+64 位两份是 `GomokuAI_Linux_<架构>.AppImage`。
 
-**每个平台三份**，区别只在"要不要日志"：
+**v4.4.0 起不再单独发 debug 版。** 以前每个平台有 `run_debug` 与 `run_play`
+两份裸文件，区别只在"要不要写日志"；现在任何一份都能用 `--debug` 参数或
+`GOMOKUAI_LOG=1` 环境变量临时打开日志，日志写在程序同目录的 `game_log_*.txt`。
+撤掉那 8 个文件换来的是：以后加一个架构不用再翻一倍。
 
-| 中间那一段 | 是什么 | 写日志吗 |
-|---|---|---|
-| `..._setup.*` | 安装包，推荐普通用户用 | 不写 |
-| `..._run_play.*` | 免安装单文件 | 不写 |
-| `..._run_debug.*` | 免安装单文件，给人看现场 | **写**，落在 exe 同目录的 `game_log_*.txt` |
-
-出问题时下 `debug` 那一份，日志就在 exe 旁边 —— 不用配环境变量，也不用知道
-自己装在哪。日志是给开发者诊断 AI 决策用的（`tools/positions.py` 的题库来源），
-普通使用不需要，所以安装包装的是 `play`。
+| 平台 | 架构 | 文件 | 装法 / 用法 |
+|---|---|---|---|
+| Windows | `amd_x86_64` | `..._setup.exe` | 双击；装到 `C:\Program Files\GomokuAI`，安装时弹一次 UAC |
+| Windows | `amd_x86_64` | `..._run_play.exe` | 免安装单文件 |
+| Linux | `amd_x86_64` / `aarch64` | `GomokuAI_Linux_<架构>.AppImage` | `chmod +x` 后直接运行，推荐 |
+| Linux | `amd_x86_64` / `amd_x32` | `..._setup.deb` | `sudo dpkg -i` → 菜单里的「五子棋AI」 |
+| Linux | `aarch64` / `armv7` | `..._setup.tar.gz` | 解包后 `sudo ./install.sh` |
 
 **架构那一格用 `uname -m` 对照**：`x86_64` → `amd_x86_64`，`i686` → `amd_x32`，
 `aarch64` → `aarch64`，`armv7l` / `armv6l` → `armv7`。`amd` 覆盖整个 x86
 家族（Intel、AMD、虚拟机都下这一份）。**ARM 两格合并成一个名字**，不写成
 `arm_x86_64` 那种自相矛盾的组合。
 
-| 平台 | 架构 | 安装包 | 装法 |
-|---|---|---|---|
-| Linux | `amd_x86_64` | `GomokuAI_Linux_amd_x86_64_setup.deb` | `sudo dpkg -i` → 菜单里的「五子棋AI」 |
-| Linux | `amd_x32` | `GomokuAI_Linux_amd_x32_setup.deb` | 同上 |
-| Linux | `aarch64` | `GomokuAI_Linux_aarch64_setup.tar.gz` | 解包后 `sudo ./install.sh` |
-| Linux | `armv7` | `GomokuAI_Linux_armv7_setup.tar.gz` | 同上 |
-| Windows | `amd_x86_64` | `GomokuAI_Windows_amd_x86_64_setup.exe` | 双击；装到 `C:\Program Files\GomokuAI`，安装时弹一次 UAC |
-
-不确定装哪个就用安装包：它会在 `Depends:` 里声明图形库、CJK 字体候选链与
-`hicolor-icon-theme`，并把图标装进 `/usr/share/icons/hicolor/`，菜单入口带着
-真实图标（不再是空白图标）。裸文件声明不了依赖 —— 缺什么就报什么。裸文件下载后要
-自己给可执行位（Release 资产不携带文件权限）：
+安装包会在 `Depends:` 里声明图形库、CJK 字体候选链与 `hicolor-icon-theme`，
+并把图标装进 `/usr/share/icons/hicolor/`，菜单入口带着真实图标。AppImage 声明
+不了依赖 —— 缺什么就报什么。AppImage 下载后要自己给可执行位（Release 资产不
+携带文件权限）：
 
 ```bash
-chmod +x GomokuAI_Linux_amd_x86_64_run_play
-./GomokuAI_Linux_amd_x86_64_run_play
+chmod +x GomokuAI_Linux_amd_x86_64.AppImage
+./GomokuAI_Linux_amd_x86_64.AppImage
 ```
 
-**都是纯 CPU 运行，不需要显卡驱动，也不需要安装 PyTorch/CUDA。** `play` 与
-安装版不在硬盘上留任何文件（不写日志、不写配置、不建缓存目录）；`debug` 只写
-`game_log_*.txt`。想给任意一份指个日志目录（比如 `play` 版临时要日志），用
-环境变量：`GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_amd_x86_64_run_play`。
+### 自动更新
+
+**只有三份能自己更新**：Windows 安装版、Windows 便携版、Linux AppImage。
+设置页里有「检查更新」，程序启动 2.5 秒后也会静默查一次（断网不弹任何东西）。
+`.deb`、`.tar.gz` 与 MSIX 由各自的包管理器负责，设置页只给版本号与下载页。
+
+信任根是 **Ed25519 签名**：客户端先取 `SHA256SUMS` 与 `SHA256SUMS.sig`，用编进
+程序里的公钥验签，再用里面的哈希核对下载到的包。签名缺失、验签失败、哈希不符
+—— 三种情况一律拒绝自动安装，当前版本照常可用。私钥不在这台机器之外：CI 只出
+**草稿** Release，签名由发布者在本机离线完成后才转正。
+
+**都是纯 CPU 运行，不需要显卡驱动，也不需要安装 PyTorch/CUDA。** 安装版与
+AppImage 不在硬盘上留任何文件（不写日志、不写配置、不建缓存目录）；用
+`--debug` / `GOMOKUAI_LOG=1` 时才写 `game_log_*.txt`。想指定日志目录，用环境
+变量：`GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_amd_x86_64.AppImage`。
 
 **Windows on ARM 请下 x64 版。** 系统自带 x64 模拟，能正常跑；**没有原生的
 Windows ARM 包** —— 界面用的 PyQt5 全系没有 `win_arm64` 轮子（PyPI 上 Windows
@@ -144,7 +149,7 @@ uv run python main.py
 
 ## 🎯 游戏规则
 
-1. 标准五子棋规则，19×19 棋盘
+1. 标准五子棋规则，棋盘可选 **9×9 / 13×13 / 15×15（默认）/ 19×19**；选局时挑，三种对战方式都支持
 2. 黑棋先手，任意一方在 横/纵/斜 方向 **先连成五子** 者获胜
 3. 双方交替落子，不可重复落子
 
@@ -727,6 +732,7 @@ Copyright (C) 2026 YFY0109 <yfy0109@qq.com>
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| **v4.4.0** | 2026-11-13 | **四种棋盘、官方开局库、自动更新，Linux 改发 AppImage。** ① 棋盘尺寸可选 9/13/15/19，默认 15×15；C++ 侧按尺寸编译成八个二进制（19/15/13/9 × free/ban），Python 本地引擎走 `configure_size()` 重建全部表，两条路径共用同一套 Zobrist 取值，`enhanced=0` 的逐字对账在四个尺寸上仍然成立。联机协议把尺寸放进 `welcome` 与 `join`，不一致在开局前就拒绝。② **Gomocup 2026 官方开局集**：24 条公开开局线（freestyle15 与 standard 各 12 条）连同每个前缀的局面一起进书，D4 八个变换在启动时展开成 `key → move` 表，查询是一次哈希、只在根节点做；15 与 19 全量命中，13 部分，9×9 用原来那本只覆盖前四手的超小型书。禁手变体永不使用开局库。③ **DFPN 证明搜索**（VCF-only 与 VCT 两种模式）写进了引擎，与主搜索并行、独立 arena；实测 A/B（32 局自对局 + 9 个局面，各 1.5 s/手）里 VCT 版的接管率是 0，胜率 50.0%，**没有达到默认开启的闸门，所以六个档位的 `proof_mode` 一律保持 0**。④ **自动更新**：站点 `version.json` 先问、GitHub Releases 回退，`SHA256SUMS` 由 Ed25519 离线签名，客户端验签通过才安装；Windows 安装版、Windows 便携版、AppImage 可自更新，deb 与 MSIX 只提示。⑤ **Linux 改发 AppImage，撤掉八个裸可执行文件**：需要日志时用 `--debug` 或 `GOMOKUAI_LOG=1`。 |
 | **v4.3.1** | 2026-11-01 | **Windows 安装包改成全机安装。** 装到 `C:\Program Files\GomokuAI`，卸载项写进 HKLM，代价是安装时弹一次 UAC。改的原因不是程序本身：Microsoft Store 的包检查在另一个上下文里跑安装程序，`PrivilegesRequired=lowest` 把卸载项写进 HKCU 之后检查侧读不到，「添加或删除程序中的条目」与「捆绑软件检查」两项只能报「无法标识应用名称和发布者」，提交时进而报 `PackageSet 无效`。顺带补上 `ArchitecturesAllowed=x64compatible`，32 位 Windows 装不上 —— 打出来的本来就是 64 位程序。程序行为没有任何变化：设置仍走 QSettings（HKCU），安装包装的是 play 变体、不往程序目录写任何文件。 |
 | **v4.3.0** | 2026-10-30 | **复盘不再只属于人机局，网页版上架 B 站 Toy。** 复盘对象按模式分开：人机仍只算玩家的手、强度不低于本局难度（自定义局沿用开局那一刻的快照）；**本地对战黑白每一手都重算**，行首标出是谁下的（`【黑方】第 3 手 …`）；**局域网只算我方**，对手的棋不进列表。双人局没有「本局难度」可比，强度页照搬难度页 —— 六档全额加「自定义」，自定义卡不弹设置窗（复盘是回看，直接用当前的自定义参数重算）。**复盘按本局那一套规则评分**：`ReviewWorker` 新增 `variant`，禁手局走禁手引擎，否则被禁的着法会被算成好棋。网页版是同一份 C++ 搜索编成 WASM（`cpp/web`），`gm_think` 把本层每个点的评估表一并返回；引擎跑在 Web Worker 里，主线程只画盘。前端四个纯静态文件、全相对路径，交给 Toy 平台直接跑。网页版同样带复盘（逐手重算，点任意一手回看当时的局面：幽灵子是当时下的那一手，红圈是引擎推荐点）与**联机**：Toy 没有实时通道，所以不部署服务器 —— 房间码拼出公共 topic，`EventSource` 收、`fetch` 发（ntfy，CORS 全开）。房主执黑且是权威方，客人只发落子意图、由房主校验后广播局面；访客要房主同意才上桌，否则观战只读；联机禁悔棋，房主可重开，中转连不上时面板里明说。测试 639 条（非 perf）、`gui_smoke` 224 项；网页端 106 项断言在真 DOM 与假 DOM 两种运行模式下各跑一遍 |
 | **v4.2.0** | 2026-10-25 | **第六档「Gomocup」：300 秒一手，为比赛的长考准备。** 档位表在「宗师」之后加了一档，时限取 Gomocup 决赛圈的单手上限 300 秒，深度上限放宽到 40、VCF 预算 30 秒、静止搜索 16 层；「自定义」的哨兵从第 6 档挪到第 7 档。光把时钟拨大没有用 —— 原来 24 层的上限在 20 秒就用完了，多给的 280 秒会全部闲置，所以这一档的参数必须一起放宽。**时间缓冲从比例改成可配的绝对值**：`SearchConfig` 新增 `reserveSec`（默认 0 表示沿用 15%），300 秒按比例要留 45 秒、这一档只留 20 秒；硬截止与软时间管理两处消费时间的地方合并到同一个 `searchBudget()`，否则软停会按 45 秒余量算出一轮注定跑不完的迭代。`engine.py` 只在配置带 `reserve_sec` 键时才下发，前五档的报文逐字节不变 —— 低档与 Python 参考引擎的逐字一致性依赖同一套时间语义，不能跟着改。C++ 引擎缺席时这一档退回本地 Python（最高档 15 秒），复盘分支把时限钳到本地引擎的上限，否则几十手就是每手 255 秒的纯 Python 搜索，界面上也会明说这一档不生效。难度页从 6 张卡变成 7 张，改成 4+3 折行而不是压到 125px，强度条与副标题保持原尺寸。本机压测（30/60/280 秒 × 五个复杂中局）：预算被吃满（28.0/56.0/261.3 秒，正好是时限减去缓冲），确认走的是 C++（nps 0.5M–2.3M）；深度随预算增长但很慢，约 3–4 倍时间换一层，`max_depth=40` 一次也没撞到 —— 瓶颈在搜索本身。 |

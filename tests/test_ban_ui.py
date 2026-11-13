@@ -52,6 +52,9 @@ class _DummyLogger:
     def close(self):
         self.f.close()
 
+    def flush(self):
+        pass
+
     def log_human(self, *a, **k):
         pass
 
@@ -110,8 +113,8 @@ def test_rules_page_offers_exactly_two_choices(qapp):
 
 
 @pytest.mark.parametrize("mode,expected_attr", [
-    (0, "selection_color"),      # 挑战 AI：规则 → 颜色 → 难度
-    (1, "game_widget"),          # 本地对战：规则 → 直接开局
+    (0, "selection_color"),      # 挑战 AI：规则 → 尺寸 → 颜色 → 难度
+    (1, "game_widget"),          # 本地对战：规则 → 尺寸 → 直接开局
     (2, "lan_menu"),             # 局域网：规则 → 创建/加入岔路口
 ])
 def test_mode_then_rules_then_the_right_next_page(win, qapp, mode, expected_attr):
@@ -119,6 +122,9 @@ def test_mode_then_rules_then_the_right_next_page(win, qapp, mode, expected_attr
 
     ``_on_mode_selected`` 直接进颜色页/开房间的旧行为会让局域网加入方在**没有
     规则可言**的位置上看到规则选择 —— 规则由房主定，加入方的选择无处安放。
+
+    挑战 AI 与本地对战在规则页之后还多一页尺寸；局域网走岔路口页，尺寸由
+    房主在「创建房间」之后选（加入方永远看不到这一页）。
     """
     win._on_mode_selected(mode)
     _pump(qapp)
@@ -127,6 +133,11 @@ def test_mode_then_rules_then_the_right_next_page(win, qapp, mode, expected_attr
 
     win._on_rules_selected(0)
     _pump(qapp)
+    if mode != 2:
+        assert win.selection_size is not None, "规则页之后不是尺寸页"
+        assert win.central.currentWidget() is win.selection_size
+        win._on_size_selected(19)
+        _pump(qapp)
     assert getattr(win, expected_attr) is not None, (
         "选完规则没到 %s" % expected_attr)
 
@@ -153,6 +164,8 @@ def test_ban_choice_reaches_the_session_and_the_room(win, qapp):
     win._on_mode_selected(1)
     _pump(qapp)
     win._on_rules_selected(1)
+    _pump(qapp)
+    win._on_size_selected(19)            # 规则页之后是尺寸页（本轮新增）
     _pump(qapp)
     assert win.game_rules == "ban"
     assert win.session.rules == "ban"
@@ -220,6 +233,8 @@ def test_free_game_never_asks_for_forbidden_points(win, qapp, fake_ban):
     _pump(qapp)
     win._on_rules_selected(0)
     _pump(qapp)
+    win._on_size_selected(19)            # 规则页之后是尺寸页（本轮新增）
+    _pump(qapp)
     win._sync_forbidden()
     assert fake_ban == [], "无禁手局不该调 forbidden_points"
     assert win.board_widget.forbidden_cells == []
@@ -233,6 +248,8 @@ def test_forbidden_points_are_shown_only_on_blacks_turn(win, qapp, fake_ban):
     win._on_mode_selected(1)
     _pump(qapp)
     win._on_rules_selected(1)
+    _pump(qapp)
+    win._on_size_selected(19)            # 规则页之后是尺寸页（本轮新增）
     _pump(qapp)
     _pump(qapp, 20)
 
@@ -251,6 +268,8 @@ def test_forbidden_points_are_cleared_when_the_game_ends(win, qapp, fake_ban):
     win._on_mode_selected(1)
     _pump(qapp)
     win._on_rules_selected(1)
+    _pump(qapp)
+    win._on_size_selected(19)            # 规则页之后是尺寸页（本轮新增）
     _pump(qapp)
     assert win.board_widget.forbidden_cells == [(3, 3)]
 
@@ -395,6 +414,8 @@ def test_forbidden_marker_paints_onto_the_board(win, qapp, fake_ban):
     _pump(qapp)
     win._on_rules_selected(1)
     _pump(qapp)
+    win._on_size_selected(19)            # 规则页之后是尺寸页（本轮新增）
+    _pump(qapp)
     _pump(qapp, 20)
     assert win.board_widget.forbidden_cells == [(3, 3)]
 
@@ -423,6 +444,8 @@ def test_forbidden_tooltip_only_on_the_marked_cells(win, qapp, fake_ban):
     _pump(qapp)
     win._on_rules_selected(1)
     _pump(qapp)
+    win._on_size_selected(19)            # 规则页之后是尺寸页（本轮新增）
+    _pump(qapp)
     win._sync_forbidden()
 
     bw = win.board_widget
@@ -445,6 +468,8 @@ def test_the_confirm_dialog_is_the_only_way_to_play_a_forbidden_point(win, qapp)
     win._on_mode_selected(1)
     _pump(qapp)
     win._on_rules_selected(1)
+    _pump(qapp)
+    win._on_size_selected(19)            # 规则页之后是尺寸页（本轮新增）
     _pump(qapp)
     win.board_widget.set_forbidden([(3, 3)])
 

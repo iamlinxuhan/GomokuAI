@@ -136,6 +136,12 @@ class _FakeLocal:
 
     def __init__(self):
         self.calls = []
+        #: 真引擎按棋盘尺寸重建表；桩不建表，但要长得一样（``engine._local_for``
+        #: 每次取本地引擎都会调它，尺寸没变时真实现也是立刻返回）。
+        self.sizes = []
+
+    def configure_size(self, n):
+        self.sizes.append(int(n))
 
     def analyze(self, board, me, level, cancel=None, time_limit=None):
         self.calls.append(time_limit)

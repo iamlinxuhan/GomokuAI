@@ -65,6 +65,9 @@ class _DummyLogger:
     def close(self):
         self.f.close()
 
+    def flush(self):
+        pass
+
     def log_human(self, *a, **k):
         pass
 
@@ -166,10 +169,14 @@ def _build(monkeypatch, qapp, *, mode=0, color=0, level=1, ai=None):
     全部走完（例如"悔棋导致 AI 重下"这类局面相同、只能靠调用次数区分的
     断言）。
 
-    **中间那一页规则**（2026-10-14 加）：三种模式选完都先过规则页，所以这里
-    也要补上 ``_on_rules_selected(0)``。不补的话后面这些点击发生在**规则页**
+    **中间那一页规则**（2026-10-14 加）与**尺寸页**（本轮加）：挑战 AI 与本地
+    对战选完规则都先过尺寸页，所以这里也要补上 ``_on_rules_selected(0)`` 与
+    ``_on_size_selected(19)``。不补的话后面这些点击发生在**规则页/尺寸页**
     上 —— `_on_board_click` 那些路径一个都不会跑到，而用例会因为等超时变红，
     症状看起来像"落子没反应"。
+
+    **尺寸固定 19**：本文件所有坐标与棋盘形状都按 19×19 写死。其它尺寸由
+    ``tests/test_board_sizes.py`` 单独覆盖。
     """
     monkeypatch.setattr(M, "GameLogger", _DummyLogger)
     queue = _scripted_ai(monkeypatch, ai) if ai is not None else None
@@ -177,6 +184,7 @@ def _build(monkeypatch, qapp, *, mode=0, color=0, level=1, ai=None):
     win.show()
     win._on_mode_selected(1 if mode == 1 else 0)
     win._on_rules_selected(0)
+    win._on_size_selected(19)
     if mode != 1:
         win._on_color_selected(color)
         win._on_difficulty_selected(level)
@@ -558,7 +566,10 @@ def test_lan_host_waits_then_guest_joins_and_plays(monkeypatch, qapp):
         qapp.processEvents()
         win._on_lan_create()
         qapp.processEvents()
-        assert win.selection_color is not None, "创建房间应先走颜色页"
+        assert win.selection_size is not None, "创建房间应先走尺寸页"
+        win._on_size_selected(19)
+        qapp.processEvents()
+        assert win.selection_color is not None, "尺寸页之后才是颜色页"
 
         win._on_color_selected(0)              # 房主执黑
         qapp.processEvents()

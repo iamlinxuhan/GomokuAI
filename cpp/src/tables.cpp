@@ -46,7 +46,8 @@ void buildLines() {
             }
         }
     }
-    // 方向内计数必须是 19 / 19 / 37 / 37（横竖各 19 条全长线，两条对角各 37）。
+    // 方向内计数必须是 B / B / (2B-1) / (2B-1)：
+    // 横竖各 B 条全长线，两条对角各含 2B-1 条（含 4 条长度为 1 的角线）。
     (void)perDir;
 }
 
@@ -220,11 +221,13 @@ bool verify(std::string* err) {
                           "线总数应为 %d，实为 %d", N_LINES, expectLid);
             return fail(buf);
         }
-        if (perDir[0] != 19 || perDir[1] != 19 ||
-            perDir[2] != 37 || perDir[3] != 37) {
-            char buf[160];
+        const int diagLines = 2 * BOARD_SIZE - 1;
+        if (perDir[0] != BOARD_SIZE || perDir[1] != BOARD_SIZE ||
+            perDir[2] != diagLines || perDir[3] != diagLines) {
+            char buf[192];
             std::snprintf(buf, sizeof(buf),
-                          "各方向的线数应为 19/19/37/37，实为 %d/%d/%d/%d",
+                          "各方向的线数应为 %d/%d/%d/%d，实为 %d/%d/%d/%d",
+                          BOARD_SIZE, BOARD_SIZE, diagLines, diagLines,
                           perDir[0], perDir[1], perDir[2], perDir[3]);
             return fail(buf);
         }
@@ -373,7 +376,7 @@ bool verify(std::string* err) {
         }
     }
 
-    // ---- 6. fiveStarts：每个方向的起点数必须是 15*19 或 19*15 之类 ----
+    // ---- 6. fiveStarts：每个方向的起点数由 B 现算 ----
     {
         for (int d = 0; d < 4; ++d) {
             int expect = 0;
@@ -429,7 +432,7 @@ bool verify(std::string* err) {
 
     // ---- 8. Bits361 的移位语义（与 Python 大整数逐例对照）----
     {
-        // 抽几个代表性位置：字边界、跨字、361 位边缘
+        // 抽几个代表性位置：字边界、跨字、CELLS 位边缘
         const int probes[][2] = {{0, 0}, {0, 1}, {0, 18}, {0, 19}, {0, 20},
                                  {63, 1}, {64, 1}, {319, 1}, {320, 1},
                                  {360, 1}, {180, 19}, {360, 20},
@@ -474,7 +477,10 @@ bool verify(std::string* err) {
             }
         }
         if (Bits361::all().count() != CELLS) {
-            return fail("Bits361::all() 的位数不是 361");
+            char buf[96];
+            std::snprintf(buf, sizeof(buf),
+                          "Bits361::all() 的位数不是 %d", CELLS);
+            return fail(buf);
         }
     }
 

@@ -32,6 +32,24 @@ import sys
 #: 只监听回环。桌面单机应用没有任何理由让引擎对外可达。
 HOST = "127.0.0.1"
 
+#: 支持的棋盘尺寸（UI 的排列顺序：快棋 → 传统）。
+BOARD_SIZES = (9, 13, 15, 19)
+
+#: 新局默认 15×15。**协议与二进制的默认值仍是 19**：没显式传尺寸的旧调用方
+#: （工具、测试、旧日志）落在 19，不会因为这次改动被悄悄换一张盘。
+DEFAULT_BOARD_SIZE = 15
+
+
+def board_size_of(size) -> int:
+    """校验并规范化尺寸。只认 9/13/15/19 —— 拼错就抛，不静默取默认值。"""
+    try:
+        n = int(size)
+    except (TypeError, ValueError):
+        raise ValueError("棋盘尺寸必须是整数，收到 %r" % (size,))
+    if n not in BOARD_SIZES:
+        raise ValueError("棋盘尺寸只支持 %r，收到 %r" % (BOARD_SIZES, size))
+    return n
+
 #: 候选端口池：**15 个不常用端口**，客户端按这个顺序逐个试。
 #:
 #: 为什么不是一个固定的 8888（原来就是）：固定端口一定会撞上别人，而 8888
@@ -46,11 +64,19 @@ HOST = "127.0.0.1"
 #:
 #: **顺序有意义**：靠前的会被优先复用（另一个窗口拉起的服务端、上一次运行
 #: 留下的残留进程）。池子里的端口每次运行都一样，所以残留进程仍然认得出来。
-PORT_POOL = (
-    49001, 49007, 49013, 49019, 49027,
-    49031, 49037, 49043, 49051, 49059,
-    49067, 49073, 49079, 49087, 49093,
-)
+#: 段内偏移。**19 的无禁手池历史值就是这一组，不要改**：残留服务端的识别
+#: 依赖"端口可预测"（见上面那段）。
+_PORT_OFFSETS = (1, 7, 13, 19, 27, 31, 37, 43, 51, 59, 67, 73, 79, 87, 93)
+
+#: 19 的禁手池是另一组历史值，同样不能动。
+_PORT_OFFSETS_BAN_19 = (3, 9, 17, 21, 23, 29, 33, 39, 47, 57, 61, 69, 81, 91, 99)
+
+
+def _pool_at(base: int, offsets) -> tuple:
+    return tuple(base + off for off in offsets)
+
+
+PORT_POOL = _pool_at(49000, _PORT_OFFSETS)
 
 #: 显式指定端口；``None`` = 走端口池。
 #:
@@ -70,11 +96,24 @@ PORT = None
 #:
 #: 分开两个池更简单，而且不需要 rules 握手也不会串。rules 握手仍然要加，但它是
 #: **第二道保险**（把"连得上"升级成"连对了"），不是共用池的前提。
-PORT_POOL_BAN = (
-    49003, 49009, 49017, 49021, 49023,
-    49029, 49033, 49039, 49047, 49057,
-    49061, 49069, 49081, 49091, 49099,
-)
+PORT_POOL_BAN = _pool_at(49000, _PORT_OFFSETS_BAN_19)
+
+#: 每个尺寸占一段 100 个端口；ban 在段内再偏移 2，与 free 不重叠。
+_PORT_BASE = {19: 49000, 15: 49100, 13: 49200, 9: 49300}
+
+
+def port_pool(variant: str = "free", size: int = 19) -> tuple:
+    """该 ``(变体, 尺寸)`` 的候选端口。
+
+    19 的两个池保持历史值**逐字不变** —— 上一次运行留下的残留服务端靠它
+    被认出来复用。其它尺寸各占独立的 100 段，四个尺寸同时开着也不会互抢。
+    """
+    variant = variant_of(variant)
+    size = board_size_of(size)
+    if size == 19:
+        return PORT_POOL if variant == "free" else PORT_POOL_BAN
+    base = _PORT_BASE[size] + (2 if variant == "ban" else 0)
+    return _pool_at(base, _PORT_OFFSETS)
 
 #: 可执行文件名（Windows 下补 ``.exe``）。
 BINARY_STEM = "gomoku_engine"
@@ -131,20 +170,35 @@ CANCEL_POLL_INTERVAL = 0.02
 SHUTDOWN_TIMEOUT = 1.0
 
 
-def binary_name(variant: str = "free") -> str:
-    """当前平台下该变体的可执行文件名。"""
-    return VARIANT_BINARY_STEM[variant_of(variant)] + (
-        ".exe" if os.name == "nt" else "")
+def binary_stem(variant: str = "free", size: int = 19) -> str:
+    """该变体、该尺寸的可执行文件名（不含平台后缀）。
+
+    19 保持旧名（``gomoku_engine`` / ``gomoku_engine_ban``）；其余尺寸是
+    ``gomoku_engine_<n>`` / ``gomoku_engine_<n>_ban`` —— **尺寸在中间**，
+    与 CMake 的 target 命名逐字一致。
+    """
+    variant = variant_of(variant)
+    size = board_size_of(size)
+    if size == 19:
+        return VARIANT_BINARY_STEM[variant]
+    return "%s_%d%s" % (BINARY_STEM, size, "_ban" if variant == "ban" else "")
 
 
-def _candidates(variant: str = "free") -> list:
+def binary_name(variant: str = "free", size: int = 19) -> str:
+    """当前平台下该变体、该尺寸的可执行文件名。"""
+    return binary_stem(variant, size) + (".exe" if os.name == "nt" else "")
+
+
+def _candidates(variant: str = "free", size: int = 19) -> list:
     """按可信度从高到低列出候选路径。
 
     ``sys._MEIPASS`` 排在最前：打包后 ``__file__`` 指向解包目录内部的模块，
     而冻结的模块层级与原仓库不同，"源码树"那一条在打包版里指向一个不存在
     的路径 —— 顺序反了会先试一个必然失败的路径。
     """
-    name = binary_name(variant)
+    variant = variant_of(variant)
+    size = board_size_of(size)
+    name = binary_name(variant, size)
     out = []
 
     # 1) 打包运行时（PyInstaller onedir / onefile 都是这个变量）
@@ -152,8 +206,14 @@ def _candidates(variant: str = "free") -> list:
     if meipass:
         out.append(os.path.join(meipass, name))
 
-    # 2) 环境变量：测试与手工排查
-    override = os.environ.get(VARIANT_ENV_OVERRIDE[variant_of(variant)])
+    # 2) 环境变量：测试与手工排查。非 19 先认带尺寸的变量，再退回通用变量
+    #    —— 通用变量通常指着 19 的构建产物，握手会因尺寸不符而拒绝，这正是
+    #    我们想要的（而不是静默接错盘）。
+    override = None
+    if size != 19:
+        override = os.environ.get("%s_%d" % (VARIANT_ENV_OVERRIDE[variant], size))
+    if not override:
+        override = os.environ.get(VARIANT_ENV_OVERRIDE[variant])
     if override:
         out.append(override)
 
@@ -175,15 +235,15 @@ def _candidates(variant: str = "free") -> list:
     return out
 
 
-def find_binary(variant: str = "free"):
-    """返回该变体第一个存在的候选路径；一个都没有则返回 ``None``。
+def find_binary(variant: str = "free", size: int = 19):
+    """返回该变体、该尺寸第一个存在的候选路径；一个都没有则返回 ``None``。
 
     **存在即可执行 ≠ 能跑**：架构不匹配、动态库缺失、或者根本不是我们的程序
     都会在这里通过。真正的把关在 ``engine.py`` 的 ``hello`` 校验 —— 它比对
     棋盘尺寸、``WIN_SCORE`` 与 ``rules``，能在第一次请求之前就把"接错东西了"
     挡下来。
     """
-    for path in _candidates(variant):
+    for path in _candidates(variant, size):
         try:
             if os.path.isfile(path) and os.access(path, os.X_OK):
                 return path

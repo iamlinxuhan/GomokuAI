@@ -102,3 +102,28 @@ def test_flavor_defaults_to_play_when_not_injected():
 def test_sys_is_not_left_patched():
     """自检：上面那些用例没有把 `sys.frozen` 永久留在进程里。"""
     assert not getattr(sys, "frozen", False)
+
+
+def test_writes_after_close_are_dropped(tmp_path):
+    """关掉日志之后的调用一律静默丢弃，不抛 ``ValueError``。
+
+    终局遮罩是**延时弹出**的（``GAME_OVER_DELAY_MS``）：局域网那局一结束就
+    关窗口（或点「重新开始」），定时器仍会醒来去写结果与终局盘面。对已关闭的
+    文件写一次就是一条堆栈。
+    """
+    lg = gamelog.GameLogger(log_dir=str(tmp_path))
+    lg.close()
+    lg.log_human(1, 1, 0, 0)
+    lg.log_ai(2, 2, 1, 1, {"reason": "开局库", "best_val": 0})
+    lg.log_board_state(2, [[0, 2], [1, 0]])
+    lg.log_result("human", 2, 2)
+    lg.flush()
+
+
+def test_flush_is_callable_before_close(tmp_path):
+    """开房那一步会显式 ``flush()``（对方读同一份日志），它必须存在且能调。"""
+    lg = gamelog.GameLogger(log_dir=str(tmp_path))
+    lg.log_human(1, 1, 0, 0)
+    lg.flush()
+    assert os.path.exists(lg.filepath)
+    lg.close()

@@ -3,12 +3,16 @@
 
 用法::
 
-    python tools/build_book.py                # 默认 20 s/节点，中断可续跑
+    python tools/build_book.py --size 19       # 默认 20 s/节点，中断可续跑
+    python tools/build_book.py --size 15
     python tools/build_book.py --budget 5     # 快速重跑一遍
     python tools/build_book.py --fresh        # 忽略缓存，全部重搜
 
-产物是 ``GomokuAI/opening_book.py``（**生成物，不要手工编辑**）：一张
-``{局面键: (idx, score, depth)}`` 的表，由 ``engine_local.book_lookup`` 查询。
+产物是 ``GomokuAI/opening_book.py``（**生成物，不要手工编辑**）：
+``BOOKS = {尺寸: {局面键: (idx, score, depth)}}``，由 ``engine_local.book_lookup``
+按本局尺寸查询。**每个尺寸必须各自建库**：线性格索引与局面哈希都是尺寸相关的，
+19 路的键在 15 路上一个也命中不了。重新生成一个尺寸不会动其它尺寸的表（``emit``
+会先把现有文件里别的尺寸读回来合并）。
 
 ## 为什么表只到"第 4 手"（``BOOK_STONES = 3``）
 
@@ -61,17 +65,21 @@ BOOK_STONES = 3
 K_REPLIES = 4
 #: 建库档位：宗师 = 最强配置（增强搜索全开）。预算由 ``--budget`` 覆盖。
 BUILD_LEVEL = 5
-CACHE = os.path.join(ROOT, "tools", "reports", "opening_book_build.json")
 #: ``ROOT`` 就是包目录（``engine.py`` / ``config.py`` 所在处），生成物与
 #: ``engine_local.py`` 并排 —— 它由 ``engine_local`` 直接 import。
 OUT = os.path.join(ROOT, "opening_book.py")
+
+
+def _cache_path(size: int) -> str:
+    return os.path.join(ROOT, "tools", "reports",
+                        "opening_book_build_%d.json" % size)
 
 
 def _bootstrap_if_missing():
     """产物不存在时先落一张空表。
 
     **必须在 import ``engine`` / ``engine_local`` 之前做。** 那两者在 import
-    期就 `from opening_book import BOOK`（缺了它要立刻炸，理由见那里的注释），
+    期就 `from opening_book import BOOKS`（缺了它要立刻炸，理由见那里的注释），
     而本工具又要用它们的 ``Board`` 与 ``_TT_SALT_W`` —— 于是"第一次建库"会
     死在产物还不存在上。一张空表就把这一环解开：它对 ``engine_local`` 是合法
     输入（查不到任何局面 → 回落搜索），几分钟后被真正的表覆盖。
@@ -82,7 +90,8 @@ def _bootstrap_if_missing():
     with open(OUT, "w", encoding="utf-8") as fh:
         fh.write("# -*- coding: utf-8 -*-\n"
                  '"""引导用的空表（tools/build_book.py 的第一次运行会覆盖它）。"""\n'
-                 "\nBOOK_STONES = %d\n\nBOOK = {}\n\nPROVENANCE = {}\n"
+                 "\nBOOK_STONES = %d\n\nBOOKS = {}\n\nBOOK = {}\n\n"
+                 "PROVENANCE = {}\n"
                  % BOOK_STONES)
 
 
@@ -93,7 +102,15 @@ import engine_local as EL                                # noqa: E402
 from tools.positions import coord_to_sgf                 # noqa: E402
 from tools.selfplay import CENTER, OPENING_SECOND_MOVES  # noqa: E402
 
+#: 当前这次建库的尺寸。``build()`` 会按 ``--size`` 改它，``_fmt`` 等函数读它。
 BOARD = EL.BOARD_SIZE
+
+
+def _second_moves(n: int):
+    """8 个标准第二手，按 19 路的相对位置平移到 n 路盘心。"""
+    m = n // 2
+    return [(r - CENTER[0] + m, c - CENTER[1] + m)
+            for r, c in OPENING_SECOND_MOVES]
 
 
 def book_key(board_arr, player):
@@ -108,8 +125,13 @@ def book_key(board_arr, player):
     return h ^ (0 if player == 1 else EL._TT_SALT_W)
 
 
+def _fmt_for(idx, n):
+    """线性格索引 → 该尺寸下的 SGF 坐标（各尺寸的行列数不同）。"""
+    return coord_to_sgf(*divmod(idx, n))
+
+
 def _fmt(idx):
-    return coord_to_sgf(*divmod(idx, BOARD))
+    return _fmt_for(idx, BOARD)
 
 
 def _label(board_arr, idx):
@@ -139,17 +161,22 @@ def _plausible(board_arr, k):
 
 
 def build(args):
+    global BOARD
+    EL.configure_size(args.size)
+    BOARD = EL.BOARD_SIZE
+    cache_path = _cache_path(BOARD)
+
     cache = {}
-    if not args.fresh and os.path.exists(CACHE):
-        with open(CACHE, encoding="utf-8") as fh:
+    if not args.fresh and os.path.exists(cache_path):
+        with open(cache_path, encoding="utf-8") as fh:
             cache = json.load(fh)
-        print("缓存命中 %d 个节点：%s" % (len(cache), CACHE))
+        print("缓存命中 %d 个节点：%s" % (len(cache), cache_path))
 
     # 自定义预算走同一条 TCP 通道。``RemoteAIPlayer.ai_move`` 只吃档位号、
     # 吃不下自定义 cfg，所以这里直接用它的底层客户端 —— 工具用私有名，
     # 换来的是**被测的那条路径**（报文构造、超时、重连）与生产逐字相同。
     cfg = dict(E.DIFFICULTY[BUILD_LEVEL], time=args.budget)
-    client = E._ServerClient()
+    client = E._ServerClient(variant="free", size=BOARD)
     entries = {}
     stats = {"searched": 0, "cache": 0, "seconds": 0.0}
 
@@ -170,7 +197,8 @@ def build(args):
         ent = (int(idx), int(info["best_val"]), int(info["actual_depth"]))
         # 每个节点落一次盘：中断（Ctrl-C / 机器睡眠）之后重跑只补缺口。
         cache[hk] = list(ent)
-        with open(CACHE, "w", encoding="utf-8") as fh:
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        with open(cache_path, "w", encoding="utf-8") as fh:
             json.dump(cache, fh, sort_keys=True)
         stats["searched"] += 1
         stats["seconds"] += dt
@@ -180,10 +208,14 @@ def build(args):
 
     def put(board_arr, player, ent):
         entries[book_key(board_arr, player)] = ent
+        # 每落一个节点就把整张表重新写一遍：前几个节点正是开局最常用的
+        # 那几个局面，让它们**立刻**可用，不必等十几分钟后的最后一步。
+        emit(entries, args, stats, verbose=False)
 
+    m = BOARD // 2
     empty = np.zeros((BOARD, BOARD), dtype=np.uint8)
     b1 = empty.copy()
-    b1[CENTER] = 1
+    b1[m, m] = 1
 
     print("第 2 手：白应天元")
     put(b1, 2, lookup(b1, 2, "白2"))
@@ -192,7 +224,7 @@ def build(args):
     # 第 2 层的分支 = 8 个标准第二手（对手不按我们的最优下时也要有答案）。
     print("第 3 手：黑应 8 个标准第二手")
     layer2 = []
-    for sec in OPENING_SECOND_MOVES:
+    for sec in _second_moves(BOARD):
         b2 = b1.copy()
         b2[sec] = 2
         idx = (sec[0] * BOARD + sec[1])
@@ -217,19 +249,68 @@ def build(args):
     return entries
 
 
-def emit(entries, args, stats):
-    """写生成物。键**排序输出**：重新生成时的 diff 只反映真实变化。"""
+def _existing_tables():
+    """读回现有生成物里的其它尺寸（重建一个尺寸不能把别的尺寸抹掉）。"""
+    try:
+        import importlib
+
+        import opening_book as ob
+        importlib.reload(ob)
+        books = dict(getattr(ob, "BOOKS", {}) or {})
+        prov = dict(getattr(ob, "PROVENANCE", {}) or {})
+        if not books and getattr(ob, "BOOK", None):
+            # 旧格式（只有 19 路那一张）：原样接管，别让第一次按尺寸重建
+            # 把 19 路那张已经搜好的表丢掉。
+            books[19] = dict(ob.BOOK)
+            prov[19] = prov if isinstance(prov, dict) and "level" in prov else {}
+        return books, prov
+    except Exception:                    # noqa: BLE001
+        return {}, {}
+
+
+def emit(entries, args, stats, verbose=True):
+    """写生成物。键**排序输出**：重新生成时的 diff 只反映真实变化。
+
+    ``BOOKS`` 里其它尺寸的表项原样保留 —— 四个尺寸的建库是四条独立命令，
+    任何一条都不该把别的那几张盘一起清空。
+
+    ``build()`` 每搜完一个节点就调一次（``verbose=False``）：整张表要跑十几分钟，
+    而**前几个节点就是开局最常用的那几个局面**。等到最后才落盘，等于让用户在
+    建库的整段时间里都看不到开局库生效。
+    """
+    books, prov_all = _existing_tables()
+    books[BOARD] = entries
+    prov_all[BOARD] = {
+        "level": BUILD_LEVEL,
+        "budget_s": float(args.budget),
+        "k_replies": K_REPLIES,
+        "entries": len(entries),
+        "searched_nodes": stats["searched"],
+        "cached_nodes": stats["cache"],
+        "search_seconds": round(stats["seconds"], 1),
+        "enhanced": 1, "lmr": 1, "extend": 1,
+        "binary": E.binary_path(size=BOARD),
+        "built_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
     doc = [
         '# -*- coding: utf-8 -*-',
         '"""开局库表。**生成物：由 tools/build_book.py 生成，不要手工编辑。**',
         '',
         '重新生成::',
         '',
-        '    python tools/build_book.py',
+        '    python tools/build_book.py --size 19',
+        '    python tools/build_book.py --size 15',
+        '    python tools/build_book.py --size 13',
+        '    python tools/build_book.py --size 9',
         '',
         '表项是 ``{键: (线性格索引, 走子方视角的分值, 搜到的层数)}``。',
         '键 = ``Board.hash ^ (0 if 走子方是黑 else _TT_SALT_W)``，也就是',
         '「局面 + 走子方」。查询入口见 ``engine_local.book_lookup``。',
+        '',
+        '**按尺寸分表**：``BOOKS[n]`` 是 n×n 那一张盘上的库。小盘的 Zobrist 取',
+        '19 表的前 n² 项，但线性格索引与局面都不同，所以每个尺寸必须各自建库。',
+        '``BOOK`` 保留为 ``BOOKS[19]``，旧的工具与测试照旧读它。',
         '',
         '只覆盖盘上 %d 子以内的局面（即第 2/3/4 手）。空盘的天元由' % BOOK_STONES,
         '``opening_move`` 的规则给出，不进表；表外局面一律回落搜索。',
@@ -241,35 +322,41 @@ def emit(entries, args, stats):
         '',
         "BOOK_STONES = %d" % BOOK_STONES,
         '',
-        "BOOK = {",
+        "BOOKS = {",
     ]
-    for key in sorted(entries):
-        idx, score, dep = entries[key]
-        doc.append("    0x%016X: (%d, %d, %d),   # %s"
-                   % (key, idx, score, dep, _fmt(idx)))
+    for n in sorted(books):
+        doc.append("    %d: {" % n)
+        for key in sorted(books[n]):
+            idx, score, dep = books[n][key]
+            doc.append("        0x%016X: (%d, %d, %d),   # %s"
+                       % (key, idx, score, dep, _fmt_for(idx, n)))
+        doc.append("    },")
     doc += [
         "}",
         '',
-        "#: 建库时的规模与环境，供审计（程序不读它）。",
+        '#: 旧调用方（tools/、tests/）只认 19 路那一张。',
+        'BOOK = BOOKS[19]',
+        '',
+        '#: 建库时的规模与环境，供审计（程序不读它）。',
         "PROVENANCE = {",
-        '    "level": %d,' % BUILD_LEVEL,
-        '    "budget_s": %r,' % float(args.budget),
-        '    "k_replies": %d,' % K_REPLIES,
-        '    "entries": %d,' % len(entries),
-        '    "searched_nodes": %d,' % stats["searched"],
-        '    "cached_nodes": %d,' % stats["cache"],
-        '    "search_seconds": %.1f,' % stats["seconds"],
-        '    "enhanced": 1, "lmr": 1, "extend": 1,',
-        '    "binary": %r,' % E.binary_path(),
-        '    "built_at": %r,' % time.strftime("%Y-%m-%d %H:%M:%S"),
-        "}",
-        "",
     ]
-    with open(OUT, "w", encoding="utf-8") as fh:
+    for n in sorted(prov_all):
+        doc.append("    %d: {" % n)
+        for k, v in prov_all[n].items():
+            doc.append("        %r: %r," % (k, v))
+        doc.append("    },")
+    doc += ['}', '']
+    tmp = OUT + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
         fh.write("\n".join(doc))
-    print("\n写入 %s：%d 个表项（新搜 %d 个节点 / %.0f 秒，缓存命中 %d）"
-          % (OUT, len(entries), stats["searched"], stats["seconds"],
-             stats["cache"]))
+    # 原子替换：进程在写的瞬间被打断，也不会留下半个 .py 让下次 import 炸掉。
+    os.replace(tmp, OUT)
+    if verbose:
+        print("\n写入 %s：%d×%d 共 %d 个表项（新搜 %d 个节点 / %.0f 秒，缓存命中 %d）"
+              % (OUT, BOARD, BOARD, len(entries), stats["searched"],
+                 stats["seconds"], stats["cache"]))
+    else:
+        print("  · 落盘 %d 项（%d×%d）" % (len(entries), BOARD, BOARD))
 
 
 def main():
@@ -277,6 +364,9 @@ def main():
     ap.add_argument("--budget", type=float, default=20.0,
                     help="每个节点的搜索预算（秒）。默认 20 = 宗师的真实预算")
     ap.add_argument("--fresh", action="store_true", help="忽略缓存重新搜")
+    ap.add_argument("--size", type=int, default=19, choices=E.config.BOARD_SIZES,
+                    help="为哪个尺寸建库（默认 19）。每张盘必须各自建一次，"
+                         "重新生成一个尺寸会保留其它尺寸的表")
     ap.add_argument("--port", type=int, default=0,
                     help="另起一个服务端端口。默认 0 = 走应用的端口池"
                          "（config.PORT_POOL）。**游戏开着的时候必须给一个"
@@ -284,10 +374,11 @@ def main():
                          "用池子里的号会把游戏那条连接顶掉，游戏会静默降级到"
                          "Python 本地实现")
     args = ap.parse_args()
-    if E.binary_path() is None:
+    if E.binary_path(size=args.size) is None:
         raise SystemExit(
-            "找不到 C++ 引擎可执行文件。开局库必须由最强配置生成 —— "
-            "用 Python 本地实现代替会慢两个数量级、而且更弱。")
+            "找不到 %d 路的 C++ 引擎可执行文件。开局库必须由最强配置生成 —— "
+            "用 Python 本地实现代替会慢两个数量级、而且更弱。\n"
+            "先构建：cd cpp && cmake --build build" % args.size)
     if args.port:
         # `config.PORT` 一设就**只用这一个**（被占则退到内核端口，不回池子），
         # 见 engine._port_candidates —— 所以这次建库自成一体，不碰游戏的池子。

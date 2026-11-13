@@ -20,8 +20,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import (
     Qt, QTimer, QThread, QObject, QAbstractAnimation, pyqtSignal, QRect,
     QPoint, QPointF, QSize, QElapsedTimer, QEasingCurve, QVariantAnimation,
-    QLocale, QSettings
+    QLocale, QSettings, QEvent, QUrl
 )
+from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtGui import (
     QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent, QIcon,
     QPolygonF
@@ -31,14 +32,16 @@ import analysis
 import anim
 import board_render
 import charts
+import config
 import engine
 import i18n
 import theme
+import updater
 from board_geometry import BoardGeometry
 from client import LocalRoom, RoomClient, local_ip
-from engine import (BOARD_SIZE, Board, evaluate, is_mate,
-                    new_game, win_line)
-from gamelog import GameLogger
+from engine import BOARD_SIZE, is_mate, new_game, win_line
+import gamelog
+from gamelog import GameLogger, col_letter
 from room import RoomConfig, SeatSpec
 from session import RULES as RULE_NAMES, Session
 from ui_kit import (BrandMark, InfoRow, QuestionMark, Screen, StoneFace,
@@ -263,7 +266,26 @@ _WIN_LINE_COLOR = theme.WIN_LINE                        # 深红
 
 # 棋盘几何的设计基准（1:1）。绘制、命中判定、无头测试全部经由它，
 # 不要再在别处写第二份 `MARGIN + c * CELL_SIZE`。
-_DESIGN_GEOM = BoardGeometry.design(BOARD_SIZE, CELL_SIZE, MARGIN)
+#
+# **每个尺寸一份。** 格距与木框边距（``CELL_SIZE`` / ``MARGIN``）是设计常量，
+# 不属于某个尺寸 —— 9×9 用小盘的设计基准，再由 ``BoardGeometry.fit`` 按控件
+# 实际尺寸等比放大，窗口大小因此不随尺寸变（见 ``BoardWidget``）。
+_DESIGN_GEOMS: dict = {}
+
+
+def design_geom(n: int) -> BoardGeometry:
+    """``n×n`` 的设计基准（缓存在本模块的一只表里，不每次新建）。"""
+    n = int(n)
+    geom = _DESIGN_GEOMS.get(n)
+    if geom is None:
+        geom = BoardGeometry.design(n, CELL_SIZE, MARGIN)
+        _DESIGN_GEOMS[n] = geom
+    return geom
+
+
+#: 旧名字：19 路的设计基准。**只给不关心尺寸的既有调用方**（测试与工具按这
+#: 个名字引用）；对局路径一律用 ``design_geom(尺寸)``。
+_DESIGN_GEOM = design_geom(BOARD_SIZE)
 
 # 调色板一律来自 theme —— 这里刻意**不再**声明任何 QColor 常量。
 # `_qss_color()` 也随之删除：只要主题层不产出 QColor，"QColor 插进样式表变成
@@ -421,11 +443,15 @@ class ReviewWorker(QThread):
                 rec['stone'] = stone
             return rec
         table = dict(cands)
-        played_idx = played[0] * BOARD_SIZE + played[1]
+        # 尺寸取自**这一手落子前的棋盘本身**。``engine_local.BOARD_SIZE`` 是同
+        # 进程全局量，别的局/别的尺寸会在复盘跑到一半时把它改掉；而这份快照
+        # 的形状不会变。
+        n = int(before.shape[0]) if getattr(before, "shape", None) else len(before)
+        played_idx = played[0] * n + played[1]
         rec = {
             'seq': item['seq'],
             'played': played,
-            'best': divmod(best_idx, BOARD_SIZE),
+            'best': divmod(best_idx, n),
             'best_val': best_val,
             'before': before,
             # 杀棋分（|v| > 静态上限）之间的差值是 2×10⁷ 这种没有量纲意义的数，
@@ -443,7 +469,7 @@ class ReviewWorker(QThread):
             #    立刻成五，`_root` 就当场返回，后面的候选一个都不再走
             #    （`engine_local.Board` 与 C++ 的 `root()` 同款）。那时的正确
             #    说法是"错失必胜"，判为"偏离战场"就是把最严重的一手讲成无害。
-            legal = set(Board.from_array(before).candidates())
+            legal = set(engine.candidates_for(before, self.variant))
             rec.update({'played_val': None, 'delta': None,
                         'offboard': played_idx not in legal, 'empty': False})
         else:
@@ -469,9 +495,14 @@ REVIEW_LIST_H = 420
 
 
 def _fmt_point(rc):
-    """把 ``(r, c)`` 写成棋盘坐标（列 A–S、行 1–19，与日志同一套）。"""
+    """把 ``(r, c)`` 写成棋盘坐标（列 A–T、行 1–19，与日志同一套）。
+
+    列字母**跳过 I**，且直接取 ``gamelog.col_letter`` —— 那是全应用唯一一份
+    字母表。这里曾经手写过一份 ``chr(ord('A') + c + (1 if c >= 8 else 0))``，
+    它和棋盘标注各演化一步就会对不上；小尺寸下两者也不能再各写一份。
+    """
     r, c = rc
-    return "%s%d" % (chr(ord('A') + c), r + 1)
+    return "%s%d" % (col_letter(c), r + 1)
 
 
 def _is_rated(rec):
@@ -660,7 +691,9 @@ class ReviewBoardScreen(Screen):
         self.setup_ui()
 
     def setup_ui(self):
-        board = BoardWidget()
+        # 尺寸跟**这一手的快照**走，不跟当前主窗口走：换档重建、复盘跨尺寸都不
+        # 会拿错。``before`` 是 ndarray 时 ``len`` 就是边长。
+        board = BoardWidget(len(self.rec['before']))
         # 只读：不接 ``mousePressEvent``（基类什么都不做），也不给悬停预览。
         #
         # **不再无条件 setFixedSize(BOARD_PX, BOARD_PX)。** 定死 726 正是
@@ -1023,8 +1056,341 @@ class _LanguageRow(QWidget):
             self.language_selected.emit(code)
 
 
+# ==================== 自动更新 ====================
+#
+# 四步流程（查版本 → 取 SHA256SUMS + 签名 → 下载校验 → 安装重启）全在
+# ``updater.py``，那一层零 Qt。这一层只做三件事：把偏好存进 QSettings、
+# 把**慢的两步**（查版本、下载并校验）放进 QThread、把结果画在设置页上。
+#
+# 装新版本与重启留在主线程：``install()`` 里有 subprocess 与 ``os.replace``，
+# 但 ``QApplication.quit()`` 只能从主线程调；而且装完之后弹窗、主窗口都要
+# 立刻停下来，不适合再跨线程协调。
+_UPDATE_SOURCE_KEY = "update_source"
+_UPDATE_PROXY_KEY = "update_proxy"
+_UPDATE_ON_START_KEY = "update_check_on_start"
+
+#: 启动后多久发第一次更新检查。2.5 s 是"首屏已经画完、用户还没开始点"的
+#: 位置 —— 太早会和字体/棋盘缓存放一起，太晚则用户已经开始下棋。
+UPDATE_CHECK_DELAY_MS = 2500
+
+#: 活着的更新线程。**必须留一份强引用**：``QThread`` 被垃圾回收时若还在跑，
+#: 进程会直接 abort（"QThread: Destroyed while thread is still running"）。
+#: 设置弹窗会因换档/换语言整只重建，那个卡片也随之重建，所以线程不能挂在
+#: 卡片上 —— 挂在这里，跑完自己摘掉。
+_UPDATE_THREADS: list = []
+
+
+def _track_update_thread(worker):
+    """登记一个更新线程，``finished`` 之后自动摘掉。"""
+    _UPDATE_THREADS.append(worker)
+
+    def _drop(w=worker):
+        try:
+            _UPDATE_THREADS.remove(w)
+        except ValueError:
+            pass
+
+    worker.finished.connect(_drop)
+
+
+def _update_store():
+    return QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP)
+
+
+def _load_update_prefs() -> dict:
+    """读回更新偏好。缺项 / 损坏一律回默认值（自动源、空代理、启动时检查）。"""
+    store = _update_store()
+    source = str(store.value(_UPDATE_SOURCE_KEY, "auto") or "auto")
+    if source not in updater.SOURCES:
+        source = "auto"
+    proxy = str(store.value(_UPDATE_PROXY_KEY, "") or "")
+    raw = str(store.value(_UPDATE_ON_START_KEY, "1")).strip().lower()
+    return {
+        "source": source,
+        "proxy": proxy,
+        "on_start": raw not in ("0", "false", "no", "off"),
+    }
+
+
+def _save_update_pref(key: str, value) -> None:
+    """落盘一个更新偏好。失败不抛 —— 存不下偏好不该让界面开不了。"""
+    try:
+        _update_store().setValue(key, value)
+    except (TypeError, ValueError):
+        pass
+
+
+def _channel_label(channel: str) -> str:
+    """构建渠道的名字。用户问"我这份是哪来的"时，这一行就是答案。"""
+    return {
+        "github": "GitHub 发布版",
+        "msix": "应用商店版",
+        "source": "源码运行",
+    }.get(channel, channel or "未知渠道")
+
+
+class UpdateCheckWorker(QThread):
+    """后台查新版本。网络超时是常态，不能挡住界面。"""
+
+    found = pyqtSignal(object)      # updater.Release 或 None（已是最新）
+    failed = pyqtSignal(str)
+
+    def __init__(self, proxy: str, source: str, parent=None):
+        super().__init__(parent)
+        self.proxy = proxy
+        self.source = source
+
+    def run(self):
+        try:
+            release = updater.check_for_update(self.proxy, self.source)
+        except Exception as exc:                       # noqa: BLE001
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+            return
+        self.found.emit(release)
+
+
+class UpdateDownloadWorker(QThread):
+    """后台下载并校验到 ``<目标>.new``。**不装、不重启** —— 那两步在主线程。"""
+
+    progress = pyqtSignal(int, int)      # (已下载, 总字节)
+    prepared = pyqtSignal(object)        # 待安装文件（Path）
+    failed = pyqtSignal(str)
+
+    def __init__(self, release, kind: str, proxy: str, source: str, parent=None):
+        super().__init__(parent)
+        self.release = release
+        self.kind = kind
+        self.proxy = proxy
+        self.source = source
+
+    def run(self):
+        try:
+            new = updater.prepare_update(
+                self.release, kind=self.kind, proxy=self.proxy,
+                source=self.source, on_progress=self.progress.emit)
+        except Exception as exc:                       # noqa: BLE001
+            self.failed.emit(str(exc))
+            return
+        self.prepared.emit(new)
+
+
+class _UpdateSection(QWidget):
+    """设置页里的「更新」卡片。
+
+    **只在能自更新的形态上给"下载并安装"**：Windows 安装版、Windows 便携版、
+    AppImage。deb / MSIX / 源码运行只显示当前版本与下载页，按钮不给用户点了
+    之后才发现做不到。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.prefs = _load_update_prefs()
+        self.kind = updater.install_kind()
+        self.release = None
+        self._check_worker = None
+        self._download_worker = None
+
+        col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(theme.SPACE_XS)
+
+        # 当前版本与渠道。**这一行永远显示**，包括商店版与源码版 —— 排障时
+        # "你装的是哪一份"比任何一句错误信息都重要。
+        self.status = faint_label(
+            i18n.tf("当前版本 %s（%s）", updater.VERSION,
+                    _channel_label(updater.BUILD_CHANNEL)),
+            align=Qt.AlignLeft | Qt.AlignVCenter)
+        self.status.setWordWrap(True)
+        col.addWidget(self.status)
+
+        self.check_btn = button("检查更新", "ghost", width=_px(120))
+        self.check_btn.clicked.connect(self._on_check)
+        self.install_btn = button("下载并安装", "primary", width=_px(150))
+        self.install_btn.clicked.connect(self._on_install)
+        self.page_btn = button("打开下载页", "ghost", width=_px(130))
+        self.page_btn.clicked.connect(self._open_page)
+        col.addWidget(hbox(self.check_btn, self.install_btn, self.page_btn,
+                           spacing=theme.SPACE_SM))
+
+        # 不能自更新的形态：把原因写在按钮下面，而不是让按钮点了没反应。
+        self.note = None
+        reason = self._why_no_auto_install()
+        if reason:
+            self.note = faint_label(i18n.t(reason), align=Qt.AlignLeft)
+            self.note.setWordWrap(True)
+            col.addWidget(self.note)
+
+        # 更新源：三选一。auto 先问站点（快、且能带缓存），失败退 GitHub。
+        source_row = QHBoxLayout()
+        source_row.setContentsMargins(0, 0, 0, 0)
+        source_row.setSpacing(theme.SPACE_SM)
+        source_row.addWidget(faint_label(i18n.t("更新源"),
+                                         align=Qt.AlignRight | Qt.AlignVCenter))
+        group = QButtonGroup(self)
+        self._source_buttons = {}
+        for code, label in (("auto", "自动"), ("site", "站点"),
+                            ("github", "GitHub")):
+            btn = button(label, "ghost", width=_px(90))
+            btn.setCheckable(True)
+            btn.setChecked(self.prefs["source"] == code)
+            btn.clicked.connect(lambda _=False, c=code: self._on_source(c))
+            group.addButton(btn)
+            self._source_buttons[code] = btn
+            source_row.addWidget(btn)
+        self._source_group = group
+        col.addLayout(source_row)
+
+        # GitHub 代理：可留空（走系统代理）。只在 GitHub 那条链路上生效 ——
+        # 站点与下载镜像强制直连，理由见 updater._proxy_for。
+        proxy_row = QHBoxLayout()
+        proxy_row.setContentsMargins(0, 0, 0, 0)
+        proxy_row.setSpacing(theme.SPACE_SM)
+        proxy_row.addWidget(faint_label(i18n.t("GitHub 代理"),
+                                        align=Qt.AlignRight | Qt.AlignVCenter))
+        self.proxy_edit = QLineEdit(self.prefs["proxy"])
+        self.proxy_edit.setPlaceholderText(i18n.t("留空即走系统代理"))
+        self.proxy_edit.setFixedHeight(theme.CONTROL_H)
+        self.proxy_edit.setMinimumWidth(_px(240))
+        self.proxy_edit.editingFinished.connect(self._on_proxy)
+        proxy_row.addWidget(self.proxy_edit)
+        col.addLayout(proxy_row)
+
+        self.start_btn = button("启动时自动检查更新", "ghost")
+        self.start_btn.setCheckable(True)
+        self.start_btn.setChecked(self.prefs["on_start"])
+        self.start_btn.clicked.connect(self._on_start_toggle)
+        col.addWidget(self.start_btn, Qt.AlignLeft)
+
+        self._refresh_buttons()
+
+    # ---- 状态与按钮 ----
+
+    def _why_no_auto_install(self) -> str:
+        """不能自更新时的解释文案；能自更新返回空串。"""
+        if updater.can_auto_install(self.kind):
+            return ""
+        if self.kind == "msix":
+            return "应用商店版由商店负责更新，这里只显示版本号。"
+        if self.kind == "source":
+            return "源码运行不自动安装：检查到新版本后请 git pull。"
+        if self.kind == "deb":
+            return ("deb 安装的版本请用系统包管理器升级，"
+                    "或到下载页手动安装。")
+        return "当前安装方式不支持自动更新，请到下载页手动安装。"
+
+    def _refresh_buttons(self):
+        self.install_btn.setVisible(bool(updater.can_auto_install(self.kind)))
+        busy = (self._check_worker is not None
+                or self._download_worker is not None)
+        self.check_btn.setEnabled(not busy)
+        self.install_btn.setEnabled(
+            self.release is not None
+            and updater.can_auto_install(self.kind) and not busy)
+
+    def _set_status(self, text: str):
+        self.status.setText(i18n.t(text) if isinstance(text, str) else text)
+
+    # ---- 用户动作 ----
+
+    def _on_source(self, code: str):
+        self.prefs["source"] = code
+        _save_update_pref(_UPDATE_SOURCE_KEY, code)
+
+    def _on_proxy(self):
+        value = self.proxy_edit.text().strip()
+        self.prefs["proxy"] = value
+        _save_update_pref(_UPDATE_PROXY_KEY, value)
+
+    def _on_start_toggle(self):
+        self.prefs["on_start"] = self.start_btn.isChecked()
+        _save_update_pref(_UPDATE_ON_START_KEY,
+                          "1" if self.prefs["on_start"] else "0")
+
+    def _open_page(self):
+        QDesktopServices.openUrl(QUrl(updater.SITE_PAGE))
+
+    def _on_check(self):
+        if self._check_worker is not None:
+            return
+        # **先落盘再发请求**：用户很可能改完代理就点检查，那一刻编辑框的
+        # editingFinished 未必已经触发（Qt 只在失焦/回车时发）。
+        self._on_proxy()
+        self._set_status("正在检查更新…")
+        worker = UpdateCheckWorker(self.prefs["proxy"], self.prefs["source"])
+        _track_update_thread(worker)
+        worker.found.connect(self._on_found)
+        worker.failed.connect(self._on_check_failed)
+        self._check_worker = worker
+        worker.start()
+        self._refresh_buttons()
+
+    def _on_found(self, release):
+        self._check_worker = None
+        if release is None:
+            self.release = None
+            self._set_status(i18n.tf("已是最新版本 %s", updater.VERSION))
+        else:
+            self.release = release
+            hint = ("发现新版本 %s"
+                    if updater.can_auto_install(self.kind)
+                    else "发现新版本 %s，请到下载页安装")
+            self._set_status(i18n.tf(hint, release.tag))
+        self._refresh_buttons()
+
+    def _on_check_failed(self, message):
+        self._check_worker = None
+        self._set_status(i18n.tf("检查更新失败：%s", message))
+        self._refresh_buttons()
+
+    def _on_install(self):
+        if self.release is None or self._download_worker is not None:
+            return
+        self._set_status(i18n.tf("正在下载 %s…", self.release.tag))
+        worker = UpdateDownloadWorker(self.release, self.kind,
+                                      self.prefs["proxy"], self.prefs["source"])
+        _track_update_thread(worker)
+        worker.progress.connect(self._on_progress)
+        worker.prepared.connect(self._on_prepared)
+        worker.failed.connect(self._on_install_failed)
+        self._download_worker = worker
+        worker.start()
+        self._refresh_buttons()
+
+    def _on_progress(self, done: int, total: int):
+        if total > 0:
+            self._set_status(i18n.tf("正在下载… %d%%", min(100, done * 100 // total)))
+        else:
+            self._set_status(i18n.tf("正在下载… %d KB", done // 1024))
+
+    def _on_install_failed(self, message):
+        self._download_worker = None
+        self._set_status(i18n.tf("更新失败：%s", message))
+        self._refresh_buttons()
+
+    def _on_prepared(self, new_path):
+        """下载并校验完成：装上去、重启、退出。**这三步都在主线程。**"""
+        self._download_worker = None
+        target = updater.current_executable(self.kind)
+        if target is None:
+            self._on_install_failed(i18n.t("找不到正在运行的程序文件"))
+            return
+        self._set_status(i18n.tf("正在安装 %s…", self.release.tag))
+        QApplication.processEvents()
+        try:
+            updater.install(new_path, target, self.kind,
+                            version=self.release.tag)
+            updater.restart(self.kind, target)
+        except updater.UpdateError as exc:
+            self._on_install_failed(str(exc))
+            return
+        # Windows 的两个分支都由外部脚本接手：安装版会自己拉起新版安装程序，
+        # 便携版的替换脚本在等本进程退出。**必须退出**，否则那个循环会等满
+        # 60 秒再放弃，用户那边表现为"点了没反应"。
+        QApplication.instance().quit()
+
+
 class SettingsDialog(QDialog):
-    """设置弹窗：字号档位 + 深/浅主题 + 语言。
+    """设置弹窗：字号档位 + 深/浅主题 + 语言 + 更新。
 
     **点选即刻生效并落盘**（``theme.set_scale(..., persist=True)``），随后**弹窗
     自己重建** —— 否则用户点了"特大"却看不见任何变化，会以为按钮坏了。这条理由
@@ -1090,6 +1456,14 @@ class SettingsDialog(QDialog):
         theme_btn.setMinimumWidth(_px(280))
         theme_btn.clicked.connect(self._on_theme_clicked)
         body.add_content(theme_btn)
+
+        body.add_content(separator())
+
+        # 更新卡片放在主题与语言之间：它是一个"偶尔用一次"的区块，摆得太靠
+        # 上会挡住每次都要点的档位按钮；摆得太靠下又会被语言切换那一整块
+        # 淹没。语言切换永远是最后一块（它会重建整只弹窗）。
+        self.update_section = _UpdateSection(self)
+        body.add_content(self.update_section, Qt.AlignLeft)
 
         body.add_content(separator())
 
@@ -1258,6 +1632,32 @@ def _save_language(code):
     try:
         QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP).setValue(
             _SETTINGS_LANG_KEY, code)
+    except (TypeError, ValueError):
+        pass
+
+
+#: 棋盘尺寸在 QSettings 里的键。默认 **15×15**（这一轮的默认尺寸），只接受
+#: ``config.BOARD_SIZES`` 里的值 —— 读到别的（手改配置、旧版本残留）一律回默认。
+_SETTINGS_SIZE_KEY = "board_size"
+_BOARD_SIZE_DEFAULT = 15
+
+
+def _load_board_size() -> int:
+    """读回上次选的棋盘尺寸；没存过或值不合法时返回默认 15。"""
+    raw = QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP).value(
+        _SETTINGS_SIZE_KEY, _BOARD_SIZE_DEFAULT)
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return _BOARD_SIZE_DEFAULT
+    return n if n in config.BOARD_SIZES else _BOARD_SIZE_DEFAULT
+
+
+def _save_board_size(n: int) -> None:
+    """把尺寸落盘。失败不抛 —— 存不下偏好不该让一局棋开不了。"""
+    try:
+        QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP).setValue(
+            _SETTINGS_SIZE_KEY, int(n))
     except (TypeError, ValueError):
         pass
 
@@ -1436,13 +1836,17 @@ class BoardWidget(QWidget):
     ``paintEvent`` 里只剩两次 ``drawPixmap`` 加最后手环／悬停幽灵两个小图形。
     """
 
-    def __init__(self):
+    def __init__(self, board_size: int = BOARD_SIZE):
         super().__init__()
-        self.board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=int)
+        #: 本盘边长。控件的**设计基准**、棋盘数组形状、``resizeEvent`` 的
+        #: 缩放全由它决定；控件像素尺寸仍按 19 路的设计值给（见 ``MIN_BOARD``），
+        #: 小盘由 ``BoardGeometry.fit`` 放大填满同一块区域。
+        self.board_size = int(board_size)
+        self.board = np.zeros((self.board_size, self.board_size), dtype=int)
         self.last_move = None  # (r, c, player)
         self.hover_pos = None
         self.hover_player = 1  # 幽灵子显示谁的颜色
-        self.geom = _DESIGN_GEOM      # 像素<->格子的唯一真源
+        self.geom = design_geom(self.board_size)   # 像素<->格子的唯一真源
         self._static = None           # 缓存：静态层
         self._stones = None           # 缓存：棋子层
         self._cache_key = None        # (w, h, dpr) —— 变化即重建
@@ -1586,7 +1990,8 @@ class BoardWidget(QWidget):
 
     def resizeEvent(self, event):
         # 几何随控件尺寸等比缩放，网格重新居中且保持正方。缓存全部作废。
-        self.geom = BoardGeometry.fit(self.width(), self.height(), _DESIGN_GEOM)
+        self.geom = BoardGeometry.fit(self.width(), self.height(),
+                                      design_geom(self.board_size))
         self._static = None
         self._stones = None
         self._cache_key = None
@@ -2523,6 +2928,7 @@ class SelectionScreen(Screen):
     mode_selected = pyqtSignal(int)  # 0=挑战AI, 1=本地对战, 2=局域网联机
     review_level_selected = pyqtSignal(int)  # 复盘强度，档位 1-5
     rules_selected = pyqtSignal(int)  # 0=无禁手, 1=禁手（RIF）
+    size_selected = pyqtSignal(int)  # 棋盘边长 9 / 13 / 15 / 19
 
     #: 复盘页的三个入口：人机、本地对战、局域网。三者的卡片表一模一样，
     #: 差别只在副标题说的"重算谁"。合成一组是因为 ``setup_ui`` 与
@@ -2533,6 +2939,7 @@ class SelectionScreen(Screen):
     _TITLES = {
         "mode": ("选择对战模式", "挑战 AI、与身边人对坐，或局域网联机"),
         "rules": ("选择规则", "禁手规则只约束黑方：三三、四四、长连判负"),
+        "size": ("选择棋盘尺寸", "尺寸越小棋局越快；15×15 为默认"),
         "color": ("选择执棋颜色", "黑棋为先手，白棋为后手"),
         "difficulty": ("选择 AI 难度", "难度越高，AI 思考越深入"),
         "review": ("选择复盘强度",
@@ -2603,6 +3010,24 @@ class SelectionScreen(Screen):
                                   index=f"{i + 1:02d}", size=size)
                 btn.clicked.connect(lambda _=False, v=value:
                                     self.rules_selected.emit(v))
+                self._cards.append(btn)
+        elif self.mode == "size":
+            # 四张尺寸卡。**默认 15×15 排第三张**（从小到大），副标题里写明
+            # "默认" —— 用户不进这一页时用的也是它（见 ``_load_board_size``）。
+            # 卡面不给图形：这一页的区分全在数字上，画八颗子/十六颗子只会把
+            # 卡片挤满，还容易被当成难度条。
+            size = _card_fit_size(4, gap)
+            cards = [
+                ("9×9", "ghost", 9, "小盘快棋，十几手就分胜负"),
+                ("13×13", "success", 13, "攻防更紧凑，中盘更激烈"),
+                ("15×15", "primary", 15, "标准尺寸（默认）"),
+                ("19×19", "primary", 19, "传统尺寸，空间充裕"),
+            ]
+            for i, (text, tone, value, sub) in enumerate(cards):
+                btn = card_button(text, tone, sub=sub,
+                                  index=f"{i + 1:02d}", size=size)
+                btn.clicked.connect(lambda _=False, v=value:
+                                    self.size_selected.emit(v))
                 self._cards.append(btn)
         elif self.mode == "color":
             size = _card_fit_size(2, gap)
@@ -3134,6 +3559,13 @@ class GomokuGame(QMainWindow):
         # 规则页写它，开局时随 ``RoomConfig`` 发给房间；判据始终在房间的
         # Session 里，这里只用来（a）画禁手标点（b）写日志/面板（c）弹确认框。
         self.game_rules = "free"
+        #: 本局棋盘边长（9 / 13 / 15 / 19）。默认 15×15，用户改过就从
+        #: QSettings 读回来；这一页选的尺寸本身也是会落盘的偏好。
+        #: **LAN 加入方以 ``welcome`` 里的 ``board_size`` 为准**，本地这份
+        #: 只在还没连上时当占位（见 ``_on_room_state``）。
+        self.board_size = _load_board_size()
+        #: 尺寸页选完之后去哪（与 ``_color_next`` / ``_rules_next`` 同一套）。
+        self._size_next = "color"
 
         # AI Worker
         self.ai_worker = None       # M4c 起主流程不再启动；保留字段兼容冒烟脚本
@@ -3223,10 +3655,15 @@ class GomokuGame(QMainWindow):
         self.settings_btn = settings_button()
         self.settings_btn.setParent(self)
         self.settings_btn.clicked.connect(self._open_settings_dialog)
+        # 齿轮当前钉在哪个标题上（见 `_follow_title`）。标题一移动/改尺寸就
+        # 重新贴一次 —— 切页那一瞬的布局还没跑完，只按"切页时算一次"会贴歪。
+        self._gear_anchor = None
 
         # 各页面
         self.loading_screen = None
         self.selection_mode = None
+        self.selection_rules = None
+        self.selection_size = None
         self.selection_color = None
         self.selection_difficulty = None
         self.game_widget = None
@@ -3252,7 +3689,56 @@ class GomokuGame(QMainWindow):
         self.review_list = None
         self.review_board = None
 
+        # 启动时的静默更新检查（见 `_silent_update_check`）。2.5 s 之后才发
+        # 请求：首屏那一秒里网络、字体、棋盘缓存都在忙，插一个 HTTP 请求
+        # 只会让"打开就卡一下"多一个来源。
+        self._update_check = None
+        if getattr(sys, "frozen", False) and updater.install_kind() != "msix":
+            _prefs = _load_update_prefs()
+            if _prefs["on_start"]:
+                QTimer.singleShot(
+                    UPDATE_CHECK_DELAY_MS,
+                    lambda p=_prefs: self._silent_update_check(p))
+
         self._init_loading()
+
+    # ---- 启动时的静默更新检查 ----
+    def _silent_update_check(self, prefs):
+        """启动 2.5 s 后查一次新版本：**只有查到才说话**。
+
+        失败（断网、站点挂了、GitHub 限流）一律不弹任何东西 —— 一个下棋程序
+        在启动时因为"更新服务器连不上"弹框是最不合适的存在感。用户想主动查
+        的话，设置页里那颗按钮随时都在。
+        """
+        if self._update_check is not None:
+            return
+        worker = UpdateCheckWorker(prefs["proxy"], prefs["source"])
+        _track_update_thread(worker)
+        worker.found.connect(self._on_silent_update_found)
+        # 失败路径不接任何槽（静默），但**必须**把这一格清掉 —— 否则下一次
+        # `_silent_update_check` 会一直以为上一次还在跑。`finished` 是 QThread
+        # 自己的信号，成功失败都会发。
+        worker.finished.connect(lambda w=worker: self._finish_silent_update(w))
+        self._update_check = worker
+        worker.start()
+
+    def _finish_silent_update(self, worker):
+        if self._update_check is worker:
+            self._update_check = None
+
+    def _on_silent_update_found(self, release):
+        self._update_check = None
+        if release is None:
+            return
+        if not updater.is_newer(release.tag, updater.VERSION):
+            return
+        answer = QMessageBox.question(
+            self,
+            i18n.t("发现新版本"),
+            i18n.tf("新版本 %s 已经发布，是否现在更新？", release.tag),
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
+        if answer == QMessageBox.Yes:
+            self._open_settings_dialog()
 
     # ------------------------------------------------------------------
     # 会话状态兼容垫片（M1 过渡期）
@@ -3378,7 +3864,7 @@ class GomokuGame(QMainWindow):
         # None 之后醒来 —— 那是 AttributeError，在 Qt 槽里抛就是直接崩。
         self._game_over_timer.stop()
         for attr in ("loading_screen", "selection_mode", "selection_rules",
-                     "selection_color",
+                     "selection_size", "selection_color",
                      "selection_difficulty", "game_widget", "lan_menu",
                      "lan_join", "review_strength",
                      "review_progress", "review_list", "review_board"):
@@ -3392,7 +3878,7 @@ class GomokuGame(QMainWindow):
         # board_widget / game_panel / overlay / lan_wait 是 game_widget 的子控件，
         # 随父一起销毁，不需要（也不能）单独 removeWidget。
         for attr in ("loading_screen", "selection_mode", "selection_rules",
-                     "selection_color",
+                     "selection_size", "selection_color",
                      "selection_difficulty", "game_widget", "board_widget",
                      "game_panel", "game_over_overlay", "_stack", "_game_row",
                      "lan_menu", "lan_join", "lan_wait",
@@ -3433,6 +3919,10 @@ class GomokuGame(QMainWindow):
         if page is None:
             return
         lbl = _page_title_label(page)
+        # 记下锚点：切页当口布局往往还没跑完，这里量到的是临时几何
+        # （复盘棋盘页里标题随后还会往上挪一百多像素，齿轮留在原地就压到
+        # 棋盘上了）。锚住标题之后，它一移动就由 `eventFilter` 再贴一次。
+        self._follow_title(lbl)
         if lbl is None:
             # 没标题的页（当前只有加载页，而它本来就不显示齿轮）：退到页面
             # 右上角，至少不会跑到窗口外。
@@ -3446,6 +3936,38 @@ class GomokuGame(QMainWindow):
             y = tl.y() + (lbl.height() - b.height()) // 2
             b.move(max(0, x), max(0, y))
         b.raise_()
+
+    def _follow_title(self, lbl):
+        """把当前页的主标题记成齿轮的锚点（换页时改挂）。
+
+        齿轮只跟着**窗口** resize 重算，而页面自己的布局是在切页之后才跑完的：
+        复盘棋盘页切过去时标题还在 y≈188（页面没排过版的位置），排版完成之后
+        变成 y≈85 —— 齿轮却留在原处，正好落在棋盘顶边上（用户 2026-11-02 的
+        截图）。盯着标题的 Move/Resize 就能补上这一次。
+        """
+        if lbl is getattr(self, "_gear_anchor", None):
+            return
+        old = getattr(self, "_gear_anchor", None)
+        if old is not None:
+            try:
+                old.removeEventFilter(self)
+            except RuntimeError:
+                # 旧页已经被 `_drop_pages` 销毁；QObject 析构时过滤器自己
+                # 就摘掉了，这里只是清掉悬着的 Python 引用。
+                pass
+        self._gear_anchor = lbl
+        if lbl is not None:
+            lbl.installEventFilter(self)
+
+    def eventFilter(self, obj, ev):
+        """标题挪位/改尺寸 → 重新贴齿轮。
+
+        只认锚点那一个控件：页里其它控件的布局事件不该牵动齿轮。
+        """
+        if obj is getattr(self, "_gear_anchor", None) and ev.type() in (
+                QEvent.Move, QEvent.Resize):
+            self._place_settings_button()
+        return super().eventFilter(obj, ev)
 
     def _update_settings_button(self):
         """按当前页决定齿轮是否显示。
@@ -3657,11 +4179,14 @@ class GomokuGame(QMainWindow):
         else:
             sig, slot = {
                 "mode": (new.mode_selected, self._on_mode_selected),
+                "rules": (new.rules_selected, self._on_rules_selected),
+                "size": (new.size_selected, self._on_size_selected),
                 "color": (new.color_selected, self._on_color_selected),
                 "difficulty": (new.difficulty_selected,
                                self._on_difficulty_selected),
             }[old.mode]
-            attr = {"mode": "selection_mode", "color": "selection_color",
+            attr = {"mode": "selection_mode", "rules": "selection_rules",
+                    "size": "selection_size", "color": "selection_color",
                     "difficulty": "selection_difficulty"}[old.mode]
         sig.connect(slot)
         if getattr(self, attr, None) is old:
@@ -3713,8 +4238,9 @@ class GomokuGame(QMainWindow):
             r, c, stone = last
             self.board_widget.set_last_move(r, c, stone)
         if self.gamerule == 2 and self.winner:
-            self.board_widget.set_win_cells(win_line(self.board, self.winner),
-                                            self.winner)
+            self.board_widget.set_win_cells(
+                win_line(self.board, self.winner, self.board_size),
+                self.winner)
         if overlay_was_up:
             self._show_game_over(record=False)
 
@@ -3761,12 +4287,12 @@ class GomokuGame(QMainWindow):
         """
         self.game_rules = RULE_NAMES[int(rules)]
         nxt = self._rules_next
-        if nxt == "local":
-            self._start_local_game()
-        elif nxt == "lan_menu":
+        if nxt == "lan_menu":
+            # 加入方不该看到尺寸页：房间多大由房主定。房主在"创建房间"之后
+            # 才选尺寸（见 ``_on_lan_create``）。
             self._show_lan_menu()
         else:
-            self._show_color_selection()
+            self._show_size_selection(nxt)
 
     def _show_lan_menu(self):
         """局域网联机的岔路口：创建 / 加入。"""
@@ -3777,9 +4303,34 @@ class GomokuGame(QMainWindow):
         self.lan_menu.back_clicked.connect(self._show_mode_selection)
         self._switch_page(self.lan_menu)
 
+    def _show_size_selection(self, next_step):
+        """显示棋盘尺寸选择。
+
+        ``next_step`` 与规则页同一个语义：``"color"``（挑战 AI，接着走颜色页）、
+        ``"local"``（本地对战，选完直接开局）、``"lan_host"``（开房，接着走
+        颜色页再监听）。加入方永远到不了这一页 —— 房间的尺寸是房主的决定。
+        """
+        self._size_next = next_step
+        self._drop_pages()
+        self.selection_size = SelectionScreen(mode="size")
+        self.selection_size.size_selected.connect(self._on_size_selected)
+        self._switch_page(self.selection_size)
+
+    def _on_size_selected(self, size):
+        """选好尺寸：落盘（下一次开局默认沿用），再按 ``_size_next`` 分流。"""
+        self.board_size = int(size)
+        _save_board_size(self.board_size)
+        nxt = self._size_next
+        if nxt == "local":
+            self._start_local_game()
+        elif nxt == "lan_host":
+            self._show_color_selection(next_step="lan_host")
+        else:
+            self._show_color_selection()
+
     def _on_lan_create(self):
-        """创建房间：先选自己的执子色（复用颜色页），再开监听等待。"""
-        self._show_color_selection(next_step="lan_host")
+        """创建房间：先选棋盘尺寸与执子色，再开监听等待。"""
+        self._show_size_selection("lan_host")
 
     def _open_lan_join(self, error: str = ""):
         """建/重建「加入房间」页（失败后留在原地显示原因）。"""
@@ -3885,7 +4436,24 @@ class GomokuGame(QMainWindow):
         # 禁手那一行把三条禁手点名写全（三三/四四/长连）：日志是事后唯一说得清
         # 现场的东西，而"禁手"两个字本身不含这三条的信息量。
         self.logger.f.write("  规则: %s\n" % _rules_log_text(self.game_rules))
+        # 棋盘尺寸是这一局最硬的一条事实：日志里的坐标、候选表规模、甚至
+        # "为什么这局结束得这么快"都取决于它。旧日志没有这一行，按 19 读。
+        self.logger.f.write("  棋盘: %d×%d\n" % (self.board_size,
+                                                self.board_size))
         self.logger.f.write(f"  难度: {engine.difficulty_name(self.gamekunnan)}\n")
+        # 开局库在这个尺寸上有多厚 —— 这一行是"为什么这局前几手秒落子"的
+        # 唯一静态解释。9×9 与 13×13 的覆盖远低于 15/19，把这件事实写进日志，
+        # 事后就不必靠猜。低档（1–2）与禁手局根本不查这本书，于是不写。
+        if self.game_rules != "ban" and self.gamekunnan >= 3:
+            try:
+                import gomocup_book as _gb
+                _st = _gb.stats(self.board_size)
+                self.logger.f.write(
+                    "  开局库: %d 条线 / %d 项（Gomocup 2026）\n"
+                    % (_st["lines"], _st["entries"]))
+            except Exception:
+                # 日志不该因为一行诊断信息把开局拦下来。
+                pass
         if self.gamekunnan == engine.CUSTOM_LEVEL:
             # 只写"自定义"是不够的 —— 事后翻日志要能回答"这一局到底按什么参数
             # 搜的"，而两份自定义配置的档位名逐字相同。这一行的立意与下面那行
@@ -3919,13 +4487,15 @@ class GomokuGame(QMainWindow):
         # **镜像**：规则真源在房间的 Session 里，本会话只保存由事件回放出来的
         # 状态，供渲染与复盘读取（字段级兼容垫片也指向它）。
         if self.playmode == 1:
-            self.session.configure("pvp", rules=self.game_rules)
+            self.session.configure("pvp", rules=self.game_rules,
+                                   board_size=self.board_size)
             black_spec = SeatSpec("remote")
             white_spec = SeatSpec("remote")
         else:
             human = 1 if self.gamemode == 0 else 2
             self.session.configure("ai", human_stone=human, ai_stone=3 - human,
-                                   rules=self.game_rules)
+                                   rules=self.game_rules,
+                                   board_size=self.board_size)
             if self.gamemode == 0:
                 black_spec, white_spec = SeatSpec("remote"), \
                     SeatSpec("ai", level=self.gamekunnan)
@@ -3966,14 +4536,16 @@ class GomokuGame(QMainWindow):
             # 只是回放出来的镜像。两个席位共用同一个 ``rules`` —— 这就是
             # RoomConfig 的文档串里说的"规则属于房间"。
             room = LocalRoom(black_spec, white_spec,
-                             config=RoomConfig(rules=self.game_rules))
+                             config=RoomConfig(rules=self.game_rules,
+                                               board_size=self.board_size))
             if self.playmode == 1:
                 specs = [("black", 1), ("white", 2)]
             else:
                 seat = "black" if self.session.human_stone == 1 else "white"
                 specs = [(seat, self.session.human_stone)]
             # LocalRoom 默认绑 127.0.0.1，但显式给本机地址，语义更清楚。
-            self._attach_room(room, specs, host="127.0.0.1")
+            self._attach_room(room, specs, host="127.0.0.1",
+                              board_size=self.board_size)
         except Exception as exc:                    # noqa: BLE001
             # 本机 loopback 理论上不会失败；真失败时给出可见的错误并退回模式
             # 选择页，而不是留在"看着能下、点了没反应"的假对局页上。
@@ -3997,20 +4569,23 @@ class GomokuGame(QMainWindow):
         seat = "black" if stone == 1 else "white"
         self._prepare_lan_game("局域网联机（房主，执%s）"
                                % ("黑" if stone == 1 else "白"),
-                               rules=self.game_rules)
+                               rules=self.game_rules,
+                               board_size=self.board_size)
         self.session.human_stone = stone
         if self.logger:
-            # 房主是规则的决定者，这一刻的值就是权威值。
+            # 房主是规则与尺寸的决定者，这一刻的值就是权威值。
             self.logger.f.write("  规则: %s\n"
                                 % _rules_log_text(self.game_rules))
-            self.logger.f.flush()
+            self.logger.flush()
         try:
             room = LocalRoom(SeatSpec("remote"), SeatSpec("remote"),
                              name=LAN_ROOM_NAME, host="0.0.0.0",
                              auto_consent=False,
-                             config=RoomConfig(rules=self.game_rules))
+                             config=RoomConfig(rules=self.game_rules,
+                                               board_size=self.board_size))
             # 同机客户端不能连 0.0.0.0（那是监听地址，不是可连接地址）。
-            self._attach_room(room, [(seat, stone)], host="127.0.0.1")
+            self._attach_room(room, [(seat, stone)], host="127.0.0.1",
+                              board_size=self.board_size)
         except Exception as exc:                    # noqa: BLE001
             print(f"[房间] 创建局域网房间失败: {type(exc).__name__}: {exc}")
             self._close_room()
@@ -4037,10 +4612,13 @@ class GomokuGame(QMainWindow):
             return
 
         self.playmode = 2
+        # 加入方还不知道房间多大：``board_size=None`` 表示"接受房主定的尺寸"。
+        # 真实值随 welcome 回来，``_on_room_state`` 按它校准棋盘（尺寸不同就
+        # 重建那一页 —— 此刻还没落过一子，重建是安全的）。
         self._prepare_lan_game("局域网联机（加入方）")
         try:
             self._attach_room(None, [("auto", None)], host=host, port=port_no,
-                              room_name=LAN_ROOM_NAME)
+                              room_name=LAN_ROOM_NAME, board_size=None)
         except Exception as exc:                    # noqa: BLE001
             self._lan_join_error(_lan_join_error_text(exc))
             return
@@ -4052,6 +4630,9 @@ class GomokuGame(QMainWindow):
                                 % _rules_log_text(self.game_rules))
             self.logger.f.write("  我方执: %s\n"
                                 % ("黑" if self.session.human_stone == 1 else "白"))
+            # 上面那行「棋盘」是连上之前的占位值，这里补一行真实值（房主定的）。
+            self.logger.f.write("  棋盘: %d×%d（房主设定）\n"
+                                % (self.board_size, self.board_size))
             self.logger.f.flush()
         self._update_panel()
 
@@ -4060,7 +4641,7 @@ class GomokuGame(QMainWindow):
         self._close_room()
         self._open_lan_join(error=text)
 
-    def _prepare_lan_game(self, mode_text, rules=None):
+    def _prepare_lan_game(self, mode_text, rules=None, board_size=None):
         """LAN 开房 / 加入共用的开局准备。
 
         与单机 ``_start_game`` 的差别只有日志模式行与席位来源：拆旧局、
@@ -4071,16 +4652,27 @@ class GomokuGame(QMainWindow):
         的口径，真实值要等 welcome 里的 config 回来（``_apply_room_config``）。
         这里先落一个"无禁手"，免得上一局的禁手标点在等握手的那几十毫秒里
         还挂在空盘上。
+
+        ``board_size`` 同理：房主传自己选的那个；**加入方传 None**，先用本地
+        记住的尺寸搭页面当占位，welcome 一到就按房间的尺寸校准（见
+        ``_on_room_state``）。``None`` 在这里意味着"照本地记住的那个来"，
+        不是"19"。
         """
         self._close_room()
         # 规则先定下来再写日志：下面那行「引擎」问的是**本变体**的可执行文件，
         # 两份二进制各自独立存在，问错了会在日志里留下一份与本局无关的路径。
         self.game_rules = rules if rules in RULE_NAMES else "free"
+        if board_size is not None:
+            self.board_size = int(board_size)
         if self.logger:
             self.logger.close()
         self.logger = GameLogger()
         self.logger.f.write(f"  模式: {mode_text}\n")
         self.logger.f.write("  难度: 无（玩家对战）\n")
+        # 加入方这一行是**占位**：真实尺寸等 welcome 回来之后再补一行
+        # （见 ``_on_lan_join_requested``）。
+        self.logger.f.write("  棋盘: %d×%d\n" % (self.board_size,
+                                                self.board_size))
         self.logger.f.write("  引擎: %s\n\n" % (
             engine.binary_path(self.game_rules)
             or "C++ 不可用，将用本地 Python 引擎"))
@@ -4088,7 +4680,8 @@ class GomokuGame(QMainWindow):
 
         # LAN 双方都是 remote 人类席位；规则真源仍在房间的 Session 里，
         # 这里的 session 只是事件回放出来的 UI 镜像（与人机/本地对战一致）。
-        self.session.configure("pvp", rules=self.game_rules)
+        self.session.configure("pvp", rules=self.game_rules,
+                               board_size=self.board_size)
         self.session.reset()
         self.ai_thinking = False
         self.review_records = []
@@ -4125,7 +4718,7 @@ class GomokuGame(QMainWindow):
         self._show_mode_selection()
 
     def _attach_room(self, room, client_specs, *, host=None, port=None,
-                     room_name=None):
+                     room_name=None, board_size=19):
         """把本 UI 接入一个房间（单机 / LAN 共用）。
 
         ``room`` 非 None：本 UI 创建并持有它（拆局时 ``stop()``）；加入
@@ -4136,6 +4729,10 @@ class GomokuGame(QMainWindow):
 
         失败时把已建立的连接连桥一起拆掉，再把异常抛给调用方 —— 单机回
         模式选择页，LAN 留在加入页显示原因。
+
+        ``board_size`` 是我们**期望**的尺寸，随 join 报文上行；传 ``None``
+        表示接受房间的尺寸（LAN 加入方）。无论哪一种，真实尺寸都以 welcome
+        为准。
         """
         if room is None and (host is None or port is None
                              or room_name is None):
@@ -4149,7 +4746,8 @@ class GomokuGame(QMainWindow):
                 client = RoomClient(on_event=bridge.event.emit)
                 welcome = client.connect(host or room.host,
                                          port or room.port,
-                                         room_name or room.name, seat)
+                                         room_name or room.name, seat,
+                                         board_size=board_size)
                 actual = 1 if welcome.get("seat", seat) == "black" else 2
                 self._room_clients[actual] = client
                 if stone is None:
@@ -4176,7 +4774,7 @@ class GomokuGame(QMainWindow):
         self.game_widget.setObjectName("screenRoot")
         self.game_widget.setAttribute(Qt.WA_StyledBackground, True)
 
-        self.board_widget = BoardWidget()
+        self.board_widget = BoardWidget(self.board_size)
         self.board_widget.set_board(self.board)
         self.board_widget.mousePressEvent = self._on_board_click
 
@@ -4323,10 +4921,34 @@ class GomokuGame(QMainWindow):
             self._move_in_flight = False
             print(f"[房间] {ev.get('code')}: {ev.get('message')}")
 
+    def _apply_board_size(self, n: int) -> None:
+        """把对局页切到 ``n×n``（只在尺寸真的变了时动手）。
+
+        唯一会触发的场景是 **LAN 加入方**：本地那份占位尺寸与房间不同。那一刻
+        手里只有 welcome —— 盘上还没有子、没有历史、没有复盘快照，所以直接按
+        新尺寸重建页面是安全的。真正的对局中尺寸永远不会变（``RoomConfig``
+        在房间建起来时就定死了）。
+        """
+        if self.board_widget is not None and self.board_widget.board_size == n:
+            self.board_size = n
+            return
+        self.board_size = int(n)
+        self.session.board_size = int(n)
+        self.session.reset()        # 换尺寸 = 换一张空盘（此刻本来就是空的）
+        self._rebuild_game_page()
+        if self._room_config:
+            # 新面板是刚造的，按钮禁用态/剩余悔棋次数都得重新落一遍。
+            self._apply_room_config()
+
     def _on_room_state(self, ev):
         """welcome / state：全量同步（入座、开局、每次落子后、悔棋后）。"""
         if self.board_widget is None or self.game_panel is None:
             return                  # 页面已拆：丢掉迟到的排队事件
+
+        # 房间的尺寸是权威值。单机/房主那边一定与本地一致（本地就是它设的），
+        # 只有 LAN 加入方可能不同 —— 他连上之前根本不知道房间多大。
+        if "board_size" in ev:
+            self._apply_board_size(int(ev["board_size"]))
 
         # 房主还在等待屏上时，这个 state 说明对手已入座、对局开始了。
         self._hide_lan_wait()
@@ -4508,7 +5130,7 @@ class GomokuGame(QMainWindow):
             # 需要看到的恰恰是"黑方这一串六颗子就是那一手输掉的地方"。
             # 三三 / 四四 这类没有一条线可标的禁手，两个口径都返回空表，不必特判。
             line_owner = (3 - winner) if self._game_reason == "forbidden" else winner
-            cells = win_line(self.board, line_owner)
+            cells = win_line(self.board, line_owner, self.board_size)
             self.board_widget.set_win_cells(cells, line_owner)
             self._finish_win_or_lose()
         else:
@@ -4648,7 +5270,9 @@ class GomokuGame(QMainWindow):
         else:
             # 求 player 视角再取负 = AI 视角（evaluate 严格零和，见 test_eval）。
             player = 1 if self.gamemode == 0 else 2
-            static = -evaluate(Board.from_array(self.board), player)
+            # 尺寸取自棋盘形状（见 ``engine.static_eval``：直接调模块级
+            # ``evaluate`` 会按上一个尺寸的表算，分数静默偏掉）。
+            static = -engine.static_eval(self.board, player, self.game_rules)
             self.game_panel.push_score(static, charts.STATIC)
             self.game_panel.set_readout("")
 
@@ -5189,7 +5813,29 @@ def _app_icon() -> QIcon:
     return QIcon()
 
 
+#: 本程序认识的命令行参数。Qt 自己也解析 ``sys.argv``（虽然本项目没用它任何
+#: 一个），自己的参数**必须先摘掉**再交给 ``QApplication`` —— 留着会被当成
+#: 未知选项，在部分平台上直接拒绝启动。
+_CLI_FLAGS = ("--debug",)
+
+
+def _consume_cli_flags(argv: list[str]) -> list[str]:
+    """摘掉本程序自己的参数并生效，返回剩下的 argv。
+
+    ``--debug`` 打开对局日志（写 exe 同目录），效果与 ``GOMOKUAI_LOG=1`` 相同。
+    发布产物从 v4.4.0 起只有 play 一种，这是排障时唯一的开关。
+    """
+    rest = []
+    for arg in argv:
+        if arg == "--debug":
+            gamelog.request_debug()
+        else:
+            rest.append(arg)
+    return rest
+
+
 def main():
+    sys.argv = _consume_cli_flags(list(sys.argv))
     _fix_qt_plugin_path()
 
     # 高 DPI 属性**必须在 QApplication 构造之前**设置，构造之后设无效。

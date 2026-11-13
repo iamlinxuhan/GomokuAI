@@ -17,6 +17,7 @@
 #include "constants.h"
 #include "json_util.h"
 #include "opening.h"
+#include "opening_book.h"
 #include "search.h"
 #include "tables.h"
 #include "ban.h"
@@ -272,6 +273,22 @@ SearchConfig readConfig(const json::Value& req) {
         static_cast<int>(clampI(static_cast<int64_t>(num("lmr", 0)), 0, 1));
     cfg.extend =
         static_cast<int>(clampI(static_cast<int64_t>(num("extend", 0)), 0, 1));
+    // 开局书：默认 0 → 不发这个键的老客户端行为一个 bit 都没变。
+    cfg.useBook =
+        static_cast<int>(clampI(static_cast<int64_t>(num("book", 0)), 0, 1));
+    // DFPN 证明搜索：**默认 0 = 不起线程**，与 `book` 同一个兼容护栏。
+    cfg.proofMode = static_cast<int>(
+        clampI(static_cast<int64_t>(num("proof_mode", 0)), 0, 2));
+    cfg.proofTime = clampD(num("proof_time", 1.0), 0.0, 3600.0);
+    cfg.proofNodes = clampI(static_cast<int64_t>(num("proof_nodes",
+                                                     double(1000000))),
+                            0, int64_t(1) << 32);
+#if GOMOKU_BAN
+    // 官方开局线是按无禁手口径公布的，套到 RIF 禁手上可能让黑方走出禁手。
+    // 禁手二进制**忽略**这个开关，与 Python 的 `engine_ban.USE_OPENING_BOOK`
+    // 同一条理由：不让一张没按本规则验证过的表决定落子。
+    cfg.useBook = 0;
+#endif
     return cfg;
 }
 
@@ -498,6 +515,11 @@ void readerLoop(Shared& sh) {
                 w.i32("win_score", WIN_SCORE);
                 w.i32("static_max", STATIC_MAX);
                 w.i32("vcf_node_cap", static_cast<int>(VCF_NODE_CAP));
+                // 开局书在这个尺寸上的覆盖量。0 = 这本书在本盘上没有条目
+                // （9×9 只会保住贴盘心的少数几条）。让"书薄不薄"可见，
+                // 而不是让用户从"为什么这手没有秒下"里猜。
+                w.i32("book_entries", static_cast<int>(openingBookSize()));
+                w.i32("book_lines", openingBookLines());
                 w.close();
                 sendLine(sh, out);
                 continue;

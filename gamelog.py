@@ -49,6 +49,11 @@ BOARD_SIZE = 19
 # ``packaging/build_in_container.sh`` 与 workflow 的 windows job）。
 LOG_DIR_ENV = "GOMOKU_AI_LOGDIR"
 
+#: 运行期的调试开关。**v4.4.0 起不再发布 debug 版裸可执行文件**（Linux 改发
+#: AppImage、Windows 只留安装版与便携版），排障时用 ``--debug`` 参数或这个
+#: 环境变量临时打开写日志。环境变量优先，因为它对双击启动的用户也管用。
+LOG_ENV = "GOMOKUAI_LOG"
+
 try:
     from _build_flavor import FLAVOR
 except ImportError:       # 源码运行，或打包时漏了注入
@@ -56,6 +61,18 @@ except ImportError:       # 源码运行，或打包时漏了注入
     # 堆日志；默认 play 最多是"debug 版没写出日志"，而那条另有构建期断言兜住。
     # 这个值只在下面 frozen 分支里被读，源码运行的路径不经过它。
     FLAVOR = "play"
+
+
+def _env_wants_debug() -> bool:
+    """``GOMOKUAI_LOG`` 是不是要求写日志。只认明确的"真"，不认任意非空串。"""
+    return os.environ.get(LOG_ENV, "").strip().lower() in (
+        "1", "true", "yes", "on", "debug")
+
+
+def request_debug() -> None:
+    """把日志变体切到 debug。``main.py`` 的 ``--debug`` 参数走这里。"""
+    global FLAVOR
+    FLAVOR = "debug"
 
 
 def _writable_dir(path: str) -> bool:
@@ -85,7 +102,8 @@ def _resolve_log_dir() -> str | None:
     if getattr(sys, "frozen", False):
         # 只有 debug 变体写盘（理由见上面那段）。play 与安装包装出来的那份
         # 都走这条 `return None`，与 Linux 冻结运行时历来的行为一致。
-        if FLAVOR != "debug":
+        # 环境变量是运行期的临时翻转：发布产物只有 play 一种，排障时靠它。
+        if FLAVOR != "debug" and not _env_wants_debug():
             return None
         # 即便 debug，也要先探一下那个目录确实可写 —— 便携版可能被拖进
         # ``C:\Program Files`` 或 ``/opt`` 之类的地方，探不过就仍退化成不写，
@@ -197,6 +215,8 @@ class GameLogger:
         return f"{col_letter(c)}{r + 1}"
 
     def log_move(self, step, player, r, c, reason="", detail=""):
+        if not self._writable():
+            return
         player_name = "黑*" if player == 1 else "白O"
         coord = self.coord_to_sgf(r, c)
         self.f.write(
@@ -212,6 +232,8 @@ class GameLogger:
         AI落子 - decision_info 是字典:
           'reason'/'depth'/'actual_depth'/'best_val'/'time_ms'/'threat_detail'/'top_moves'
         """
+        if not self._writable():
+            return
         reason = decision_info.get('reason', '未知')
         dp = []
         if 'best_val' in decision_info:
@@ -229,15 +251,32 @@ class GameLogger:
             self.f.write(f"     候选走法: {decision_info['top_moves']}\n")
             self.f.flush()
 
+    def _writable(self) -> bool:
+        """日志是否还能写。
+
+        重开局、退出、进复盘都会 ``close()`` 日志，而**终局遮罩是延时弹出的**
+        （``GAME_OVER_DELAY_MS``）：窗口在那之前关掉，那个定时器照样会醒来并
+        调用 ``log_result``。对已关闭的文件写一次就是一条 ``ValueError``
+        堆栈，所以迟到的回调全部静默丢弃。
+        """
+        return not getattr(self.f, "closed", True)
+
     def log_threat_analysis(self, step, text):
+        if not self._writable():
+            return
         self.f.write(f"     [威胁分析@{step}] {text}\n")
         self.f.flush()
 
     def log_board_state(self, step, board, note=""):
+        if not self._writable():
+            return
         self.f.write(f"\n  --- 棋盘状态 @{step} {note} ---\n")
         stones = []
-        for r in range(BOARD_SIZE):
-            for c in range(BOARD_SIZE):
+        # 边长取自**这张盘**：本模块的 ``BOARD_SIZE`` 是 19 路的历史常量，
+        # 小盘上按它遍历会读越界（ndarray 直接抛 IndexError）。
+        n = int(board.shape[0]) if hasattr(board, "shape") else len(board)
+        for r in range(n):
+            for c in range(n):
                 if board[r][c] != 0:
                     p = "*" if board[r][c] == 1 else "O"
                     stones.append(f"{p}{self.coord_to_sgf(r,c)}")
@@ -245,6 +284,8 @@ class GameLogger:
         self.f.flush()
 
     def log_result(self, winner, total_steps, move_count):
+        if not self._writable():
+            return
         self.f.write("\n" + "-" * 75 + "\n")
         if winner == "ai":
             result = "[AI 获胜]"
@@ -254,6 +295,14 @@ class GameLogger:
             result = "[平局]"
         self.f.write(f"  结果: {result}  |  总回合: {total_steps}  |  总落子: {move_count}\n")
         self.f.write("=" * 70 + "\n")
+
+    def flush(self):
+        """把缓冲刷到磁盘（开房、开局等"另一个进程/窗口要读日志"的时刻调用）。"""
+        if hasattr(self, 'f') and self.f and not self.f.closed:
+            try:
+                self.f.flush()
+            except Exception:
+                pass
 
     def close(self):
         if hasattr(self, 'f') and self.f and not self.f.closed:

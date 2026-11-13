@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-from session import BOARD_SIZE, Session
+from session import Session
 
 
 @dataclass
@@ -37,19 +37,24 @@ class Match:
     """
 
     def __init__(self, black, white, *, start_moves=(), cancel=None,
-                 max_moves: int = BOARD_SIZE * BOARD_SIZE, rules: str = "free"):
+                 max_moves: int | None = None, rules: str = "free",
+                 board_size: int = 19):
         self.black = black
         self.white = white
         self.cancel = cancel
-        self.max_moves = int(max_moves)
         self.session = Session()
+        # ``max_moves`` 缺省 = 整盘下满。**必须从本局的尺寸算**，不能像从前那
+        # 样在 def 行里写 ``BOARD_SIZE * BOARD_SIZE`` —— 那是 import 时定死的
+        # 19×19，小盘上等于永不触及上限。
+        self.max_moves = int(max_moves) if max_moves is not None \
+            else int(board_size) * int(board_size)
         # 无人类席位：不记复盘快照、赢了也不区分"你/对方"——但 winner 仍然
         # 给出子色。模式语义只在 UI 层有差别，规则层公用。
         #
         # ``rules`` 只定**判**的口径。两位玩家按什么规则**算**，由各自的
         # ``PlayerSpec.variant`` 决定 —— 基准要能跑"禁手引擎 vs 无禁手引擎"
         # 这类不对称对局，所以这两件事不能合成一个参数。
-        self.session.configure("pvp", rules=rules)
+        self.session.configure("pvp", rules=rules, board_size=board_size)
         self.session.reset()
         for r, c, stone in start_moves:
             if self.session.apply_stone(r, c, int(stone)) is None:

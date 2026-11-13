@@ -25,7 +25,7 @@
     ./packaging/msix/build_msix.ps1 `
         -IdentityName '12345iamlinxuhan.GomokuAI' `
         -IdentityPublisher 'CN=1A2B3C4D-0000-0000-0000-000000000000' `
-        -AppVersion 4.3.1
+        -AppVersion 4.4.0
 #>
 [CmdletBinding()]
 param(

@@ -3,11 +3,16 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <thread>
 #include <utility>
 
 #if GOMOKU_BAN
 #include "ban.h"
 #endif
+
+#include "dfpn.h"
+#include "opening_book.h"
 
 namespace gomoku {
 namespace {
@@ -890,6 +895,27 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
         Board bd = Board::fromArray(board);
 
         *info = Info();
+
+        // ---- Gomocup 开局书（只在根节点，只在 compute） ----
+        //
+        // `outRoot != nullptr` 是 analyze / 复盘：那里要的是逐候选分值，
+        // 书给不出，所以永不查库。命中时与 Python 镜像同样报 score=0、
+        // depth/nodes 保持 0 —— 快照与日志都能解释"为什么瞬间落子"。
+        //
+        // 必须在候选表与 VCF **之前**：命中就是确定结论，连 VCF 都不必跑。
+        if (cfg.useBook != 0 && outRoot == nullptr && bd.stoneCount() > 0) {
+            const int mv = openingBookLookup(
+                bd.hash ^ (me == 1 ? 0ULL : TT_SALT_W));
+            if (mv >= 0 && bd.isEmpty(mv)) {
+                info->reason = "开局库";
+                info->bestVal = 0;
+                info->actualDepth = 0;
+                deadline_ = 0.0;
+                cancel_ = nullptr;
+                return mv;
+            }
+        }
+
         int cand[CELLS + 1];
         int ncand = 0;
         bd.candidates(cand, &ncand);
@@ -968,6 +994,46 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
                 info->vcfState = VCF_EXHAUSTED;
                 timedOut_ = false;      // 交给迭代循环自己处理时间
             }
+        }
+
+        // ---- DFPN 证明搜索（与主搜索并行） ----
+        //
+        // 独立线程、独立棋盘与 arena，只共享只读的根局面与取消位：TT、history、
+        // killer 一概不共享，所以它**不会**改变主搜索的任何一步。结论只在
+        // 主搜索没找到更短的杀时覆盖最终着法（见下面的应用处）。
+        //
+        // 三条闸门缺一不可：`outRoot == nullptr`（复盘要逐候选分值）、
+        // 还没有 VCF 证明的杀（那已经是可证结论，不必再证一次）、至少两个
+        // 核（单核上抢主搜索的核只会让它更浅）。
+        ProofResult proofRes{PROOF_UNKNOWN, -1, 0, 0};
+        std::atomic<int> proofDone{0};
+        std::atomic<bool> proofCancel{false};
+        std::thread proofThread;
+        struct ProofJoiner {
+            std::thread* t;
+            std::atomic<bool>* flag;
+            ~ProofJoiner() {
+                if (t->joinable()) {
+                    flag->store(true);
+                    t->join();
+                }
+            }
+        } proofJoiner{&proofThread, &proofCancel};
+
+        if (cfg.proofMode != 0 && outRoot == nullptr && !haveVcfWin &&
+            std::thread::hardware_concurrency() >= 2u) {
+            DfpnConfig pc;
+            pc.mode = cfg.proofMode;
+            pc.nodeCap = cfg.proofNodes;
+            const double remain = deadline_ - nowSec();
+            pc.timeLimit = std::max(0.02, std::min(cfg.proofTime,
+                                                  remain * 0.5));
+            const Board proofRoot = Board::fromArray(board);
+            proofThread = std::thread([&proofRes, &proofDone, &proofCancel,
+                                       proofRoot, me, pc]() {
+                proofRes = dfpnSearch(proofRoot, me, pc, &proofCancel);
+                proofDone.store(1, std::memory_order_release);
+            });
         }
 
         const bool biasOn = cfg.biasAttack != 0.0 || cfg.biasDefence != 0.0;
@@ -1088,6 +1154,12 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
                 if (val > 0) break;
                 if (depth >= escapeTarget_) break;
             }
+            // DFPN 已经证出杀棋：这一轮迭代是完整的，直接收工。结论在下面
+            // 统一应用（只换更快的杀），这里只负责不再白花时间。
+            if (proofDone.load(std::memory_order_acquire) != 0 &&
+                proofRes.state == PROOF_WIN) {
+                break;
+            }
         }
 
         // 复盘要的候选表：**最后一轮跑完的那张**。跑不完的一轮分值只覆盖了
@@ -1113,6 +1185,48 @@ int Engine::think(const uint8_t* board, int me, const SearchConfig& cfg,
             // 搜索最终选的正是 VCF 算出来的那个挡点。"挡点"是 VCF 证明的，
             // 分值仍是搜索给的 —— reason 只说走法的来路，不说分值的来路。
             info->reason = "连续冲四防守(VCF)";
+        }
+
+        // ---- DFPN 的结论 ----
+        //
+        // 线程在 `think` 返回前 join（取消位一置它就在几千个节点内退出）。
+        // **只换更快的那条杀**：同分说明主搜索或 VCF 已经走到同样深处的可证
+        // 结论，换过去只会让日志里的来路变来变去；更慢的证明没有理由覆盖。
+        //
+        // **不立刻取消**：主搜索经常在几毫秒内就收工（迭代加深见好就收），而
+        // 证明线程那时可能才刚被调度起来 —— 一置取消位就等于白起这条线程。
+        // 证明线程有自己的墙钟上限（≤ 主预算的一半），所以这里等它自然收尾；
+        // 调用方取消时立刻置位，取消的响应速度不能被证明搜索拖住。
+        if (proofThread.joinable()) {
+            while (proofDone.load(std::memory_order_acquire) == 0 &&
+                   nowSec() < deadline_ &&
+                   !(cancel_ != nullptr &&
+                     cancel_->load(std::memory_order_relaxed))) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            proofCancel.store(true);
+            proofThread.join();
+        }
+        // 证明搜索的诊断日志走 **stderr**，不进 `info`：`info` 是跨进程契约，
+        // `nodes` 也只统计主搜索，混入 DFPN 的节点数会让"两个引擎的 info 相等"
+        // 这类比较失去意义（见 search.h 的 `Info`）。`cfg.proofMode == 0` 时
+        // 一个字节都不写 —— 生产默认就是这条路。
+        if (cfg.proofMode != 0 && proofDone.load(std::memory_order_acquire) != 0) {
+            const char* st = proofRes.state == PROOF_WIN ? "WIN"
+                           : proofRes.state == PROOF_NO_WIN ? "NO_WIN" : "UNKNOWN";
+            std::fprintf(stderr, "[dfpn] mode=%d state=%s move=%d dist=%d nodes=%lld\n",
+                         cfg.proofMode, st, proofRes.move, proofRes.dist,
+                         static_cast<long long>(proofRes.nodes));
+        }
+        if (proofDone.load(std::memory_order_acquire) != 0 &&
+            proofRes.state == PROOF_WIN &&
+            std::find(cand, cand + ncand, proofRes.move) != cand + ncand) {
+            const int32_t proofVal = WIN_SCORE - (proofRes.dist - 1);
+            if (proofVal > bestVal) {
+                bestMove = proofRes.move;
+                bestVal = proofVal;
+                info->reason = "DFPN证明";
+            }
         }
 
         if (biasOn && !rootVals.empty() && !isMate(bestVal)) {

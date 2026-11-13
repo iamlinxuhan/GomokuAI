@@ -47,6 +47,9 @@ class _DummyLogger:
     def close(self):
         self.f.close()
 
+    def flush(self):
+        pass
+
     def log_human(self, *a, **k):
         pass
 
@@ -212,6 +215,7 @@ def test_local_win_offers_review_with_the_full_level_table(monkeypatch, qapp):
     try:
         win._on_mode_selected(1)
         win._on_rules_selected(0)
+        win._on_size_selected(19)        # 规则页之后是尺寸页（本轮新增）
         assert _pump_until(qapp, lambda: win.game_panel is not None
                            and win._room is not None), "本地对战没有起来"
 

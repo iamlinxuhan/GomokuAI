@@ -18,21 +18,28 @@
 namespace gomoku {
 
 // ==================== 棋盘 ====================
-constexpr int BOARD_SIZE = 19;
-constexpr int CELLS = BOARD_SIZE * BOARD_SIZE;                  // 361
-constexpr int CENTER_IDX = (BOARD_SIZE / 2) * BOARD_SIZE + BOARD_SIZE / 2;  // 180
+// 尺寸是**编译期常量**：同一份源码按尺寸分别编译（见 CMakeLists.txt）。
+// 默认 19，保持旧二进制、旧协议与旧日志逐字节不变。
+#ifndef GOMOKU_BOARD_SIZE
+#define GOMOKU_BOARD_SIZE 19
+#endif
+constexpr int BOARD_SIZE = GOMOKU_BOARD_SIZE;
+static_assert(BOARD_SIZE % 2 == 1 && BOARD_SIZE >= 9 && BOARD_SIZE <= 19,
+              "棋盘尺寸必须是 9..19 的奇数");
+constexpr int CELLS = BOARD_SIZE * BOARD_SIZE;
+constexpr int CENTER_IDX = (BOARD_SIZE / 2) * BOARD_SIZE + BOARD_SIZE / 2;
 
 // 四个方向 (dr, dc) 及其在线性索引上的步长：
-//   0 横 → 1     1 竖 → 19     2 撇 \ → 20     3 捺 / → 18
+//   0 横 → 1     1 竖 → B     2 撇 \ → B+1     3 捺 / → B-1
 constexpr int DIRS[4][2] = {{0, 1}, {1, 0}, {1, 1}, {1, -1}};
 constexpr int DIR_STEPS[4] = {1, BOARD_SIZE, BOARD_SIZE + 1, BOARD_SIZE - 1};
 
-// 112 条线 = 19 横 + 19 竖 + 37 撇 + 37 捺
-constexpr int N_LINES = 112;
+// 6B-2 条线 = B 横 + B 竖 + (2B-1) 撇 + (2B-1) 捺
+constexpr int N_LINES = 6 * BOARD_SIZE - 2;
 
 // 段两侧各留的空格数。**取 4 是为了正确性，不是调优参数** —— 见
 // engine_local._PAD 的长注释：含 ≥2 颗该方子的 5 连窗口必然落在
-// [首子-4, 末子+4] 内，所以"只在小段上算窗口"与"在全 19 格线上算"结论一致。
+// [首子-4, 末子+4] 内，所以"只在小段上算窗口"与"在全 B 格线上算"结论一致。
 constexpr int PAD = 4;
 
 // ==================== 棋型等级 ====================

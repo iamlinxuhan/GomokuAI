@@ -57,6 +57,10 @@ import i18n  # noqa: E402
 import theme  # noqa: E402
 import main as M  # noqa: E402
 
+#: 本轮跑哪一张盘（``--size``）。默认 19：既有断言里的坐标与像素尺寸都是按
+#: 19 写的，别的尺寸由 ``tools/ui_e2e.py`` 的矩阵覆盖。
+_SIZE = 19
+
 # 兜底上限：取消走协作轮询（实测 10ms 量级就返回），这个值只用来在
 # "取消路径整个失灵、只能等满超时"时把测试从挂死里救出来。
 CANCEL_SAFETY_S = 10.0
@@ -195,6 +199,19 @@ def pick_empty_near_center(board):
 
 
 # ------------------------------------------------------------------ 检查项
+
+def choose_size(w, app, n=None):
+    """规则页之后、颜色页之前的那一页：选尺寸再继续。
+
+    ``--size`` 决定跑哪一张盘；未指定时沿用 19（旧断言里的坐标都是按 19
+    写的）。这里同时断言尺寸页真的出现在规则页之后 —— 它是本轮新增的一页，
+    跳过它会让后面每一步都落到"还是选择页"的状态上。
+    """
+    n = _SIZE if n is None else n
+    check(w.selection_size is not None, "规则页之后是尺寸页")
+    w._on_size_selected(n)
+    pump(40, app)
+
 
 def do_startup(app):
     """构造窗口并走完选择流程，进入对局界面。"""
@@ -542,16 +559,20 @@ def do_local_battle(app):
     check(w.selection_color is None, "规则页上没有同时建出颜色页")
     w._on_rules_selected(0)              # 0 = 无禁手
     pump(120, app)
+    choose_size(w, app)
     check(w.playmode == 1, "本地对战的 playmode=1")
     check(w.gamemode == 0, "本地对战固定黑先（gamemode=0）")
     check(w.gamemode == 0 and int(np.count_nonzero(w.board)) == 0,
           "本地对战开局不留 AI 先手子")
     check(w.ai_worker is None, "本地对战不起 AI 线程")
 
-    # 黑下 9 行 14..18，白下 0 行 0..3 —— 白永远挡不到黑那条线。
-    seq = [((9, 14), 1), ((0, 0), 2), ((9, 15), 1), ((0, 1), 2),
-           ((9, 16), 1), ((0, 2), 2), ((9, 17), 1), ((0, 3), 2),
-           ((9, 18), 1)]
+    # 黑在中线连成五，白在最上一行陪着走 —— 白永远挡不到黑那条线。
+    # 坐标按本局尺寸现算，9/13/15/19 都能跑（``--size``）。
+    n = w.board_size
+    m = n // 2
+    seq = [((m, m - 2), 1), ((0, 0), 2), ((m, m - 1), 1), ((0, 1), 2),
+           ((m, m), 1), ((0, 2), 2), ((m, m + 1), 1), ((0, 3), 2),
+           ((m, m + 2), 1)]
     ok = True
     for i, ((r, c), stone) in enumerate(seq[:8]):
         # M4c 起落子经房间回显，点击后不能再立即断言 —— 等目标格出现该色。
@@ -787,6 +808,7 @@ def do_review(app):
     check(w.selection_rules is not None, "挑战AI 也先过规则页")
     w._on_rules_selected(0)
     pump(40, app)
+    choose_size(w, app)
     check(w.selection_color is not None, "挑战AI 仍走原来的颜色页")
     w._on_color_selected(0)
     pump(40, app)
@@ -935,6 +957,12 @@ def do_review(app):
         w._on_review_record_selected(rated[0])
         pump(60, app)
         if check(w.review_board is not None, "点「棋局显示」后进入复盘棋盘"):
+            # 这一页的棋盘几乎占满整页，齿轮贴歪一点就压在棋盘上（用户
+            # 2026-11-02 的截图：齿轮浮在棋盘顶边）。切页时布局还没跑完，
+            # 齿轮必须跟着标题的后续 Move 重贴（`_follow_title`）。
+            check(_gear_is_right_of_title(w),
+                  "复盘棋盘页上齿轮贴在「棋局显示」右边",
+                  f"{_gear_rect(w)} / 标题 {_title_rect(w)}")
             rb = w.review_board
             bw = rb.board_widget
             rec = w.review_records[rated[0]]
@@ -1017,6 +1045,7 @@ def do_review_finish(app):
     pump(40, app)
     w._on_rules_selected(0)
     pump(40, app)
+    choose_size(w, app)
     w._on_color_selected(0)
     pump(40, app)
     w._on_difficulty_selected(1)
@@ -1069,6 +1098,7 @@ def do_review_cancel(app):
     pump(40, app)
     w._on_rules_selected(0)
     pump(40, app)
+    choose_size(w, app)
     w._on_color_selected(0)
     pump(40, app)
     w._on_difficulty_selected(1)
@@ -1170,9 +1200,10 @@ def do_settings(app):
           "弹窗列出全部字号档位", str([t for t in texts if t in labels]))
 
     # 语言已是下拉框（不再往 QPushButton 里掺可勾选按钮），这里问的就是
-    # "字号档位里只有一个被勾中"。
+    # "字号档位里只有一个被勾中"。**只看字号那一排**：v4.4.0 的更新卡片
+    # 自带可勾选的更新源与「启动时自动检查」开关，把它们算进来是误报。
     checked = [b.text() for b in dlg.findChildren(QPushButton)
-               if b.isChecked()]
+               if b.isChecked() and b.text() in labels]
     check(checked == [theme.scale_label(theme.current_scale())],
           "当前档位是唯一被勾选的那个", str(checked))
     combo = dlg.language_row.combo
@@ -1209,6 +1240,10 @@ def do_settings(app):
     w.selection_mode.mode_selected.emit(0)          # 挑战 AI
     pump(40, app)
     w.selection_rules.rules_selected.emit(0)        # 无禁手
+    pump(40, app)
+    if not check(w.selection_size is not None, "设置用例：进入尺寸页"):
+        return
+    w.selection_size.size_selected.emit(_SIZE)
     pump(40, app)
     w.selection_color.color_selected.emit(0)        # 执黑
     pump(40, app)
@@ -1313,6 +1348,10 @@ def do_custom_difficulty(app):
     w.selection_mode.mode_selected.emit(0)          # 挑战 AI
     pump(40, app)
     w.selection_rules.rules_selected.emit(0)        # 无禁手
+    pump(40, app)
+    if not check(w.selection_size is not None, "自定义用例：进入尺寸页"):
+        return
+    w.selection_size.size_selected.emit(_SIZE)
     pump(40, app)
     w.selection_color.color_selected.emit(0)        # 执黑
     pump(40, app)
@@ -1423,7 +1462,12 @@ def do_chinese_path(app):
 def main():
     ap = argparse.ArgumentParser(description="无头 GUI 冒烟测试")
     ap.add_argument("--keep", action="store_true", help="保留临时日志目录")
+    ap.add_argument("--size", type=int, default=19, choices=[9, 13, 15, 19],
+                    help="跑哪一张盘（默认 19，旧断言按 19 写）")
     args = ap.parse_args()
+
+    global _SIZE
+    _SIZE = args.size
 
     M._fix_qt_plugin_path()
     app = QApplication(sys.argv[:1])
@@ -1434,6 +1478,10 @@ def main():
     i18n.set_system_locale("zh_CN")
     i18n.set_language(i18n.DEFAULT)
     M._load_language = lambda: None
+    # 同理不继承开发者存着的棋盘尺寸：这里跑的就是 ``--size`` 指定的那一张。
+    # 跑完也不落盘 —— 冒烟测试不该改开发者下一次开局用的尺寸。
+    M._load_board_size = lambda: _SIZE
+    M._save_board_size = lambda n: None
     app.setStyle("Fusion")
 
     log_dir = tempfile.mkdtemp(prefix="gomoku_smoke_")

@@ -5,9 +5,14 @@
 #   ./build/gomoku_engine --selftest
 #   ./build/gomoku_engine_ban --selftest        # RIF 禁手版（同一个源，加宏）
 #
-# 产物 gomoku_engine 是一个**本地 TCP 服务端**，Python 侧的 engine.py 会自动
-# 拉起它并显式传 --port（见 config.py 的 PORT_POOL）。手工跑时不给 --port 才
-# 落到下面这个默认值；应用本身从不使用它。
+# **棋盘尺寸是编译期常量**：同一份源码按 19/15/13/9 各编译一份，共 8 个
+# target（每个尺寸 free + ban）。19 保持旧名 gomoku_engine / gomoku_engine_ban，
+# 其余是 gomoku_engine_15 / gomoku_engine_15_ban 之类。Python 侧的
+# config.binary_name(variant, size) 按尺寸找对应文件。
+#
+# 产物是一个**本地 TCP 服务端**，Python 侧的 engine.py 会自动拉起它并显式传
+# --port（见 config.py 的 PORT_POOL）。手工跑时不给 --port 才落到默认值；
+# 应用本身从不使用它。
 #
 # gomoku_engine_ban 是**禁手版**：与 gomoku_engine **同一份源码**，仅多了
 # `-DGOMOKU_BAN=1`。两份源码不许分叉（`cpp/src/zobrist_table.inc` 也是共用的
@@ -51,7 +56,9 @@ set(GOMOKU_CORE_SOURCES
   src/board.cpp
   src/evaluate.cpp
   src/search.cpp
+  src/dfpn.cpp
   src/opening.cpp
+  src/opening_book.cpp
   src/json_util.cpp
   src/tcp_server.cpp
 )
@@ -96,11 +103,34 @@ function(gomoku_configure_target tgt)
   )
 endfunction()
 
-# --- free 版（无禁手） ---
-add_executable(gomoku_engine ${GOMOKU_CORE_SOURCES})
-gomoku_configure_target(gomoku_engine)
+# --- 8 个 target：19/15/13/9 × free/ban ---
+#
+# 19 保持旧名（旧脚本、旧包、旧环境变量都指着它），非 19 带尺寸后缀。
+# 所有 target 共用同一份源与同一套警告/自检，只有宏不同。
+function(gomoku_add_engine size ban)
+  if(ban)
+    if(size EQUAL 19)
+      set(tgt gomoku_engine_ban)
+    else()
+      set(tgt gomoku_engine_${size}_ban)
+    endif()
+  else()
+    if(size EQUAL 19)
+      set(tgt gomoku_engine)
+    else()
+      set(tgt gomoku_engine_${size})
+    endif()
+  endif()
 
-# --- ban 版（RIF 禁手）：同一份源，只多一个宏 ---
-add_executable(gomoku_engine_ban ${GOMOKU_CORE_SOURCES})
-target_compile_definitions(gomoku_engine_ban PRIVATE GOMOKU_BAN=1)
-gomoku_configure_target(gomoku_engine_ban)
+  add_executable(${tgt} ${GOMOKU_CORE_SOURCES})
+  target_compile_definitions(${tgt} PRIVATE GOMOKU_BOARD_SIZE=${size})
+  if(ban)
+    target_compile_definitions(${tgt} PRIVATE GOMOKU_BAN=1)
+  endif()
+  gomoku_configure_target(${tgt})
+endfunction()
+
+foreach(size 19 15 13 9)
+  gomoku_add_engine(${size} FALSE)
+  gomoku_add_engine(${size} TRUE)
+endforeach()

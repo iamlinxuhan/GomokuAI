@@ -93,10 +93,25 @@ jobs:
           New-Item -ItemType Directory -Force -Path $flavorDir | Out-Null
           Set-Content -Path "$flavorDir\_build_flavor.py" `
             -Value 'FLAVOR = "play"' -Encoding ascii
+          # **BUILD_CHANNEL=msix** 是自更新的硬闸门：商店渠道的版本由商店
+          # 管，`updater.install_kind()` 认到这个值就直接返回 msix，检查与
+          # 安装一概不做（见 updater.py 里那段）。
+          Set-Content -Path "$flavorDir\_build_version.py" `
+            -Value "APP_VERSION = `"$env:APP_VERSION`"`nBUILD_CHANNEL = `"msix`"" `
+            -Encoding ascii
+          # 八个引擎都要带（19/15/13/9 × free/ban），漏一个是静默退化。
+          $engines = @("gomoku_engine", "gomoku_engine_ban")
+          foreach ($s in @(15, 13, 9)) {
+            $engines += "gomoku_engine_$s"
+            $engines += "gomoku_engine_${s}_ban"
+          }
+          $binArgs = @()
+          foreach ($e in $engines) {
+            $binArgs += "--add-binary"
+            $binArgs += "cpp\build\Release\$e.exe;."
+          }
           uv run --frozen pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
-            --paths $flavorDir `
-            --add-binary "cpp\build\Release\gomoku_engine.exe;." `
-            --add-binary "cpp\build\Release\gomoku_engine_ban.exe;." main.py
+            --paths $flavorDir @binArgs main.py
           if (-not (Test-Path "dist\GomokuAI\GomokuAI.exe")) {
             throw "PyInstaller 没有产出 dist\GomokuAI\GomokuAI.exe"
           }

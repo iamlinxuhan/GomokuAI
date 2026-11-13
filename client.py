@@ -82,6 +82,8 @@ class RoomClient:
         self.on_event = on_event or (lambda event: None)
         self.seat = None
         self.room_name = None
+        #: 本局棋盘边长，以 ``welcome`` 为准（加入方只认房主的尺寸）。
+        self.board_size = None
         self._wire = None
         self._stop = threading.Event()
         self._reader = None
@@ -89,27 +91,46 @@ class RoomClient:
     # ------------------------------------------------------------ 连接
 
     def connect(self, host: str, port: int, room: str, seat: str = "auto",
-                timeout: float = 5.0) -> dict:
+                timeout: float = 5.0, board_size: int | None = None) -> dict:
         """握手 + 入座；成功返回 ``welcome`` 报文（并已发给 on_event）。
 
         ``seat`` 取 ``"black"`` / ``"white"`` 时指定席位；取 ``"auto"``（默认）
         由服务端分配剩下的 remote 席位 —— 加入方不需要再选颜色。真实席位以
         ``welcome["seat"]`` 为准，可从 :attr:`seat` 读到。
 
-        被拒（``no_room`` / ``seat_taken`` / ``room_full`` …）时抛
-        ``WireError``，并**立即关闭这条 TCP 连接**：调用方（加入房间界面）
-        会在失败后原地重试，不能每试一次就留一条没人管的半开 socket。
+        ``board_size`` 是加入方**期望**的尺寸：
+
+        * 传具体值（单机 / 本地双人 / LAN 房主）：服务端在开局前拒绝尺寸不符
+          的房间；
+        * 传 ``None``（LAN 加入方）：表示"接受房主定下的尺寸"。加入方在连上
+          之前根本不可能知道房间多大，硬塞一个值只会让默认值撞车。
+
+        ``hello`` 里的 ``size_aware`` 把这两种情况与**旧客户端**区分开：旧
+        客户端既不带这个标志、也不带 ``board_size``，服务端按 19 处理并在
+        尺寸不符时拒绝 —— 否则它会被放进一间 15×15 的房，然后按 19×19 摆盘。
+
+        实际尺寸永远以 ``welcome`` 为准，写进 :attr:`board_size`。19×19 且
+        显式传 19 时 join 报文与从前逐字节相同。
+
+        被拒（``no_room`` / ``seat_taken`` / ``room_full`` /
+        ``board_size_mismatch`` …）时抛 ``WireError``，并**立即关闭这条 TCP
+        连接**：调用方（加入房间界面）会在失败后原地重试，不能每试一次就留
+        一条没人管的半开 socket。
         """
         if self._wire is not None:
             raise RuntimeError("这个客户端已经连接")
         wire = WireConnection.connect(host, port, timeout)
         try:
-            wire.send({"type": "hello", "proto": PROTO_VERSION, "name": "ui"})
+            wire.send({"type": "hello", "proto": PROTO_VERSION, "name": "ui",
+                       "size_aware": True})
             rep = wire.recv(timeout=timeout)
             if rep.get("type") != "hello_ok":
                 raise WireError(rep.get("code", "hello_failed"),
                                 rep.get("message", "握手失败"))
-            wire.send({"type": "join", "room": room, "seat": seat})
+            join = {"type": "join", "room": room, "seat": seat}
+            if board_size is not None:
+                join["board_size"] = int(board_size)
+            wire.send(join)
             rep = wire.recv(timeout=timeout)
             if rep.get("type") != "welcome":
                 raise WireError(rep.get("code", "join_failed"),
@@ -122,6 +143,7 @@ class RoomClient:
         # auto 入座时真实席位由服务端在 welcome 里给出（"black"/"white"）。
         self.seat = rep.get("seat", seat)
         self.room_name = room
+        self.board_size = int(rep.get("board_size", 19))
         self.on_event(rep)
         self._reader = threading.Thread(target=self._read_loop, daemon=True,
                                         name="room-client")
