@@ -445,9 +445,29 @@ EOF
     TOOL="${TOOL_DIR}/appimagetool-${TOOL_ARCH}.AppImage"
     URL="https://github.com/AppImage/appimagetool/releases/download/${APPIMAGETOOL_VERSION}/appimagetool-${TOOL_ARCH}.AppImage"
     echo "下载 appimagetool ${APPIMAGETOOL_VERSION} (${TOOL_ARCH}) …"
-    # --retry 是给 GitHub releases 的 5xx/断流：CI 上一次偶发失败会让整条
-    # 发布流水线红掉，而重试三次基本都过。
-    curl -fsSL --retry 3 --retry-delay 2 -o "$TOOL" "$URL"
+    # **不能用 curl**：容器基镜像是 debian:bookworm，`curl` 不在基础包里，
+    # CI 第一次真跑 AppImage 就栽在 `curl: command not found`（退出码 127）。
+    # 用 python3 的 urllib：它本来就是打包链上的必需依赖，不必为一个下载
+    # 动作再往 apt 清单里加一个包。三次重试是给 GitHub releases 的 5xx/断流。
+    python3 - "$URL" "$TOOL" <<'PY'
+import sys, time, urllib.request
+url, out = sys.argv[1], sys.argv[2]
+last = None
+for attempt in range(3):
+    try:
+        with urllib.request.urlopen(url, timeout=120) as resp:
+            data = resp.read()
+        if not data:
+            raise OSError("下载到 0 字节")
+        with open(out, "wb") as fh:
+            fh.write(data)
+        break
+    except Exception as exc:  # 5xx、断流、超时都重试
+        last = exc
+        time.sleep(2 * (attempt + 1))
+else:
+    raise SystemExit("下载 appimagetool 失败：%s" % last)
+PY
     echo "${TOOL_SHA}  ${TOOL}" | sha256sum -c -
     chmod 755 "$TOOL"
 
