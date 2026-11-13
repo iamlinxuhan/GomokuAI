@@ -8,7 +8,7 @@
 #   webapp/dist/        —— **扁平**的一层，index.html 就在根上
 #   webapp/gomoku-web.zip
 #
-# 为什么是扁平的一层：`engine-worker.js` 里用 `importScripts('./gomoku-ban.js')`，
+# 为什么是扁平的一层：`engine-worker.js` 里用 `importScripts('./gomoku-ban-15.js')`，
 # 相对路径按 **Worker 脚本自己的 URL** 解析。源码目录里引擎在 dist/ 下、页面
 # 文件在上一层，两边一合并就会指错地方。与其在打包时改路径（那样本地测的和
 # 线上跑的不是同一份文件），不如让开发目录 = 发布目录：先拷进来，再打包，
@@ -30,11 +30,16 @@ mkdir -p "$OUT"
 cp "$APP/index.html" "$APP/style.css" "$APP/app.js" "$APP/engine-worker.js" \
    "$APP/book.js" "$OUT/"
 
-for f in gomoku-free.js gomoku-ban.js; do
-    [ -f "$OUT/$f" ] || {
-        echo "缺少 $OUT/$f，先跑：source ~/emsdk/emsdk_env.sh && sh cpp/web/build_wasm.sh" >&2
-        exit 1
-    }
+#: 四个尺寸 × 两种规则。少一份就会在玩家选到那个组合时静默退回主线程或直接
+#: 加载失败，所以在这里挡住。
+for n in 9 13 15 19; do
+    for r in free ban; do
+        [ -f "$OUT/gomoku-$r-$n.js" ] || {
+            echo "缺少 $OUT/gomoku-$r-$n.js，先跑：" >&2
+            echo "  source ~/emsdk/emsdk_env.sh && sh cpp/web/build_wasm.sh" >&2
+            exit 1
+        }
+    done
 done
 
 rm -f "$ZIP"

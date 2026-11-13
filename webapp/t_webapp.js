@@ -97,7 +97,7 @@ function loadScriptInto(el, ctx) {
   const file = path.join(DIR, el.src.replace(/^\.\//, ''));
   try {
     const src = fs.readFileSync(file, 'utf8');
-    if (/gomoku-(free|ban)\.js$/.test(file)) {
+    if (/gomoku-(free|ban)-\d+\.js$/.test(file)) {
       ctx.createGomoku = require(file);      // node 分支导出的是 module.exports
     } else {
       vm.runInContext(src, ctx, { filename: path.basename(file) });
@@ -158,7 +158,9 @@ const bookSrc = fs.readFileSync(path.join(DIR, 'book.js'), 'utf8');
 /* ---- 装载 app.js ---- */
 let src = fs.readFileSync(path.join(DIR, 'app.js'), 'utf8');
 src += '\n;globalThis.__api = { S, el, idx, winLine, place, undo, engine, refreshForbidden,'
-     + ' LEVELS, N, geom, toGrid, BOOK, bookLookup, reviewMoves, reviewRecord,'
+     + ' LEVELS, setSize, SIZES, DEFAULT_SIZE, starPoints, designSide,'
+     + ' get N() { return N; },'
+     + ' geom, toGrid, BOOK, bookLookup, reviewMoves, reviewRecord,'
      + ' reviewLine, openReviewPick, startReview, cancelReview, showReviewView,'
      + ' exitReview, NET, netHandle, netOpen, netClose, netSendState, netTurnCard,'
      + ' enterOnline, newGame, finish, applyModeGroups, clearNode };\n';
@@ -217,8 +219,12 @@ function turnState() { return byId['turn-card'].dataset.state || ''; }
   // 1 初始界面
   ok(byId['choose-level'].children.length === 6, '6 level cards rendered', byId['choose-level'].children.length);
   ok(A.S.level === 3, 'default level is 3', A.S.level);
+  ok(A.SIZES.join(',') === '9,13,15,19', 'size table', A.SIZES.join(','));
+  ok(A.N === 15 && A.S.board.length === 225, 'default board is 15x15', A.N);
 
-  // 2 选入门档（0.5 秒），开始
+  // 2 选 19 路（后面那几段的历史断言都是 19 路的）+ 入门档（0.5 秒），开始
+  pickChip('choose-size', 'size', 19);
+  ok(A.N === 19 && A.S.board.length === 361, 'size card resizes the board', A.N);
   pickLevel(0);
   ok(A.S.level === 1, 'level picked', A.S.level);
   if (FALLBACK) console.log('  (FALLBACK 模式：Worker 构造直接抛错)');
@@ -433,6 +439,7 @@ function turnState() { return byId['turn-card'].dataset.state || ''; }
     ok(st && st.body.board[A.idx(9, 9)] === 1, '房主广播整盘');
     ok(st && st.body.mv.length === 1 && st.body.mv[0] === A.idx(9, 9), '着法序列只发下标');
     ok(st && st.body.rev === 1, '序号从 1 起', st && st.body.rev);
+    ok(st && st.body.size === 19, '广播里带棋盘尺寸', st && st.body.size);
 
     // 有人敲门 → 弹「想上桌」→ 同意后他执白
     frame({ from: 'peer', t: 'hello', name: '玩家AB12' });
@@ -474,7 +481,7 @@ function turnState() { return byId['turn-card'].dataset.state || ''; }
 
     const board = new Array(361).fill(0);
     board[A.idx(9, 9)] = 1;
-    frame({ from: 'host', t: 'state', rev: 5, board, mv: [A.idx(9, 9)],
+    frame({ from: 'host', t: 'state', rev: 5, size: 19, board, mv: [A.idx(9, 9)],
             turn: 2, over: false, winner: 0, line: null, seat: 1, rules: 'free' });
     ok(A.S.board[A.idx(9, 9)] === 1, '加入方收下权威局面');
     ok(A.S.moves.length === 1 && A.S.history.length === 1, '着法序列重建');
@@ -483,8 +490,8 @@ function turnState() { return byId['turn-card'].dataset.state || ''; }
        byId.turn.textContent);
 
     const revBefore = A.NET.rev;
-    frame({ from: 'host', t: 'state', rev: 3, board: new Array(361).fill(0), mv: [],
-            turn: 1, over: false, winner: 0, line: null, seat: 1 });
+    frame({ from: 'host', t: 'state', rev: 3, size: 19,
+            board: new Array(361).fill(0), mv: [], turn: 1, over: false, winner: 0, line: null, seat: 1 });
     ok(A.S.board[A.idx(9, 9)] === 1 && A.NET.rev === revBefore, '旧序号一律丢弃');
 
     frame({ from: 'host', t: 'deny', to: A.NET.id });
@@ -508,7 +515,7 @@ function turnState() { return byId['turn-card'].dataset.state || ''; }
     ok(A.S.board.every((v, i) => v === before[i]), '局面没被本地改动');
 
     // — 观战：没座位的人点了不动 —
-    frame({ from: 'host', t: 'state', rev: 7,
+    frame({ from: 'host', t: 'state', rev: 7, size: 19,
             board: new Array(361).fill(0), mv: [], turn: 1,
             over: false, winner: 0, line: null, seat: 1 });
     A.NET.seat = 0; A.S.human = 0;
@@ -517,6 +524,35 @@ function turnState() { return byId['turn-card'].dataset.state || ''; }
 
     A.netClose();
     ok(!A.NET.active && A.NET.seat === 0, '退席清干净');
+  }
+
+  // 15 尺寸：9 路整条流程（换盘 → 落子 → 引擎应答），外加几何与星位
+  {
+    byId['btn-back'].click();
+    pickChip('choose-color', 'color', 1);   // 上一段结束时是观战（human=0）
+    pickChip('choose-size', 'size', 9);
+    ok(A.N === 9 && A.S.board.length === 81, '尺寸卡把盘换成 9×9', A.N);
+    pickLevel(0);
+    byId.start.click();
+    await sleep(30);
+    ok(A.S.board.length === 81, '开局后是 9×9', A.S.board.length);
+    ok(byId['info-size'].textContent === '9×9', '面板写着 9×9',
+       byId['info-size'].textContent);
+    clickCell(4, 4);
+    ok(A.S.board[A.idx(4, 4)] === 1, '9 路天元落子');
+    const replied = await until(() => A.S.moves.length === 2, 6000);
+    ok(replied, '9 路 AI 应答', replied ? '' : byId.turn.textContent);
+    const last = A.S.moves[A.S.moves.length - 1];
+    ok(last && last.r >= 0 && last.r < 9 && last.c >= 0 && last.c < 9,
+       '应答在盘内', last && `${last.r},${last.c}`);
+
+    ok(A.starPoints(9).length === 5 && A.starPoints(19).length === 9,
+       '星位数按尺寸', `${A.starPoints(9).length}/${A.starPoints(19).length}`);
+    ok(A.designSide(9) === 386 && A.designSide(19) === 726,
+       '设计边长按尺寸', `${A.designSide(9)}/${A.designSide(19)}`);
+    const g9 = A.geom(420);
+    const far = A.toGrid(g9, g9.ox + 8 * g9.cell, g9.oy + 8 * g9.cell);
+    ok(far && far.r === 8 && far.c === 8, '9 路右下角命中', JSON.stringify(far));
   }
 
   console.log('---');

@@ -59,6 +59,32 @@
       <p class="foot-note" id="online-status"></p>
     </div>
 
+    <div class="group" id="group-size">
+      <span class="group-label">棋盘尺寸</span>
+      <div class="cards" id="choose-size">
+        <button class="card" data-size="9">
+          <span class="card-index">01</span>
+          <span class="card-text">9×9</span>
+          <span class="card-sub">快棋</span>
+        </button>
+        <button class="card" data-size="13">
+          <span class="card-index">02</span>
+          <span class="card-text">13×13</span>
+          <span class="card-sub">紧凑</span>
+        </button>
+        <button class="card is-on" data-size="15">
+          <span class="card-index">03</span>
+          <span class="card-text">15×15</span>
+          <span class="card-sub">标准</span>
+        </button>
+        <button class="card" data-size="19">
+          <span class="card-index">04</span>
+          <span class="card-text">19×19</span>
+          <span class="card-sub">传统</span>
+        </button>
+      </div>
+    </div>
+
     <div class="group" id="group-color">
       <span class="group-label">执棋颜色</span>
       <div class="cards" id="choose-color">
@@ -162,6 +188,7 @@
       <dl class="info">
         <div id="info-room-row" style="display:none"><dt>房间</dt><dd id="info-room">—</dd></div>
         <div><dt>规则</dt><dd id="info-rules">无禁手</dd></div>
+        <div><dt>棋盘</dt><dd id="info-size">15×15</dd></div>
         <div><dt>AI 难度</dt><dd id="info-level">中级</dd></div>
         <div><dt>引擎</dt><dd id="info-engine">C++ · WASM</dd></div>
         <div><dt>悔棋次数</dt><dd id="info-undo">0</dd></div>

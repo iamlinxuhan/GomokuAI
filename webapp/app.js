@@ -17,9 +17,14 @@
  */
 'use strict';
 
-const N = 19;                 // 棋盘边长，与 constants.h 的 BOARD_SIZE 一致
-const CELLS = N * N;
-const CENTER = 9;             // 天元
+//: 棋盘尺寸。与桌面版 config.BOARD_SIZES / DEFAULT_BOARD_SIZE 同一张表；
+//: wasm 是按尺寸分开编译的（`cpp/web/build_wasm.sh`），所以尺寸进对局之后
+//: 不能再改 —— 这三项只在开局前由 `setSize()` 改写。
+const SIZES = [9, 13, 15, 19];
+const DEFAULT_SIZE = 15;
+let N = DEFAULT_SIZE;         // 棋盘边长，与 constants.h 的 BOARD_SIZE 一致
+let CELLS = N * N;
+let CENTER = N >> 1;          // 天元
 
 //: 列名字母表，跳过 I —— 与 gamelog.COL_LETTERS 同一张表。不跳 I 的写法会让
 //: 19 列里有 11 列对不上棋谱记法。
@@ -66,14 +71,20 @@ const FACE_TINT = 'rgba(255, 240, 215, 0.102)';
 const PLATE_TOP_TINT = 'rgba(255, 244, 220, 0.18)';
 const PLATE_BOT_SHADOW = 'rgba(0, 0, 0, 0.235)';
 
-//: 几何设计基准，与 board_geometry.py 的 `design()` 同一组数：18 段 × 34 +
-//: 两侧各 57 = 726。缩放比 k = 控件边长 / 726。
-const DESIGN = { cell: 34, pad: 57, side: 726 };
+//: 几何设计基准，与 board_geometry.py 的 `design()` 同一组数：格距 34、两侧
+//: 各 57 木框。19 路是 18 段 × 34 + 114 = 726；9/13/15 路沿用同样的格距与
+//: 木框宽度，设计边长随之变短（386 / 522 / 590），再由控件尺寸等比缩放。
+const DESIGN = { cell: 34, pad: 57 };
+
+function designSide(n) {
+  return (n - 1) * DESIGN.cell + 2 * DESIGN.pad;
+}
 
 /* ------------------------------------------------------- 状态 */
 
 const S = {
   rules: 'free',      // free | ban
+  size: DEFAULT_SIZE, // 9 | 13 | 15 | 19，与模块级 N 同步（见 setSize）
   mode: 'ai',         // ai | online
   human: 1,           // 1 黑 2 白（联机里是**我**这一席的颜色；观战为 0）
   level: 3,
@@ -109,6 +120,8 @@ class Engine {
   constructor() {
     this.worker = null;
     this.rules = null;
+    this.size = 0;
+    this.spec = '';        // "rules:size"，worker 与主线程退路共用这一把键
     this.seq = 0;
     this.waiting = new Map();
     this.fallback = false;   // true = 在主线程上跑，界面会卡
@@ -121,16 +134,20 @@ class Engine {
     this.gen = 0;
   }
 
-  //: 换规则就要换模块（两份 wasm 是编译期分开的），所以规则变了就重建 Worker。
-  ensure(rules) {
-    if (this.rules === rules && (this.worker || this.fallback)) return;
+  //: 换规则或尺寸就要换模块（八个组合是编译期分开的），所以任一变了都重建
+  //: Worker。
+  ensure(rules, size) {
+    const spec = rules + ':' + size;
+    if (this.spec === spec && (this.worker || this.fallback)) return;
     this.kill();
+    this.spec = spec;
     this.rules = rules;
+    this.size = size;
     if (this.fallback) return;
     try {
-      //: `#ban` / `#free` 决定 Worker 里 import 哪一份 wasm —— 片段不会发给
-      //: 服务器，见 engine-worker.js 顶部的说明。
-      this.worker = new Worker('./engine-worker.js#' + rules);
+      //: `#free-15` 决定 Worker 里 import 哪一份 wasm —— 片段不会发给服务器，
+      //: 见 engine-worker.js 顶部的说明。
+      this.worker = new Worker('./engine-worker.js#' + rules + '-' + size);
       this.worker.onmessage = (ev) => {
         const msg = ev.data;
         const slot = this.waiting.get(msg.id);
@@ -162,6 +179,8 @@ class Engine {
     if (this.worker) this.worker.terminate();
     this.worker = null;
     this.rules = null;
+    this.size = 0;
+    this.spec = '';
     this.api = null;        // 主线程模式换规则时要重新 boot，别拿着旧模块用
     for (const slot of this.waiting.values()) slot.reject(new Error('cancelled'));
     this.waiting.clear();
@@ -196,10 +215,11 @@ class Engine {
       //: 各自要花掉几十毫秒，这期间用户完全来得及按悔棋或重开。作废的请求按
       //: "被取消"处理，与 Worker 那条路上 terminate 的效果对齐。
       const rules = this.rules;
+      const size = this.size;
       const gen = this.gen;
       const core = await this.loadCore();
       if (gen !== this.gen) throw new Error('cancelled');
-      this.api = this.api || await core.boot(rules);
+      this.api = this.api || await core.boot(rules, size);
       if (gen !== this.gen) throw new Error('cancelled');
       return core.run(this.api, payload);
     }
@@ -214,14 +234,14 @@ class Engine {
 
   //: ``opts.collect`` 要根候选表（每一手的评分），复盘页靠它判"这一手差多少"。
   async think(cells, me, level, opts) {
-    this.ensure(S.rules);
+    this.ensure(S.rules, N);
     return this.call({ cmd: 'think', cells, me, level,
                        collect: !!(opts && opts.collect) });
   }
 
   async bancheck(cells) {
     if (S.rules !== 'ban') return [];
-    this.ensure(S.rules);
+    this.ensure(S.rules, N);
     const res = await this.call({ cmd: 'bancheck', cells });
     return res.points;
   }
@@ -244,10 +264,14 @@ const engine = new Engine();
  * 规则下查 —— 这张表是无禁手规则下建的（`engine_ban.USE_OPENING_BOOK`）。
  */
 const BOOK = (typeof self !== 'undefined' && self.GomokuBook) ||
-             { stones: 3, table: {} };
+             { stones: 3, tables: {} };
 
 function bookLookup(cells, me) {
   if (S.rules !== 'free') return null;
+  //: 每个尺寸一张表：明文键里的下标是**该尺寸**的扁平索引（9 路的天元是
+  //: 4*9+4=40，不是 19 路的 180），混用必然查不到。
+  const table = (BOOK.tables && BOOK.tables[N]) || null;
+  if (!table) return null;
   let key = '';
   let n = 0;
   for (let i = 0; i < CELLS; i++) {
@@ -257,12 +281,23 @@ function bookLookup(cells, me) {
     key += (n > 1 ? ',' : '') + i + ':' + s;
   }
   if (!n) return null;                        // 空盘另走天元，不经这里
-  return BOOK.table[key + '|' + me] || null;
+  return table[key + '|' + me] || null;
 }
 
 /* ------------------------------------------------------------ 棋盘规则 */
 
 function idx(r, c) { return r * N + c; }
+
+//: 换棋盘尺寸。**只在开局前调用**：`S.board`、复盘快照、引擎 Worker 全都是
+//: 按 N 派生出来的，对局中改尺寸等于把整盘连同历史一起扔掉。调用点只有尺寸
+//: 页与联机同步两处。
+function setSize(n) {
+  N = Number(n);
+  CELLS = N * N;
+  CENTER = N >> 1;
+  S.size = N;
+  S.board = new Int8Array(CELLS);
+}
 
 //: 以 (r, c) 为起点、沿 (dr, dc) 方向的最长同色连。**只看刚落的那一子**，
 //: 这是桌面版 `check_win` 的做法：新棋子不参与的那条线不可能因为这一手变成五连。
@@ -302,12 +337,25 @@ function winLine(board, r, c, stone) {
 /* ------------------------------------------------------------ 几何 */
 
 //: 与 board_geometry.BoardGeometry.fit() 同一套：棋盘控件是正方形，网格居中，
-//: 缩放比取短边 / 726。
+//: 缩放比取短边 / 该尺寸的设计边长。
 function geom(size) {
-  const k = size / DESIGN.side;
+  const k = size / designSide(N);
   const cell = DESIGN.cell * k;
   const span = (N - 1) * cell;
   return { k, cell, span, ox: (size - span) / 2, oy: (size - span) / 2, size };
+}
+
+//: 星位：照 `board_render._star_points()` 抄。19 路是传统九星；9/13/15 路取
+//: 四角 + 天元，四角在离边第三条线（9 路）或第四条线（13/15 路）上。
+function starPoints(n) {
+  if (n === 19) {
+    return [[3, 3], [3, 9], [3, 15], [9, 3], [9, 9], [9, 15],
+            [15, 3], [15, 9], [15, 15]];
+  }
+  const a = n === 9 ? 2 : (n === 13 || n === 15) ? 3 : Math.max(1, (n - 1) >> 2);
+  const b = n - 1 - a;
+  const m = n >> 1;
+  return [[a, a], [a, b], [m, m], [b, a], [b, b]];
 }
 
 //: 像素 -> 最近的格点，落在框外半格则 null。与 `to_grid()` 的三条修正一致：
@@ -544,7 +592,7 @@ function draw() {
   roundRect(c, lineW / 2, lineW / 2, w - lineW, w - lineW, plateR);
   c.stroke();
 
-  // ⑤ 网格：19 个格点 = 18 段
+  // ⑤ 网格：n 个格点 = n-1 段
   c.strokeStyle = GRID;
   c.lineWidth = lineW;
   c.beginPath();
@@ -557,11 +605,10 @@ function draw() {
   }
   c.stroke();
 
-  // ⑥ 星位：19 路是传统九星
+  // ⑥ 星位：19 路是传统九星，其余尺寸是四角 + 天元
   c.fillStyle = STAR;
   const starR = Math.max(1.8, g.cell * 0.11);
-  for (const [r, col] of [[3, 3], [3, 9], [3, 15], [9, 3], [9, 9],
-                          [9, 15], [15, 3], [15, 9], [15, 15]]) {
+  for (const [r, col] of starPoints(N)) {
     c.beginPath();
     c.arc(g.ox + col * g.cell, g.oy + r * g.cell, starR, 0, 7);
     c.fill();
@@ -768,10 +815,12 @@ function renderCharts() {
 
 const el = {};
 for (const id of ['setup', 'game', 'choose-color', 'choose-level', 'choose-rules',
-                  'start', 'setup-hint', 'overlay', 'overlay-title', 'overlay-text',
+                  'choose-size', 'start', 'setup-hint', 'overlay', 'overlay-title',
+                  'overlay-text',
                   'btn-again', 'btn-overlay-back', 'btn-undo', 'btn-restart',
                   'btn-back', 'btn-theme-row', 'theme-icon',
-                  'turn', 'turn-card', 'turn-stone', 'info-rules', 'info-level',
+                  'turn', 'turn-card', 'turn-stone', 'info-rules', 'info-size',
+                  'info-level',
                   'info-undo', 'info-moves', 'info-time', 'info-engine',
                   'score-readout', 'chart-score-label',
                   // 联机
@@ -838,6 +887,7 @@ function updateInfo() {
       + 'AI 思考期间界面会卡住，但棋力与 Worker 模式完全相同。';
   }
   el['info-rules'].textContent = S.rules === 'ban' ? '禁手' : '无禁手';
+  el['info-size'].textContent = N + '×' + N;
   //: 联机局里没有 AI，"难度"一行写个"—"，别让人以为对面是引擎。
   el['info-level'].textContent =
     S.mode === 'online' ? '—' : LEVELS[S.level - 1].name;
@@ -1246,13 +1296,14 @@ function netClose() {
 }
 
 //: 房主广播整盘局面。`mv` 只发落点下标，颜色由先后手推出来，比一份
-//: {r,c,s} 的数组省一半字节；361 子全满时两者加起来约 3 KB，还在 ntfy 的
-//: 上限之内。
+//: {r,c,s} 的数组省一半字节；19 路下 361 子全满时两者加起来约 3 KB，还在
+//: ntfy 的上限之内。`size` 必须一起发：加入方可能还停在默认尺寸上，落点
+//: 下标与整盘长度都要按房主那张盘来解释。
 function netSendState() {
   if (!NET.active || NET.role !== 'host') return;
   NET.rev += 1;
   netPublish({
-    t: 'state', rev: NET.rev,
+    t: 'state', rev: NET.rev, size: N,
     board: Array.from(S.board),
     mv: S.moves.map((m) => idx(m.r, m.c)),
     turn: S.turn, over: S.over, winner: S.winner,
@@ -1275,6 +1326,9 @@ function netApplyState(msg) {
   if (typeof msg.rev === 'number' && msg.rev <= NET.rev) return;
   if (typeof msg.rev === 'number') NET.rev = msg.rev;
   if (msg.rules && msg.rules !== S.rules) S.rules = msg.rules;
+  //: 尺寸由房主说了算。先换尺寸再读 `mv`：下标是房主那张盘的扁平索引，
+  //: 反过来会把 15 路的第 200 手读成 19 路的另一格。
+  if (SIZES.indexOf(msg.size) >= 0 && msg.size !== N) setSize(msg.size);
   S.board = Int8Array.from(msg.board || []);
   S.moves = (msg.mv || []).map((i, k) => ({
     r: Math.floor(i / N), c: i % N, s: k % 2 ? 2 : 1,
@@ -1700,6 +1754,7 @@ function applyModeGroups() {
   el.start.style.display = online ? 'none' : '';
   el['setup-hint'].textContent = online
     ? '创建房间后把房间码（或邀请链接）发给朋友；他执白，其余人以观战身份看棋。'
+      + '棋盘尺寸由房主决定，加入方自动跟随。'
     : '黑先白后，先连成五子者胜';
 }
 
@@ -1726,6 +1781,11 @@ el['btn-join-room'].addEventListener('click', () => {
 onCardGroup(el['choose-color'], 'color', (v) => {
   S.human = Number(v);
   markSelected(el['choose-color'], 'color', S.human);
+});
+
+onCardGroup(el['choose-size'], 'size', (v) => {
+  setSize(Number(v));
+  markSelected(el['choose-size'], 'size', N);
 });
 
 onCardGroup(el['choose-level'], 'level', (v) => {
@@ -1880,6 +1940,7 @@ el['theme-icon'].textContent =
 
 renderLevelCards();
 markSelected(el['choose-color'], 'color', S.human);
+markSelected(el['choose-size'], 'size', S.size);
 markSelected(el['choose-rules'], 'rules', S.rules);
 markSelected(el['choose-mode'], 'mode', S.mode);
 applyModeGroups();

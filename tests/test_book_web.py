@@ -2,9 +2,13 @@
 """``webapp/book.js`` 与 ``opening_book.py`` 的同步。
 
 网页版的入门档靠这张表与桌面版走同一手（见 ``webapp/app.js`` 的 ``bookLookup``）。
-表是 ``tools/build_book_web.py`` 从 ``opening_book.BOOK`` 转出来的**生成物**，
+表是 ``tools/build_book_web.py`` 从 ``opening_book.BOOKS`` 转出来的**生成物**，
 改了库却忘了重建，网页版就会**静默**退化成"只会搜索"—— 入门档从 (9,10) 变成
 (7,7)，没有任何报错。这一组用例就是那道防线。
+
+四个尺寸各一张表（9/13/15/19），每一张都要单独核对：明文键里的下标是**该尺寸
+盘**的扁平索引，拿 19 路的表去查 15 路必然一条都撞不上，而页面只会表现为
+"开局库没了"。
 
 **守的是"同一份数据"，不是某个具体着法**：断言由生成器重算一遍再与磁盘比对，
 所以重新建库之后跑一次生成器即可，不用回来改测试。
@@ -18,18 +22,26 @@ import numpy as np
 import pytest
 
 import engine_local as EL
-from opening_book import BOOK, BOOK_STONES
+from opening_book import BOOKS, BOOK_STONES
 from tools import build_book_web
 
-BOARD_SIZE = 19
+SIZES = (9, 13, 15, 19)
 BLACK, WHITE = 1, 2
 
 
 def _skip_if_absent():
     if not os.path.exists(build_book_web.OUT):
         pytest.skip("webapp/book.js 不在（网页版目录可能没随仓库分发）")
-    if not BOOK:
+    if not any(BOOKS.values()):
         pytest.skip("开局库尚未生成（tools/build_book.py 还没跑过）")
+
+
+def _tables() -> dict:
+    """重算四张明文表，并把 ``engine_local`` 恢复成导入时的 19 路。"""
+    try:
+        return {n: build_book_web.collect(n) for n in SIZES}
+    finally:
+        EL.configure_size(19)
 
 
 def test_book_js_is_exactly_what_the_generator_renders():
@@ -40,42 +52,52 @@ def test_book_js_is_exactly_what_the_generator_renders():
     这张表就会慢慢长成第二份真值，而它的键是哈希反查出来的，没人能肉眼核对。
     """
     _skip_if_absent()
-    found = build_book_web.collect()
+    tables = _tables()
     with open(build_book_web.OUT, encoding="utf-8") as fh:
         on_disk = fh.read()
-    assert on_disk == build_book_web.render(found), (
+    assert on_disk == build_book_web.render(tables), (
         "webapp/book.js 与 opening_book.py 不同步 —— 重跑 "
         "`uv run --frozen python tools/build_book_web.py`")
 
 
-def test_every_book_entry_reaches_the_web_table():
-    """``BOOK`` 的每一条都要翻译过去，一条不漏。
+@pytest.mark.parametrize("board", SIZES)
+def test_every_book_entry_reaches_the_web_table(board):
+    """``BOOKS[board]`` 的每一条都要翻译过去，一条不漏。
 
     枚举范围只有中心 ±5，库要是往更远处长（对手第一手下在边角），这一条会先
     变红，而不是等到用户发现网页版开局怪怪的。
     """
     _skip_if_absent()
-    found = build_book_web.collect()
-    assert len(found) == len(BOOK), (
-        "库里有 %d 条，网页表只翻译出 %d 条 —— 枚举范围（SPAN=%d）或键格式对不上"
-        % (len(BOOK), len(found), build_book_web.SPAN))
+    found = _tables()[board]
+    assert len(found) == len(BOOKS[board]), (
+        "%d 路：库里有 %d 条，网页表只翻译出 %d 条 —— 枚举范围（SPAN=%d）"
+        "或键格式对不上"
+        % (board, len(BOOKS[board]), len(found), build_book_web.SPAN))
 
 
-def test_tengen_entry_agrees_with_book_lookup():
+@pytest.mark.parametrize("board", SIZES)
+def test_tengen_entry_agrees_with_book_lookup(board):
     """天元之后白方那一手：明文表与 ``engine_local.book_lookup`` 必须同源。
 
     单拿一手做端到端对账，覆盖"哈希 → 明文键"这一步转换本身。上面那两条只能
     证明两份数据来自同一次计算，证明不了键拼得对。
     """
     _skip_if_absent()
-    found = build_book_web.collect()
-    board = np.zeros((BOARD_SIZE, BOARD_SIZE), dtype=np.uint8)
-    board[9][9] = BLACK
-    ent = EL.book_lookup(board, WHITE)          # 参数是 19×19 的数组，不是 Board
-    assert ent is not None, "天元之后白方那一手不在库里"
-    key = "%d:1|%d" % (9 * BOARD_SIZE + 9, WHITE)
-    assert found.get(key) == list(ent), (
-        "明文键 %r 查到 %r，book_lookup 给的是 %r" % (key, found.get(key), list(ent)))
+    found = _tables()[board]           # 内部收尾时把引擎恢复成了 19 路
+    try:
+        EL.configure_size(board)       # book_lookup 的哈希按当前尺寸算
+        center = board // 2
+        arr = np.zeros((board, board), dtype=np.uint8)
+        arr[center][center] = BLACK
+        ent = EL.book_lookup(arr, WHITE)          # 参数是 board×board 的数组
+        assert ent is not None, "%d 路：天元之后白方那一手不在库里" % board
+        key = "%d:1|%d" % (center * board + center, WHITE)
+        assert found.get(key) == list(ent), (
+            "明文键 %r 查到 %r，book_lookup 给的是 %r"
+            % (key, found.get(key), list(ent)))
+    finally:
+        EL.configure_size(19)
+
     assert len(found) and len(next(iter(found.values()))) == 3
     assert all(v[2] >= 1 for v in found.values()), "库项里的层数不该为 0"
     assert BOOK_STONES == 3

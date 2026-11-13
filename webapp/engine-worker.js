@@ -10,29 +10,41 @@
  * Worker 的那一刻抛 SecurityError，页面就只剩一张死棋盘。主线程跑会卡住界面
  * （3 秒档就是 3 秒），但那是"能用但难受"，比"打不开"好。
  *
- * 规则从 URL 的 # 片段里读。禁手是编译期分支（`#if GOMOKU_BAN`），所以网页版
- * 和桌面版一样有两份引擎。片段不会发给服务器（浏览器从不发送 fragment），
- * 因此在任何静态托管上都不会变成一次找不到文件的请求；`?rules=ban` 会真的
- * 发出去，某些 CDN 对带查询串的静态资源处理得没那么宽容。
+ * 规则与棋盘尺寸从 URL 的 # 片段里读，形状是 `#<rules>-<n>`（例如
+ * `#free-15`）。禁手是编译期分支（`#if GOMOKU_BAN`），尺寸同样是编译期常量
+ * （`GOMOKU_BOARD_SIZE`），所以八个组合就是八份 wasm。片段不会发给服务器
+ * （浏览器从不发送 fragment），因此在任何静态托管上都不会变成一次找不到文件
+ * 的请求；`?rules=ban` 会真的发出去，某些 CDN 对带查询串的静态资源处理得
+ * 没那么宽容。
  */
 'use strict';
 
 const IS_WORKER = typeof importScripts === 'function';
 //: 只有 Worker 才从自己的 URL 片段里读规则；主线程模式下规则由调用方传进来
 //: （页面的 location.hash 与这个文件无关）。
-const RULES = IS_WORKER ? (self.location.hash || '#free').slice(1) : null;
+const SPEC = IS_WORKER ? (self.location.hash || '#free-19').slice(1) : null;
 
-const boots = {};       // rules -> Promise<Module>，同一份模块只加载一次
-
-function moduleFile(rules) {
-  return rules === 'ban' ? './gomoku-ban.js' : './gomoku-free.js';
+//: `#free-15` → rules 'free'、size 15。缺尺寸的旧写法按 19 读 —— 这一条只
+//: 为了不给缓存的旧页面一个白屏。
+function parseSpec(spec) {
+  const m = /^([a-z]+)(?:-(\d+))?$/.exec(String(spec || ''));
+  const rules = m && m[1] === 'ban' ? 'ban' : 'free';
+  const size = m && m[2] ? Number(m[2]) : 19;
+  return { rules, size };
 }
 
-function boot(rules) {
-  if (boots[rules]) return boots[rules];
-  const file = moduleFile(rules);
+const boots = {};       // "rules:size" -> Promise<Module>，同一份模块只加载一次
 
-  boots[rules] = new Promise((resolve, reject) => {
+function moduleFile(rules, size) {
+  return './gomoku-' + (rules === 'ban' ? 'ban' : 'free') + '-' + size + '.js';
+}
+
+function boot(rules, size) {
+  const key = rules + ':' + size;
+  if (boots[key]) return boots[key];
+  const file = moduleFile(rules, size);
+
+  boots[key] = new Promise((resolve, reject) => {
     const finish = (api) => {
       api._gm_init();          // 建表：lineMask / touchMask 全在这里生成
       resolve(api);
@@ -55,16 +67,21 @@ function boot(rules) {
     tag.onerror = () => reject(new Error('加载失败：' + file));
     document.head.appendChild(tag);
   });
-  return boots[rules];
+  return boots[key];
 }
 
 function copyBoard(api, cells) {
-  //: 主线程传的是 Int8Array(361)。引擎要的是 uint8_t*，逐值相同，按字节拷。
+  //: 主线程传的是 Int8Array(n*n)。引擎要的是 uint8_t*，逐值相同，按字节拷。
   //:
   //: 缓冲**挂在模块自己身上**而不是这个文件的模块级变量：主线程退路里两份
   //: wasm（free / ban）会先后加载进同一个上下文，各自有独立的堆。共用一个
   //: 指针等于往另一个模块的地址空间里瞎写 —— 症状是禁手点悄悄变成空数组。
-  if (!api.__cellsPtr) api.__cellsPtr = api._malloc(361);
+  //: 尺寸同理：每个模块只认自己那一种盘，缓冲按传进来的长度分配。
+  if (api.__cellsLen !== cells.length) {
+    if (api.__cellsPtr) api._free(api.__cellsPtr);
+    api.__cellsPtr = api._malloc(cells.length);
+    api.__cellsLen = cells.length;
+  }
   api.HEAPU8.set(cells, api.__cellsPtr);
   return api.__cellsPtr;
 }
@@ -96,10 +113,11 @@ function run(api, msg) {
 }
 
 if (IS_WORKER) {
+  const spec = parseSpec(SPEC);
   self.onmessage = async (ev) => {
     const msg = ev.data;
     try {
-      const api = await boot(RULES);
+      const api = await boot(spec.rules, spec.size);
       self.postMessage({ id: msg.id, result: run(api, msg) });
     } catch (e) {
       self.postMessage({ id: msg.id, error: String((e && e.message) || e) });
