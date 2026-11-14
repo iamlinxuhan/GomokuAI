@@ -412,28 +412,106 @@ def _headers() -> dict[str, str]:
     }
 
 
+def _env_proxy() -> str:
+    for key in ("https_proxy", "HTTPS_PROXY", "http_proxy", "HTTP_PROXY",
+                "all_proxy", "ALL_PROXY"):
+        value = os.environ.get(key, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _desktop_proxy() -> str:
+    """Linux 桌面环境的代理：先 gsettings（GNOME），再 kioslaverc（KDE）。"""
+    try:
+        mode = subprocess.run(
+            ["gsettings", "get", "org.gnome.system.proxy", "mode"],
+            capture_output=True, text=True, timeout=2).stdout.strip().strip("'")
+        if mode == "manual":
+            host = subprocess.run(
+                ["gsettings", "get", "org.gnome.system.proxy.http", "host"],
+                capture_output=True, text=True,
+                timeout=2).stdout.strip().strip("'")
+            port = subprocess.run(
+                ["gsettings", "get", "org.gnome.system.proxy.http", "port"],
+                capture_output=True, text=True, timeout=2).stdout.strip()
+            if host:
+                return f"http://{host}:{port or 8080}"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        text = (Path.home() / ".config" / "kioslaverc").read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    section = ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("["):
+            section = line
+            continue
+        if section != "[Proxy Settings]" or "=" not in line:
+            continue
+        key, value = (part.strip() for part in line.split("=", 1))
+        if key == "httpProxy" and value:
+            return value
+    return ""
+
+
+def system_proxy() -> str:
+    """没有显式配置时，这台机器在用的代理。
+
+    **为什么不能只靠 urllib**：它在 Linux 上只读环境变量，而桌面环境把代理
+    写在 gsettings / kioslaverc 里。于是同一个网络里浏览器走代理飞快、自动
+    更新走直连，用户看到的是"更新比浏览器慢一个数量级"。
+    """
+    return _env_proxy() or (_desktop_proxy()
+                            if sys.platform.startswith("linux") else "")
+
+
 def _proxy_for(url: str, proxy: str) -> str:
-    """GitHub 才走用户配置的代理，个人站点与下载镜像强制直连。"""
-    host = (urllib.parse.urlsplit(url).hostname or "").lower()
-    if host == "github.com" or host.endswith(".github.com") \
-            or host.endswith(".githubusercontent.com"):
-        return proxy
-    return "direct"
+    """这条请求该走哪个代理。
+
+    显式配置最优先；没配置就用系统代理；都没有（或显式写了 ``direct``）就
+    直连。**下载镜像与个人站点同样走代理** —— 镜像直连被限速时，更新不能
+    因为"官方地址能连上"就慢慢爬。
+    """
+    proxy = (proxy or "").strip()
+    if proxy.lower() in ("direct", "none"):
+        return "direct"
+    return proxy or system_proxy()
+
+
+def _open(url: str, request: urllib.request.Request, proxy: str,
+          timeout: float):
+    """按 ``_proxy_for`` 的结论发起请求；代理连不上就退回直连一次。
+
+    系统代理可能是陈的（换过端口、公司网走了 PAC）。那种情况下直连虽然慢，
+    至少能完成；让「代理挂了」直接变成「更新失败」没有必要。
+    """
+    try:
+        opener = _opener(_proxy_for(url, proxy))
+    except ValueError as exc:
+        raise UpdateError(f"代理设置无效：{exc}") from exc
+    try:
+        return opener.open(request, timeout=timeout)
+    except urllib.error.HTTPError:
+        raise
+    except (urllib.error.URLError, OSError):
+        if _proxy_for(url, proxy) in ("", "direct"):
+            raise
+        return _opener("direct").open(request, timeout=timeout)
 
 
 def _read_one(url: str, proxy: str = "", timeout: float = 10.0,
               label: str = "GitHub") -> bytes:
     request = urllib.request.Request(url, headers=_headers())
     try:
-        opener = _opener(_proxy_for(url, proxy))
-    except ValueError as exc:
-        raise UpdateError(f"代理设置无效：{exc}") from exc
-    try:
-        with opener.open(request, timeout=timeout) as response:
+        with _open(url, request, proxy, timeout) as response:
             return response.read()
     except urllib.error.HTTPError as exc:
         if exc.code == 403:
-            hint = ("稍后再试，或在设置里填一个 GitHub 代理。"
+            hint = ("稍后再试，或在设置里填一个更新代理。"
                     if label == "GitHub" else "稍后再试。")
             raise UpdateError(f"{label} 拒绝了这次请求（可能是被限流）。{hint}") from exc
         if exc.code == 404:
@@ -661,13 +739,9 @@ def _download_one(url: str, dest: Path,
                   on_progress: Callable[[int, int], None] | None,
                   proxy: str, timeout: float) -> None:
     request = urllib.request.Request(url, headers=_headers())
-    try:
-        opener = _opener(_proxy_for(url, proxy))
-    except ValueError as exc:
-        raise UpdateError(f"代理设置无效：{exc}") from exc
     total, done = -1, 0
     try:
-        with opener.open(request, timeout=timeout) as response:
+        with _open(url, request, proxy, timeout) as response:
             total = int(response.headers.get("Content-Length") or -1)
             with dest.open("wb") as handle:
                 while True:
@@ -1018,6 +1092,26 @@ def _selftest() -> int:
               install(downloaded, running, "appimage", version="4.4.0",
                       desktop_roots=[]), want)
         check("新内容在最终文件里", want.read_bytes(), b"v440")
+
+    # ---- 代理
+    #: 镜像与 GitHub 走同一条策略：显式配置最优先，其次系统代理。
+    check("显式代理覆盖下载镜像",
+          _proxy_for("https://dl.linxuhan.top/GomokuAI/v1/x.exe", "127.0.0.1:7897"),
+          "127.0.0.1:7897")
+    check("显式直连镜像",
+          _proxy_for("https://dl.linxuhan.top/GomokuAI/v1/x.exe", "direct"),
+          "direct")
+    check("显式代理覆盖 GitHub",
+          _proxy_for("https://github.com/a/b", "socks5://127.0.0.1:1"),
+          "socks5://127.0.0.1:1")
+
+    #: 自动源先镜像、再 GitHub；镜像和 GitHub 共用同一个代理结论。
+    probe = Release(tag="v1.2.3",
+                    assets=(Asset(name="X.exe", url="https://github.com/a/b/X.exe"),))
+    urls = asset_urls(probe, probe.assets[0], "auto")
+    check("auto 先镜像", urls[0], f"{MIRROR_BASE}/v1.2.3/X.exe")
+    check("auto 有 GitHub 回退", urls[-1], "https://github.com/a/b/X.exe")
+    check("github 源只留 GitHub", len(asset_urls(probe, probe.assets[0], "github")), 1)
 
     # ---- 校验和解析
     text = (

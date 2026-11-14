@@ -1266,12 +1266,13 @@ class _UpdateSection(QWidget):
         self._source_group = group
         col.addLayout(source_row)
 
-        # GitHub 代理：可留空（走系统代理）。只在 GitHub 那条链路上生效 ——
-        # 站点与下载镜像强制直连，理由见 updater._proxy_for。
+        # 更新代理：可留空（走系统代理）。**下载镜像也走它** —— 同一张网里
+        # 浏览器与自动更新必须走同一条路，否则镜像直连被限速时，更新会慢一个
+        # 数量级。桌面环境的代理见 updater.system_proxy()。
         proxy_row = QHBoxLayout()
         proxy_row.setContentsMargins(0, 0, 0, 0)
         proxy_row.setSpacing(theme.SPACE_SM)
-        proxy_row.addWidget(faint_label(i18n.t("GitHub 代理"),
+        proxy_row.addWidget(faint_label(i18n.t("更新代理"),
                                         align=Qt.AlignRight | Qt.AlignVCenter))
         self.proxy_edit = QLineEdit(self.prefs["proxy"])
         self.proxy_edit.setPlaceholderText(i18n.t("留空即走系统代理"))
