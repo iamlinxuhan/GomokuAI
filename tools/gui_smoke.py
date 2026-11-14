@@ -1458,6 +1458,35 @@ def do_custom_difficulty(app):
     pump(30, app)
 
 
+def do_update_toggle(app):
+    """「启动时自动检查更新」要一眼看得出开还是关（用户 2026-11-14）。
+
+    只靠 ``:checked`` 的背景色差太弱；文字里必须写状态。这里顺带确认点击后
+    偏好确实落盘，并在用例结束时还原开发者原来的设置。
+    """
+    saved = M._load_update_prefs()["on_start"]
+    sec = M._UpdateSection()
+    sec.show()
+    pump(30, app)
+    try:
+        check("（已开启）" in sec.start_btn.text() or "（已关闭）" in sec.start_btn.text(),
+              "开关文字带状态", sec.start_btn.text())
+        before = sec.start_btn.isChecked()
+        sec.start_btn.click()
+        pump(20, app)
+        want = "（已开启）" if sec.start_btn.isChecked() else "（已关闭）"
+        check(want in sec.start_btn.text(), "点击后文字跟着变",
+              sec.start_btn.text())
+        check(sec.start_btn.isChecked() != before, "点击真的切换了状态")
+        check(M._load_update_prefs()["on_start"] == sec.start_btn.isChecked(),
+              "开关状态已落盘")
+    finally:
+        M._save_update_pref(M._UPDATE_ON_START_KEY, "1" if saved else "0")
+        sec.close()
+        sec.deleteLater()
+        pump(30, app)
+
+
 def do_update_dialog(app):
     """启动检查点「是」之后直接弹出的下载窗（不再拐进设置页）。
 
@@ -1567,6 +1596,7 @@ def main():
         close_case_windows(app, keep=w)
         do_review_cancel(app)
         close_case_windows(app, keep=w)
+        do_update_toggle(app)
         do_update_dialog(app)
         do_chinese_path(app)
     except Exception:

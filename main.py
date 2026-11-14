@@ -1286,6 +1286,7 @@ class _UpdateSection(QWidget):
         self.start_btn.setCheckable(True)
         self.start_btn.setChecked(self.prefs["on_start"])
         self.start_btn.clicked.connect(self._on_start_toggle)
+        self._refresh_start_btn()
         col.addWidget(self.start_btn, Qt.AlignLeft)
 
         self._refresh_buttons()
@@ -1332,6 +1333,18 @@ class _UpdateSection(QWidget):
         self.prefs["on_start"] = self.start_btn.isChecked()
         _save_update_pref(_UPDATE_ON_START_KEY,
                           "1" if self.prefs["on_start"] else "0")
+        self._refresh_start_btn()
+
+    def _refresh_start_btn(self):
+        """把开/关写进按钮文字。
+
+        只靠 ``:checked`` 的背景色差（``GHOST_PRESS`` 与幽灵底只差一档灰），
+        在浅色主题的大片留白里几乎看不出来 —— 用户点了会以为按钮坏了。
+        文字里写清楚，不依赖任何配色。
+        """
+        state = i18n.t("已开启" if self.start_btn.isChecked() else "已关闭")
+        self.start_btn.setText(
+            i18n.tf("%s（%s）", i18n.t("启动时自动检查更新"), state))
 
     def _open_page(self):
         QDesktopServices.openUrl(QUrl(updater.SITE_PAGE))
