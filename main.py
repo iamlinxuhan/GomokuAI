@@ -1261,7 +1261,7 @@ class ToggleSwitch(QAbstractButton):
         pad = max(2.0, h * 0.12)
         d = h - 2 * pad
         x = (w - pad - d) if self.isChecked() else pad
-        p.setBrush(QColor("#ffffff"))
+        p.setBrush(QColor(theme.SWITCH_KNOB))
         p.drawEllipse(QRectF(x, pad, d, d))
         p.end()
 

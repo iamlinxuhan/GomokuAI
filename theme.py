@@ -63,6 +63,7 @@ _PALETTES: dict[str, dict[str, str]] = {
                                # 等于没画 —— 卡片面与窗口底本身也只差
                                # 1.25:1，"卡片"的边界靠这条线。
         TRACK="#3c4354",       # 进度条槽
+        SWITCH_KNOB="#ffffff", # 开关滑块：强调色底上要亮得出来
         TEXT="#e9ecf2",        # 主文字     12.47 / 4.5  ✅
         TEXT_DIM="#9aa4b5",    # 次文字      5.87 / 4.5  ✅
         TEXT_FAINT="#8a94a6",  # 弱文字      4.83 / 4.5  ✅
@@ -94,6 +95,7 @@ _PALETTES: dict[str, dict[str, str]] = {
         SURFACE_2="#eceef2",
         BORDER="#8791a3",      # 3.18 vs 白卡 —— 非文字 UI 阈值 3.0  ✅
         TRACK="#d5d9e2",
+        SWITCH_KNOB="#ffffff",
         TEXT="#1c212b",        # 16.5 ✅
         TEXT_DIM="#4a5261",    # 7.87 ✅
         TEXT_FAINT="#5b6372",  # 6.05 ✅
