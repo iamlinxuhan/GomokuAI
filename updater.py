@@ -27,11 +27,13 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
 import hashlib
 import json
 import os
 import platform
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -482,25 +484,63 @@ def _proxy_for(url: str, proxy: str) -> str:
     return proxy or system_proxy()
 
 
+@contextlib.contextmanager
+def _ipv4_first():
+    """把这一段里的 DNS 解析限制在 IPv4 上。
+
+    Cloudflare 这类站点同时有 A 与 AAAA，而 urllib 不做 Happy Eyeballs，
+    按 ``getaddrinfo`` 的顺序先连 IPv6。国内到部分 Cloudflare IPv6 前缀会被
+    限速（实测同一个文件：IPv6 142 KB/s、IPv4 2.5 MB/s），浏览器会并行尝试
+    IPv4，所以感觉不到。只在打开连接这一小段生效，退出即还原。
+    """
+    original = socket.getaddrinfo
+
+    def patched(host, port, family=0, type=0, proto=0, flags=0):
+        if family in (0, socket.AF_UNSPEC):
+            return original(host, port, socket.AF_INET, type, proto, flags)
+        return original(host, port, family, type, proto, flags)
+
+    socket.getaddrinfo = patched
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = original
+
+
 def _open(url: str, request: urllib.request.Request, proxy: str,
           timeout: float):
-    """按 ``_proxy_for`` 的结论发起请求；代理连不上就退回直连一次。
+    """按 ``_proxy_for`` 的结论发起请求，失败时逐级退。
 
-    系统代理可能是陈的（换过端口、公司网走了 PAC）。那种情况下直连虽然慢，
-    至少能完成；让「代理挂了」直接变成「更新失败」没有必要。
+    顺序：代理（配了才试）→ 直连且 IPv4 优先 → 直连交给 urllib 默认。
+    系统代理可能是陈的（换过端口、公司网走了 PAC）；IPv6 前缀也可能被限速。
+    两层回退让"能连上"与"连得快"都不至于被一个变量卡死。
     """
-    try:
-        opener = _opener(_proxy_for(url, proxy))
-    except ValueError as exc:
-        raise UpdateError(f"代理设置无效：{exc}") from exc
-    try:
-        return opener.open(request, timeout=timeout)
-    except urllib.error.HTTPError:
-        raise
-    except (urllib.error.URLError, OSError):
-        if _proxy_for(url, proxy) in ("", "direct"):
+    effective = _proxy_for(url, proxy)
+    if effective and effective not in ("", "direct"):
+        plans = [(effective, False), ("direct", True), ("direct", False)]
+    elif effective == "direct":
+        plans = [("direct", True), ("direct", False)]
+    else:
+        # 没有可用的代理结论：先 IPv4 直连；再交给 urllib 默认（Windows 会读
+        # 注册表里的系统代理，这一条不能丢）。
+        plans = [("direct", True), ("", False)]
+
+    last: Exception | None = None
+    for how, ipv4 in plans:
+        try:
+            opener = _opener(how)
+            if ipv4:
+                with _ipv4_first():
+                    return opener.open(request, timeout=timeout)
+            return opener.open(request, timeout=timeout)
+        except ValueError as exc:
+            raise UpdateError(f"代理设置无效：{exc}") from exc
+        except urllib.error.HTTPError:
             raise
-        return _opener("direct").open(request, timeout=timeout)
+        except (urllib.error.URLError, OSError) as exc:
+            last = exc
+    assert last is not None
+    raise last
 
 
 def _read_one(url: str, proxy: str = "", timeout: float = 10.0,
@@ -1112,6 +1152,11 @@ def _selftest() -> int:
     check("auto 先镜像", urls[0], f"{MIRROR_BASE}/v1.2.3/X.exe")
     check("auto 有 GitHub 回退", urls[-1], "https://github.com/a/b/X.exe")
     check("github 源只留 GitHub", len(asset_urls(probe, probe.assets[0], "github")), 1)
+
+    # ---- IPv4 优先
+    with _ipv4_first():
+        infos = socket.getaddrinfo("localhost", 80, 0, socket.SOCK_STREAM)
+    check("IPv4 优先只解析 A 记录", {info[0] for info in infos}, {socket.AF_INET})
 
     # ---- 校验和解析
     text = (
