@@ -831,7 +831,8 @@ for (const id of ['setup', 'game', 'choose-color', 'choose-level', 'choose-rules
                   // 复盘
                   'btn-review', 'review-pick', 'pick-levels', 'btn-review-start',
                   'btn-review-close', 'review-run', 'run-step', 'run-bar',
-                  'btn-run-cancel', 'review-box', 'review-title', 'review-count',
+                  'btn-run-cancel', 'btn-review-reselect',
+                  'review-box', 'review-title', 'review-count',
                   'review-rows',
                   'review-readout', 'btn-review-exit']) {
   el[id] = document.getElementById(id);
@@ -1109,6 +1110,19 @@ function cancelReview() {
   //: 结果一起丢掉（桌面版同样只加一句"已取消"）。
   if (S.review.records.length) showReviewResults(true);
   else { S.review = null; el.overlay.classList.remove('hidden'); }
+}
+
+//: 跑到一半发现强度选错了（宗师档逐手 20 秒，12 手就是几分钟）：停掉这一轮，
+//: 把算了一半的结果丢掉，回到强度页重选。故意不复用 `cancelReview()` ——
+//: 那个的语义是"就到这里，把已有的结果给我看"，而这里要的是"这次不算"。
+function reselectReview() {
+  if (!S.review) return;
+  reviewToken += 1;
+  engine.kill();
+  S.review = null;
+  S.reviewView = null;
+  el['review-run'].classList.add('hidden');
+  openReviewPick();
 }
 
 function showReviewResults(cancelled) {
@@ -1897,6 +1911,7 @@ el['btn-review'].addEventListener('click', openReviewPick);
 el['btn-review-close'].addEventListener('click', cancelReviewPick);
 el['btn-review-start'].addEventListener('click', startReview);
 el['btn-run-cancel'].addEventListener('click', cancelReview);
+el['btn-review-reselect'].addEventListener('click', reselectReview);
 el['btn-review-exit'].addEventListener('click', exitReview);
 el['review-rows'].addEventListener('click', (ev) => {
   const b = ev.target.closest('.review-row');

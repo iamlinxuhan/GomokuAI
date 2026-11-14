@@ -161,7 +161,8 @@ src += '\n;globalThis.__api = { S, el, idx, winLine, place, undo, engine, refres
      + ' LEVELS, setSize, SIZES, DEFAULT_SIZE, starPoints, designSide,'
      + ' get N() { return N; },'
      + ' geom, toGrid, BOOK, bookLookup, reviewMoves, reviewRecord,'
-     + ' reviewLine, openReviewPick, startReview, cancelReview, showReviewView,'
+     + ' reviewLine, openReviewPick, startReview, cancelReview, reselectReview,'
+     + ' showReviewView,'
      + ' exitReview, NET, netHandle, netOpen, netClose, netSendState, netTurnCard,'
      + ' enterOnline, newGame, finish, applyModeGroups, clearNode };\n';
 
@@ -401,6 +402,24 @@ function turnState() { return byId['turn-card'].dataset.state || ''; }
     byId['btn-review-exit'].click();
     ok(!byId.game.classList.contains('reviewing'), '退出复盘');
     ok(!byId.overlay.classList.contains('hidden'), '回到终局遮罩');
+  }
+
+  // 13b 强度选错了：点「重选强度」→ 停掉这一轮、丢掉半截结果、回强度页
+  //     node 里的搜索是同步阻塞的，按真实时序没法"跑到一半"插进来；这里把
+  //     运行中的状态直接摆出来，验的是按钮接线与状态清理。
+  {
+    A.S.reviewLevel = 1;
+    A.openReviewPick();
+    ok(!byId['review-pick'].classList.contains('hidden'), '再次打开强度页');
+    A.S.review = { records: [{ seq: 1 }], level: 1 };
+    byId['review-pick'].classList.add('hidden');
+    byId['review-run'].classList.remove('hidden');
+    byId['btn-review-reselect'].click();
+    ok(!byId['review-pick'].classList.contains('hidden'), '重选强度回到强度页');
+    ok(byId['review-run'].classList.contains('hidden'), '进度遮罩收起');
+    ok(A.S.review === null, '半截结果丢掉');
+    ok(A.S.reviewLevel === 1, '重选后旧强度还在', A.S.reviewLevel);
+    byId['btn-review-close'].click();       // 收场：回终局遮罩
   }
 
   // 14 联机：房主权威 / 加入方发意向 / 观战只看 / 旧序号丢弃
