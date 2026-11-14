@@ -568,9 +568,10 @@ def _record_line(rec):
 
 
 class ReviewProgressScreen(Screen):
-    """复盘计算中的进度页：进度条 + 「第 N/M 手」+ 取消。"""
+    """复盘计算中的进度页：进度条 + 「第 N/M 手」+ 重选强度 / 取消。"""
 
     cancel_clicked = pyqtSignal()
+    reselect_clicked = pyqtSignal()
 
     def __init__(self, total, level):
         super().__init__(title="算法复盘",
@@ -592,6 +593,12 @@ class ReviewProgressScreen(Screen):
 
         self.step_label = faint_label(i18n.tf("第 %d/%d 手", 0, self.total))
         self.add_content(self.step_label)
+
+        #: 强度选错了（宗师档逐手 20 秒，十几手就是几分钟）：停掉这一轮、
+        #: 丢掉半截结果，回到强度页重挑。
+        reselect_btn = button("← 重选强度", "ghost", width=_px(150))
+        reselect_btn.clicked.connect(self.reselect_clicked.emit)
+        self.add_content(reselect_btn)
 
         cancel_btn = button("✕ 取消复盘", "danger", width=_px(150))
         cancel_btn.clicked.connect(self.cancel_clicked.emit)
@@ -5431,6 +5438,7 @@ class GomokuGame(QMainWindow):
         self.review_progress = ReviewProgressScreen(len(self.human_moves),
                                                     level)
         self.review_progress.cancel_clicked.connect(self._cancel_review)
+        self.review_progress.reselect_clicked.connect(self._on_review_reselect)
         self._switch_page(self.review_progress)
 
         # 人机局的默认子色来自执棋选择；局域网要问**这一局我执的是哪一色**
@@ -5455,6 +5463,16 @@ class GomokuGame(QMainWindow):
         self.review_worker.completed.connect(
             lambda recs, lv=level, g=gen: self._on_review_done(recs, lv, g))
         self.review_worker.start()
+
+    def _on_review_reselect(self):
+        """进度页上的「← 重选强度」：停掉这一轮，丢掉半截结果，回强度页。
+
+        与「✕ 取消复盘」的差别只在语义：那个是"就到这里，把算完的给我看"
+        （``discard=False``），这个是"这次不算"。``discard=True`` 让代数加一，
+        线程停下后 ``_on_review_done`` 会直接返回，不会把结果页推上来。
+        """
+        self._cancel_review(discard=True)
+        self._show_review_strength()
 
     def _on_review_progress(self, done, total):
         # 页面可能已经被取消按钮之后的收尾流程丢掉（``_cancel_review`` 只停

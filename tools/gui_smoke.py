@@ -1147,6 +1147,20 @@ def do_review_cancel(app):
 
     w._cancel_review(discard=True)
 
+    # ---- 「← 重选强度」：停掉这一轮、丢掉半截结果、回到强度页 ----
+    #     用户 2026-11-14：强度选错只能干等整轮，取消只能看半截结果。
+    w._on_review_level_selected(3)
+    pump(1_200, app)                 # 让第一手真的进到搜索里
+    gen_before = w._review_generation
+    w._on_review_reselect()
+    pump(80, app)
+    check(w.review_worker is None, "重选强度后复盘线程已停")
+    check(w._review_generation > gen_before, "重选强度作废了在途结果")
+    check(w.review_strength is not None
+          and w.central.currentWidget() is w.review_strength,
+          "重选强度回到强度页")
+    w._cancel_review(discard=True)
+
 
 def do_settings(app):
     """设置弹窗：每一页都有入口、弹窗期间不切页、换档不丢局面、关窗才重建。
