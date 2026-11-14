@@ -16,16 +16,20 @@ import main as M
 import theme
 
 
+_KEYS = (M._UPDATE_ON_START_KEY, M._UPDATE_INTERVAL_KEY, M._UPDATE_LAST_KEY)
+
+
 @pytest.fixture(autouse=True)
 def _preserve_pref():
     """别把开发者自己存的偏好改掉：记下原值，用完还原。"""
     store = QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP)
-    old = store.value(M._UPDATE_ON_START_KEY, None)
+    old = {key: store.value(key, None) for key in _KEYS}
     yield store
-    if old is None:
-        store.remove(M._UPDATE_ON_START_KEY)
-    else:
-        store.setValue(M._UPDATE_ON_START_KEY, old)
+    for key, value in old.items():
+        if value is None:
+            store.remove(key)
+        else:
+            store.setValue(key, value)
 
 
 def test_default_is_on(_preserve_pref):
@@ -57,3 +61,47 @@ def test_on_spellings_are_understood(_preserve_pref, raw):
     """空串是"没填过"，按开启处理。"""
     _preserve_pref.setValue(M._UPDATE_ON_START_KEY, raw)
     assert M._load_update_prefs()["on_start"] is True
+
+
+# ---------------------------------------------------------------- 检查频率
+
+def test_interval_default_is_startup(_preserve_pref):
+    _preserve_pref.remove(M._UPDATE_INTERVAL_KEY)
+    assert M._load_update_prefs()["interval"] == "startup"
+
+
+def test_interval_round_trips(_preserve_pref):
+    M._save_update_pref(M._UPDATE_INTERVAL_KEY, "weekly")
+    assert M._load_update_prefs()["interval"] == "weekly"
+
+
+def test_bogus_interval_falls_back_to_startup(_preserve_pref):
+    _preserve_pref.setValue(M._UPDATE_INTERVAL_KEY, "fortnightly")
+    assert M._load_update_prefs()["interval"] == "startup"
+
+
+def test_startup_interval_is_always_due(_preserve_pref):
+    _preserve_pref.setValue(M._UPDATE_LAST_KEY, str(int(M.time.time())))
+    assert M._update_due({"interval": "startup"}) is True
+
+
+def test_daily_interval_skips_when_checked_recently(_preserve_pref):
+    _preserve_pref.setValue(M._UPDATE_LAST_KEY, str(int(M.time.time()) - 60))
+    assert M._update_due({"interval": "daily"}) is False
+
+
+def test_daily_interval_is_due_after_a_day(_preserve_pref):
+    _preserve_pref.setValue(M._UPDATE_LAST_KEY,
+                            str(int(M.time.time()) - 25 * 3600))
+    assert M._update_due({"interval": "daily"}) is True
+
+
+def test_weekly_interval_is_due_after_a_week(_preserve_pref):
+    _preserve_pref.setValue(M._UPDATE_LAST_KEY,
+                            str(int(M.time.time()) - 8 * 24 * 3600))
+    assert M._update_due({"interval": "weekly"}) is True
+
+
+def test_missing_timestamp_counts_as_due(_preserve_pref):
+    _preserve_pref.remove(M._UPDATE_LAST_KEY)
+    assert M._update_due({"interval": "weekly"}) is True

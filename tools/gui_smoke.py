@@ -1459,29 +1459,42 @@ def do_custom_difficulty(app):
 
 
 def do_update_toggle(app):
-    """「启动时自动检查更新」要一眼看得出开还是关（用户 2026-11-14）。
+    """自动更新开关：胶囊开关、一行说明、检查频率（用户 2026-11-14）。
 
-    只靠 ``:checked`` 的背景色差太弱；文字里必须写状态。这里顺带确认点击后
-    偏好确实落盘，并在用例结束时还原开发者原来的设置。
+    旧的「启动时自动检查更新」是个幽灵按钮，点下去只有一档几乎看不出的灰，
+    也说不清关掉之后手动检查还在不在。现在开关 + 说明 + 频率三件套。
     """
-    saved = M._load_update_prefs()["on_start"]
+    saved = M._load_update_prefs()
     sec = M._UpdateSection()
     sec.show()
     pump(30, app)
     try:
-        check("（已开启）" in sec.start_btn.text() or "（已关闭）" in sec.start_btn.text(),
-              "开关文字带状态", sec.start_btn.text())
-        before = sec.start_btn.isChecked()
-        sec.start_btn.click()
+        check(sec.auto_switch.isChecked() == saved["on_start"], "开关初值跟随偏好",
+              f"{sec.auto_switch.isChecked()} / {saved['on_start']}")
+        check(sec.interval_box.count() == 3, "频率三项",
+              sec.interval_box.count())
+        check(sec.interval_box.isEnabled() == sec.auto_switch.isChecked(),
+              "频率的可用状态跟随开关")
+        check(sec.auto_hint.isVisible() or not sec.isVisible(),
+              "有一句说明关掉之后的后果")
+
+        sec.auto_switch.click()
         pump(20, app)
-        want = "（已开启）" if sec.start_btn.isChecked() else "（已关闭）"
-        check(want in sec.start_btn.text(), "点击后文字跟着变",
-              sec.start_btn.text())
-        check(sec.start_btn.isChecked() != before, "点击真的切换了状态")
-        check(M._load_update_prefs()["on_start"] == sec.start_btn.isChecked(),
+        check(sec.auto_switch.isChecked() != saved["on_start"],
+              "点击真的切换了状态")
+        check(sec.interval_box.isEnabled() == sec.auto_switch.isChecked(),
+              "关掉后频率变灰")
+        check(M._load_update_prefs()["on_start"] == sec.auto_switch.isChecked(),
               "开关状态已落盘")
+
+        sec.interval_box.setCurrentIndex(1)      # 每天
+        pump(20, app)
+        check(M._load_update_prefs()["interval"] == "daily", "频率已落盘",
+              M._load_update_prefs()["interval"])
     finally:
-        M._save_update_pref(M._UPDATE_ON_START_KEY, "1" if saved else "0")
+        M._save_update_pref(M._UPDATE_ON_START_KEY,
+                            "1" if saved["on_start"] else "0")
+        M._save_update_pref(M._UPDATE_INTERVAL_KEY, saved["interval"])
         sec.close()
         sec.deleteLater()
         pump(30, app)

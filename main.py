@@ -7,6 +7,7 @@ import os
 import sys
 import math
 import json
+import time
 import threading
 
 import numpy as np
@@ -15,12 +16,12 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QDialog,
     QVBoxLayout, QHBoxLayout, QStackedWidget, QStackedLayout,
     QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea, QButtonGroup,
-    QLineEdit, QSlider, QMessageBox, QComboBox
+    QLineEdit, QSlider, QMessageBox, QComboBox, QAbstractButton
 )
 from PyQt5.QtCore import (
     Qt, QTimer, QThread, QObject, QAbstractAnimation, pyqtSignal, QRect,
     QPoint, QPointF, QSize, QElapsedTimer, QEasingCurve, QVariantAnimation,
-    QLocale, QSettings, QEvent, QUrl
+    QLocale, QSettings, QEvent, QUrl, QRectF
 )
 from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtGui import (
@@ -1075,6 +1076,17 @@ class _LanguageRow(QWidget):
 _UPDATE_SOURCE_KEY = "update_source"
 _UPDATE_PROXY_KEY = "update_proxy"
 _UPDATE_ON_START_KEY = "update_check_on_start"
+_UPDATE_INTERVAL_KEY = "update_check_interval"
+#: 上次**真正发出**启动检查的时间（epoch 秒）。"每天/每周"靠它判断。
+_UPDATE_LAST_KEY = "update_last_check"
+
+#: 检查频率：每次启动 / 每天 / 每周。间隔只在启动检查这一条路上生效，
+#: 手动点「检查更新」永远立即执行。
+_UPDATE_INTERVALS = {
+    "startup": 0,
+    "daily": 24 * 3600,
+    "weekly": 7 * 24 * 3600,
+}
 
 #: 启动后多久发第一次更新检查。2.5 s 是"首屏已经画完、用户还没开始点"的
 #: 位置 —— 太早会和字体/棋盘缓存放一起，太晚则用户已经开始下棋。
@@ -1131,11 +1143,33 @@ def _load_update_prefs() -> dict:
         source = "auto"
     proxy = str(store.value(_UPDATE_PROXY_KEY, "") or "")
     raw = str(store.value(_UPDATE_ON_START_KEY, "1")).strip().lower()
+    interval = str(store.value(_UPDATE_INTERVAL_KEY, "startup") or "startup")
+    if interval not in _UPDATE_INTERVALS:
+        interval = "startup"
     return {
         "source": source,
         "proxy": proxy,
         "on_start": raw not in ("0", "false", "no", "off"),
+        "interval": interval,
     }
+
+
+def _update_due(prefs: dict) -> bool:
+    """这一次启动该不该发检查请求。
+
+    ``startup`` 永远该；``daily`` / ``weekly`` 看上次检查的时间。**只在成功
+    发出并收到结果之后才记时间**？—— 不，失败的检查也算一次：断网时每次启动
+    都重试，用户看到的是"又在转圈"，而"每天一次"这个承诺是给不想被打扰的人
+    的，不该被网络状态改写。
+    """
+    span = _UPDATE_INTERVALS.get(prefs.get("interval", "startup"), 0)
+    if span <= 0:
+        return True
+    try:
+        last = float(_update_store().value(_UPDATE_LAST_KEY, 0) or 0)
+    except (TypeError, ValueError):
+        last = 0.0
+    return time.time() - last >= span
 
 
 def _save_update_pref(key: str, value) -> None:
@@ -1200,6 +1234,38 @@ class UpdateDownloadWorker(QThread):
         self.prepared.emit(new)
 
 
+class ToggleSwitch(QAbstractButton):
+    """胶囊开关：轨道 + 圆形滑块。
+
+    QSS 只能给 ``QCheckBox::indicator`` 换颜色，画不出会移动的滑块；而"这是
+    开还是关"一眼可读，靠的正是滑块的位置。配色仍从 theme 取，两套主题一致。
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self._w, self._h = _px(46), _px(26)
+        self.setFixedSize(self._w, self._h)
+
+    def sizeHint(self):
+        return QSize(self._w, self._h)
+
+    def paintEvent(self, _event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        w, h = self.width(), self.height()
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(theme.ACCENT if self.isChecked() else theme.TRACK))
+        p.drawRoundedRect(QRectF(0, 0, w, h), h / 2.0, h / 2.0)
+        pad = max(2.0, h * 0.12)
+        d = h - 2 * pad
+        x = (w - pad - d) if self.isChecked() else pad
+        p.setBrush(QColor("#ffffff"))
+        p.drawEllipse(QRectF(x, pad, d, d))
+        p.end()
+
+
 class _UpdateSection(QWidget):
     """设置页里的「更新」卡片。
 
@@ -1220,6 +1286,9 @@ class _UpdateSection(QWidget):
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(theme.SPACE_XS)
 
+        col.addWidget(faint_label(i18n.t("自动更新"),
+                                  align=Qt.AlignLeft | Qt.AlignVCenter))
+
         # 当前版本与渠道。**这一行永远显示**，包括商店版与源码版 —— 排障时
         # "你装的是哪一份"比任何一句错误信息都重要。
         self.status = faint_label(
@@ -1228,6 +1297,46 @@ class _UpdateSection(QWidget):
             align=Qt.AlignLeft | Qt.AlignVCenter)
         self.status.setWordWrap(True)
         col.addWidget(self.status)
+
+        # 自动检查：开关 + 一句"关了会怎样"。只写「启动时自动检查更新」的
+        # 按钮不像开关，也说不清关掉之后手动检查还在不在。
+        auto_row = QHBoxLayout()
+        auto_row.setContentsMargins(0, 0, 0, 0)
+        auto_row.setSpacing(theme.SPACE_SM)
+        auto_row.addWidget(faint_label(i18n.t("自动检查更新"),
+                                       align=Qt.AlignLeft | Qt.AlignVCenter))
+        auto_row.addStretch(1)
+        self.auto_switch = ToggleSwitch(self)
+        self.auto_switch.setChecked(self.prefs["on_start"])
+        self.auto_switch.toggled.connect(self._on_auto_toggle)
+        auto_row.addWidget(self.auto_switch)
+        col.addLayout(auto_row)
+
+        self.auto_hint = faint_label(
+            i18n.t("关闭后启动时不再检查新版本；下面的按钮仍可手动检查与安装。"),
+            align=Qt.AlignLeft)
+        self.auto_hint.setWordWrap(True)
+        col.addWidget(self.auto_hint)
+
+        interval_row = QHBoxLayout()
+        interval_row.setContentsMargins(0, 0, 0, 0)
+        interval_row.setSpacing(theme.SPACE_SM)
+        interval_row.addWidget(faint_label(i18n.t("检查频率"),
+                                           align=Qt.AlignLeft | Qt.AlignVCenter))
+        interval_row.addStretch(1)
+        self.interval_box = QComboBox(self)
+        for code, label in (("startup", "每次启动"), ("daily", "每天"),
+                            ("weekly", "每周")):
+            self.interval_box.addItem(i18n.t(label), code)
+        self.interval_box.setCurrentIndex(max(
+            0, self.interval_box.findData(self.prefs["interval"])))
+        self.interval_box.setFixedHeight(theme.CONTROL_H)
+        self.interval_box.setMinimumWidth(_px(140))
+        self.interval_box.currentIndexChanged.connect(self._on_interval)
+        interval_row.addWidget(self.interval_box)
+        col.addLayout(interval_row)
+
+        self._refresh_auto_controls()
 
         self.check_btn = button("检查更新", "ghost", width=_px(120))
         self.check_btn.clicked.connect(self._on_check)
@@ -1282,13 +1391,6 @@ class _UpdateSection(QWidget):
         proxy_row.addWidget(self.proxy_edit)
         col.addLayout(proxy_row)
 
-        self.start_btn = button("启动时自动检查更新", "ghost")
-        self.start_btn.setCheckable(True)
-        self.start_btn.setChecked(self.prefs["on_start"])
-        self.start_btn.clicked.connect(self._on_start_toggle)
-        self._refresh_start_btn()
-        col.addWidget(self.start_btn, Qt.AlignLeft)
-
         self._refresh_buttons()
 
     # ---- 状态与按钮 ----
@@ -1329,22 +1431,21 @@ class _UpdateSection(QWidget):
         self.prefs["proxy"] = value
         _save_update_pref(_UPDATE_PROXY_KEY, value)
 
-    def _on_start_toggle(self):
-        self.prefs["on_start"] = self.start_btn.isChecked()
-        _save_update_pref(_UPDATE_ON_START_KEY,
-                          "1" if self.prefs["on_start"] else "0")
-        self._refresh_start_btn()
+    def _on_auto_toggle(self, on: bool):
+        self.prefs["on_start"] = bool(on)
+        _save_update_pref(_UPDATE_ON_START_KEY, "1" if on else "0")
+        self._refresh_auto_controls()
 
-    def _refresh_start_btn(self):
-        """把开/关写进按钮文字。
+    def _on_interval(self, _index: int):
+        code = self.interval_box.currentData() or "startup"
+        self.prefs["interval"] = code
+        _save_update_pref(_UPDATE_INTERVAL_KEY, code)
+        self._refresh_auto_controls()
 
-        只靠 ``:checked`` 的背景色差（``GHOST_PRESS`` 与幽灵底只差一档灰），
-        在浅色主题的大片留白里几乎看不出来 —— 用户点了会以为按钮坏了。
-        文字里写清楚，不依赖任何配色。
-        """
-        state = i18n.t("已开启" if self.start_btn.isChecked() else "已关闭")
-        self.start_btn.setText(
-            i18n.tf("%s（%s）", i18n.t("启动时自动检查更新"), state))
+    def _refresh_auto_controls(self):
+        """开关关掉时把频率一起灰掉 —— 频率对"不检查"没有任何意义。"""
+        self.interval_box.setEnabled(self.auto_switch.isChecked())
+        self.auto_hint.setVisible(True)
 
     def _open_page(self):
         QDesktopServices.openUrl(QUrl(updater.SITE_PAGE))
@@ -3831,7 +3932,8 @@ class GomokuGame(QMainWindow):
         self._update_dialog = None
         if getattr(sys, "frozen", False) and updater.install_kind() != "msix":
             _prefs = _load_update_prefs()
-            if _prefs["on_start"]:
+            # 「关闭」与「每天/每周还没到点」都在这里拦住 —— 定时器根本不排。
+            if _prefs["on_start"] and _update_due(_prefs):
                 QTimer.singleShot(
                     UPDATE_CHECK_DELAY_MS,
                     lambda p=_prefs: self._silent_update_check(p))
@@ -3848,6 +3950,9 @@ class GomokuGame(QMainWindow):
         """
         if self._update_check is not None:
             return
+        # 先把时间戳落盘再发请求：断网也算一次，否则配了「每天」的人每次
+        # 启动都会重试一遍。
+        _save_update_pref(_UPDATE_LAST_KEY, str(int(time.time())))
         worker = UpdateCheckWorker(prefs["proxy"], prefs["source"])
         _track_update_thread(worker)
         worker.found.connect(self._on_silent_update_found)
