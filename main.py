@@ -1100,6 +1100,25 @@ def _track_update_thread(worker):
     worker.finished.connect(_drop)
 
 
+def _install_and_restart(new_path, release) -> "str | None":
+    """把下载并校验好的文件装上去、重启、退出。
+
+    **只在主线程调用**：``QApplication.quit()`` 不能从工作线程发。成功时这个
+    进程会在 ``quit()`` 之后结束，返回 ``None``；失败返回给用户看的文案。
+    """
+    kind = updater.install_kind()
+    target = updater.current_executable(kind)
+    if target is None:
+        return "找不到正在运行的程序文件"
+    try:
+        updater.install(new_path, target, kind, version=release.tag)
+        updater.restart(kind, target)
+    except updater.UpdateError as exc:
+        return str(exc)
+    QApplication.instance().quit()
+    return None
+
+
 def _update_store():
     return QSettings(theme._SETTINGS_ORG, theme._SETTINGS_APP)
 
@@ -1377,23 +1396,118 @@ class _UpdateSection(QWidget):
     def _on_prepared(self, new_path):
         """下载并校验完成：装上去、重启、退出。**这三步都在主线程。**"""
         self._download_worker = None
-        target = updater.current_executable(self.kind)
-        if target is None:
-            self._on_install_failed(i18n.t("找不到正在运行的程序文件"))
-            return
         self._set_status(i18n.tf("正在安装 %s…", self.release.tag))
         QApplication.processEvents()
-        try:
-            updater.install(new_path, target, self.kind,
-                            version=self.release.tag)
-            updater.restart(self.kind, target)
-        except updater.UpdateError as exc:
-            self._on_install_failed(str(exc))
+        error = _install_and_restart(new_path, self.release)
+        if error:
+            self._on_install_failed(error)
+
+
+class UpdateDownloadDialog(QDialog):
+    """启动时发现新版本、点了「是」之后的下载窗口：进度条 + 结果。
+
+    用户已经回答过"现在更新"，下一步就该是进度，**不该再拐进设置页**让人
+    找第二颗按钮、再盯一行百分比。下载与校验仍在 ``UpdateDownloadWorker``
+    里，装新版本与重启回到主线程（见 ``_install_and_restart``）。
+    """
+
+    def __init__(self, release, parent=None, autostart=True):
+        super().__init__(parent)
+        self.release = release
+        self.kind = updater.install_kind()
+        self._worker = None
+        self.setWindowTitle(i18n.t("发现新版本"))
+        self.setModal(True)
+
+        col = QVBoxLayout(self)
+        col.setContentsMargins(_px(24), _px(20), _px(24), _px(20))
+        col.setSpacing(theme.SPACE_SM)
+
+        self.title = QLabel(i18n.tf("正在下载 %s…", release.tag), self)
+        self.title.setWordWrap(True)
+        col.addWidget(self.title)
+
+        self.bar = QProgressBar(self)
+        self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(_px(5))
+        self.bar.setFixedWidth(_px(300))
+        self.bar.setRange(0, 0)          # 总字节数到手之前画忙碌条
+        col.addWidget(self.bar)
+
+        self.detail = faint_label("", align=Qt.AlignCenter)
+        self.detail.setWordWrap(True)
+        col.addWidget(self.detail)
+
+        actions = QHBoxLayout()
+        actions.setContentsMargins(0, 0, 0, 0)
+        actions.setSpacing(theme.SPACE_SM)
+        self.page_btn = button("打开下载页", "ghost", width=_px(130))
+        self.page_btn.clicked.connect(self._open_page)
+        self.close_btn = button("关闭", "ghost", width=_px(90))
+        self.close_btn.clicked.connect(self.reject)
+        actions.addWidget(self.page_btn)
+        actions.addWidget(self.close_btn)
+        col.addLayout(actions)
+
+        self._set_busy(True)
+        if autostart:
+            self.start()
+
+    # ---- 下载 ----
+
+    def start(self):
+        prefs = _load_update_prefs()
+        worker = UpdateDownloadWorker(self.release, self.kind,
+                                      prefs["proxy"], prefs["source"])
+        _track_update_thread(worker)
+        worker.progress.connect(self._on_progress)
+        worker.prepared.connect(self._on_prepared)
+        worker.failed.connect(self._on_failed)
+        self._worker = worker
+        worker.start()
+
+    def _set_busy(self, busy: bool):
+        # 下载没有取消接口。忙碌时把两颗按钮一起收起，窗口也关不掉：让人关掉
+        # 窗口、下载却在后台跑完并把程序换掉，比"暂时不给关"更吓人。
+        self.close_btn.setVisible(not busy)
+        self.page_btn.setVisible(not busy)
+
+    def _on_progress(self, done: int, total: int):
+        if total > 0:
+            self.bar.setRange(0, total)
+            self.bar.setValue(done)
+            self.detail.setText(
+                i18n.tf("正在下载… %d%%", min(100, done * 100 // total)))
+        else:
+            self.bar.setRange(0, 0)
+            self.detail.setText(i18n.tf("正在下载… %d KB", done // 1024))
+
+    def _on_failed(self, message):
+        self._worker = None
+        self._set_busy(False)
+        self.title.setText(i18n.tf("更新失败：%s", message))
+        self.detail.setText("")
+        # 进度条停在半路会像是"还在下"，清成空条。
+        self.bar.setRange(0, 1)
+        self.bar.setValue(0)
+
+    def _on_prepared(self, new_path):
+        self._worker = None
+        self.title.setText(i18n.tf("正在安装 %s…", self.release.tag))
+        self.detail.setText("")
+        QApplication.processEvents()
+        error = _install_and_restart(new_path, self.release)
+        if error:
+            self._on_failed(error)
+
+    def _open_page(self):
+        QDesktopServices.openUrl(QUrl(updater.SITE_PAGE))
+
+    def closeEvent(self, ev):
+        if self._worker is not None:
+            ev.ignore()
             return
-        # Windows 的两个分支都由外部脚本接手：安装版会自己拉起新版安装程序，
-        # 便携版的替换脚本在等本进程退出。**必须退出**，否则那个循环会等满
-        # 60 秒再放弃，用户那边表现为"点了没反应"。
-        QApplication.instance().quit()
+        super().closeEvent(ev)
 
 
 class SettingsDialog(QDialog):
@@ -3700,6 +3814,7 @@ class GomokuGame(QMainWindow):
         # 请求：首屏那一秒里网络、字体、棋盘缓存都在忙，插一个 HTTP 请求
         # 只会让"打开就卡一下"多一个来源。
         self._update_check = None
+        self._update_dialog = None
         if getattr(sys, "frozen", False) and updater.install_kind() != "msix":
             _prefs = _load_update_prefs()
             if _prefs["on_start"]:
@@ -3744,8 +3859,15 @@ class GomokuGame(QMainWindow):
             i18n.t("发现新版本"),
             i18n.tf("新版本 %s 已经发布，是否现在更新？", release.tag),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes)
-        if answer == QMessageBox.Yes:
-            self._open_settings_dialog()
+        if answer != QMessageBox.Yes:
+            return
+        # 用户已经答了"现在更新"：能自更新的形态直接开下载窗，别把人推进
+        # 设置页再找一颗按钮。deb / 源码版给不出安装动作，开到下载页。
+        if updater.can_auto_install(updater.install_kind()):
+            self._update_dialog = UpdateDownloadDialog(release, self)
+            self._update_dialog.show()
+        else:
+            QDesktopServices.openUrl(QUrl(updater.SITE_PAGE))
 
     # ------------------------------------------------------------------
     # 会话状态兼容垫片（M1 过渡期）

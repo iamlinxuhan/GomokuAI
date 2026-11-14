@@ -1458,6 +1458,38 @@ def do_custom_difficulty(app):
     pump(30, app)
 
 
+def do_update_dialog(app):
+    """启动检查点「是」之后直接弹出的下载窗（不再拐进设置页）。
+
+    这里不连网：worker 用 ``autostart=False`` 跳过，手工喂 progress / failed，
+    验的是窗口本身 —— 标题、忙碌条、按钮的收起与回来。
+    """
+    release = M.updater.Release(tag="v9.9.9")
+    d = M.UpdateDownloadDialog(release, autostart=False)
+    d.show()
+    pump(30, app)
+    check(d.windowTitle() == i18n.t("发现新版本"), "下载窗标题", d.windowTitle())
+    check("v9.9.9" in d.title.text(), "下载窗写明版本", d.title.text())
+    check(d.bar.maximum() == 0, "总量未知时是忙碌条",
+          f"{d.bar.minimum()}/{d.bar.maximum()}")
+    check(not d.close_btn.isVisible() and not d.page_btn.isVisible(),
+          "下载中收起关闭与下载页按钮")
+
+    d._on_progress(512, 2048)
+    check(d.bar.maximum() == 2048 and d.bar.value() == 512,
+          "进度条跟着字节走", f"{d.bar.value()}/{d.bar.maximum()}")
+    check(d.detail.text() == i18n.tf("正在下载… %d%%", 25), "百分比文案",
+          d.detail.text())
+
+    d._on_failed("演示失败")
+    check(d.close_btn.isVisible() and d.page_btn.isVisible(), "失败后按钮回来")
+    check("演示失败" in d.title.text(), "失败原因写在标题上", d.title.text())
+
+    d.close()
+    d.deleteLater()
+    pump(30, app)
+
+
 def do_chinese_path(app):
     """B22 回归：路径含非 ASCII 字符时 Qt 插件目录仍能被推导出来。"""
     saved = os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
@@ -1535,6 +1567,7 @@ def main():
         close_case_windows(app, keep=w)
         do_review_cancel(app)
         close_case_windows(app, keep=w)
+        do_update_dialog(app)
         do_chinese_path(app)
     except Exception:
         record("FAIL", "冒烟测试异常中止", traceback.format_exc().splitlines()[-1])
