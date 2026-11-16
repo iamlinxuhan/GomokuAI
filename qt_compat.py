@@ -31,6 +31,7 @@ from pathlib import Path
 #: 测试"用（CI 与本地对比都靠它）。留空就按平台自动挑。
 _FORCE = os.environ.get("GOMOKU_QT_BINDING", "").strip()
 _use_pyqt5 = _FORCE == "PyQt5"
+_pyside_error = None
 if not _use_pyqt5:
     try:                                # PySide6（Qt 6）优先
         from PySide6 import QtCore, QtGui, QtWidgets
@@ -41,17 +42,25 @@ if not _use_pyqt5:
         from PySide6.QtWidgets import *  # noqa: F401,F403
         API = "PySide6"
         QT_MAJOR = 6
-    except ImportError:                 # 32 位平台没有 Qt 6 轮子
+    except ImportError as _exc:         # 32 位平台没有 Qt 6 轮子
+        _pyside_error = _exc
         _use_pyqt5 = True
 
 if _use_pyqt5:
-    from PyQt5 import QtCore, QtGui, QtWidgets
-    from PyQt5.QtCore import (pyqtSignal, pyqtSlot, pyqtProperty)
-    from PyQt5.QtCore import *          # noqa: F401,F403
-    from PyQt5.QtGui import *           # noqa: F401,F403
-    from PyQt5.QtWidgets import *       # noqa: F401,F403
-    API = "PyQt5"
-    QT_MAJOR = 5
+    try:
+        from PyQt5 import QtCore, QtGui, QtWidgets
+    except ImportError:
+        # 两条都不可用：把 PySide6 那边的真实原因带出来，别让它被
+        # "No module named 'PyQt5'" 盖住（CI 上踩过一次）。
+        raise ImportError(
+            "PySide6 不可用（%r），PyQt5 也未安装" % (_pyside_error,)
+        ) from _pyside_error
+        from PyQt5.QtCore import (pyqtSignal, pyqtSlot, pyqtProperty)
+        from PyQt5.QtCore import *      # noqa: F401,F403
+        from PyQt5.QtGui import *       # noqa: F401,F403
+        from PyQt5.QtWidgets import *   # noqa: F401,F403
+        API = "PyQt5"
+        QT_MAJOR = 5
 
 #: ``QTest`` 只给冒烟工具用，**不进打包产物**（PyInstaller 里被排除）。
 #: 单独 try：它缺席时退回 PyQt5 是灾难 —— 包按一个绑定打的，另一个根本没装。
