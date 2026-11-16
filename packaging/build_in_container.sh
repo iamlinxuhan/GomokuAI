@@ -309,6 +309,8 @@ for _m in \
     PySide6.QtQml PySide6.QtQmlModels PySide6.QtSql PySide6.QtTest \
     PySide6.QtPdf PySide6.QtPdfWidgets PySide6.QtNetworkAuth \
     PySide6.QtDesigner PySide6.QtHelp PySide6.QtUiTools \
+    PySide6.QtNetwork PySide6.QtDBus PySide6.QtOpenGL PySide6.QtPrintSupport \
+    numpy.fft numpy._core._multiarray_tests numpy.testing \
     PyQt5.QtWebEngineWidgets PyQt5.QtWebEngineCore PyQt5.QtMultimedia \
     PyQt5.QtQml PyQt5.QtQuick PyQt5.QtSql PyQt5.QtTest PyQt5.QtDesigner \
     PyQt5.QtHelp PyQt5.QtXmlPatterns; do
@@ -351,6 +353,11 @@ for _lib in libQt6Network.so.6 libQt6Svg.so.6 \
             libQt6EglFSDeviceIntegration.so.6 libQt6EglFsKmsSupport.so.6; do
     rm -f "dist/gomoku-ai/_internal/PySide6/Qt/lib/${_lib}"
 done
+
+#  最后再 strip 一遍：wheels 里有十几份 .so 没去过符号表（numpy 的扩展最多）。
+#  `--strip-unneeded` 只删静态符号与调试信息，动态导出表原样保留。
+find "dist/gomoku-ai/_internal" -name '*.so*' -type f \
+    -exec strip --strip-unneeded {} + 2>/dev/null || true
 
 rm -rf "${FLAVOR_DIR}"
 
