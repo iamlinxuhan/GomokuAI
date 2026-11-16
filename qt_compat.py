@@ -55,12 +55,12 @@ if _use_pyqt5:
         raise ImportError(
             "PySide6 不可用（%r），PyQt5 也未安装" % (_pyside_error,)
         ) from _pyside_error
-        from PyQt5.QtCore import (pyqtSignal, pyqtSlot, pyqtProperty)
-        from PyQt5.QtCore import *      # noqa: F401,F403
-        from PyQt5.QtGui import *       # noqa: F401,F403
-        from PyQt5.QtWidgets import *   # noqa: F401,F403
-        API = "PyQt5"
-        QT_MAJOR = 5
+    from PyQt5.QtCore import (pyqtSignal, pyqtSlot, pyqtProperty)
+    from PyQt5.QtCore import *          # noqa: F401,F403
+    from PyQt5.QtGui import *           # noqa: F401,F403
+    from PyQt5.QtWidgets import *       # noqa: F401,F403
+    API = "PyQt5"
+    QT_MAJOR = 5
 
 #: ``QTest`` 只给冒烟工具用，**不进打包产物**（PyInstaller 里被排除）。
 #: 单独 try：它缺席时退回 PyQt5 是灾难 —— 包按一个绑定打的，另一个根本没装。
