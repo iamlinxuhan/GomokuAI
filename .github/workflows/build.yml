@@ -120,6 +120,15 @@ jobs:
         # 四处，漏掉一处就得到"本地过了 CI 挂"的假象。
         run: uv sync --frozen --python ${{ matrix.python-version }}
 
+      - name: Install Qt runtime libraries
+        # PySide6 的 QtGui 一 import 就 dlopen libEGL.so.1，而 Ubuntu runner
+        # 默认没装（Qt 5 的 PyQt5 不依赖它，所以以前没这一步）。缺了会在
+        # 收集阶段直接 ImportError，看起来像"绑定没装"。
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 \
+            libxkbcommon-x11-0 libxcb-cursor0 libdbus-1-3
+
       - name: Run test suite
         # -m "not perf"：跳过依赖机器速度的门槛（吞吐 nps / 到达深度）。
         # 那些门槛在开发机上是有效哨兵，在更慢的 runner 上只会变成随机红。
@@ -183,6 +192,15 @@ jobs:
               assert p, "变体 %s 的引擎没有构建出来" % v
               print("%s -> %s" % (v, p))
           PY
+
+      - name: Install Qt runtime libraries
+        # PySide6 的 QtGui 一 import 就 dlopen libEGL.so.1，而 Ubuntu runner
+        # 默认没装（Qt 5 的 PyQt5 不依赖它，所以以前没这一步）。缺了会在
+        # 收集阶段直接 ImportError，看起来像"绑定没装"。
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libegl1 libgl1 libxkbcommon0 \
+            libxkbcommon-x11-0 libxcb-cursor0 libdbus-1-3
 
       - name: Run the ban test suite
         run: |
