@@ -40,6 +40,7 @@ static const socket_t kBadSocket = INVALID_SOCKET;
 #include <arpa/inet.h>
 #include <csignal>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 using socket_t = int;
@@ -695,6 +696,16 @@ int runServer(const ServerOptions& opt) {
             continue;
         }
         consecFail = 0;
+
+        // **Nagle 必须关。** 这里的报文都是一行小 JSON（hello / compute /
+        // info），Nagle 会攒到收到 ACK 才发，局域网里也要多等几十毫秒；
+        // 每一步棋都吃一次，复盘时一眼就能看出"引擎明明算完了却没回"。
+        {
+            int nodelay = 1;
+            ::setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY,
+                         reinterpret_cast<const char*>(&nodelay),
+                         sizeof(nodelay));
+        }
 
         // **最后连接的客户端胜出。** 本地单机场景下唯一合理的策略：桌面应用
         // 开两个窗口 = 两个 Python 进程 = 两条连接，而 Engine 只有一份。

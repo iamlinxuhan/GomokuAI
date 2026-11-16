@@ -67,6 +67,12 @@ class RoomServer:
                 conn, _addr = self._sock.accept()
             except OSError:
                 break
+            #: 局域网协议是一行一条的小 JSON；Nagle 会攒包等 ACK，每一步棋
+            #: 都多几十毫秒。客户端那一侧已经关（见 wire.py），服务端也得关。
+            try:
+                conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except OSError:
+                pass
             threading.Thread(target=self._handle, args=(conn,),
                              daemon=True).start()
 

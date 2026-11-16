@@ -634,3 +634,42 @@ def test_the_same_move_is_legal_in_a_free_game():
             if cli is not None:
                 cli.join(5)
         srv.stop()
+
+
+def test_accepted_socket_disables_nagle(monkeypatch):
+    """服务端接受连接时必须关掉 Nagle。
+
+    局域网协议是一行一条的小 JSON，Nagle 会攒到收到 ACK 才发，每一步棋都
+    多等几十毫秒。客户端那一侧在 ``wire.py`` 里早就关了，服务端漏了的话，
+    "引擎算完了却没回"会以延迟的形式出现，而不是报错。
+    """
+    import socket as socket_module
+
+    calls = []
+    real = socket_module.socket.setsockopt
+
+    def spy(self, level, opt, value, *args):
+        calls.append((level, opt, value))
+        return real(self, level, opt, value, *args)
+
+    monkeypatch.setattr(socket_module.socket, "setsockopt", spy)
+
+    srv = RoomServer("127.0.0.1")
+    port = srv.start(0)
+    try:
+        # 用裸 socket 连上就行：不经过 wire.connect，免得客户端那一次的
+        # TCP_NODELAY 把服务端漏设的断言掩盖掉。
+        client = socket_module.create_connection(("127.0.0.1", port), 2)
+        try:
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline:
+                if (socket_module.IPPROTO_TCP,
+                        socket_module.TCP_NODELAY, 1) in calls:
+                    break
+                time.sleep(0.01)
+            assert (socket_module.IPPROTO_TCP,
+                    socket_module.TCP_NODELAY, 1) in calls, calls
+        finally:
+            client.close()
+    finally:
+        srv.stop()
