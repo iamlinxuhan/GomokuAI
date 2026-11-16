@@ -16,7 +16,7 @@ Windows 与 Linux 提供正式安装包，**自动更新**以 Ed25519 签名作�
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
 ![PySide6](https://img.shields.io/badge/PySide6-6.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
-![Version](https://img.shields.io/badge/version-4.4.2-brightgreen)
+![Version](https://img.shields.io/badge/version-4.5.0-brightgreen)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
 
 > **macOS 用户请注意：本仓库不提供 macOS 版**（从未在 macOS 上开发或验证过）。
@@ -550,6 +550,7 @@ Gomocup 2026 开局线（`data/gomocup_2026.json` 及其两份生成镜像）转
 
 | 版本 | 日期 | 内容 |
 |---|---|---|
+| **v4.5.0** | 2026-11-17 | **界面迁移到 Qt 6（PySide6），32 位构建保留 PyQt5。** `qt_compat` 统一收口：有 PySide6 就用，i386/armv7 没有 Qt 6 轮子时退回 PyQt5；信号仍叫 `pyqtSignal`，界面代码里没有绑定判断。打包同样分流：64 位装 `PySide6-Essentials`，32 位容器用 apt 的 PyQt5。冻结产物排掉 WebEngine、Qt3D、Charts、QML、SQL、PDF、Qt 翻译表、GTK 主题插件、图片格式与嵌入式平台插件，并 strip 符号表；裁剪后压缩 **49.5 MB**，上一版 AppImage 是 51.6 MB。空闲内存实测 157 MB（此前 134 MB），Qt 6 的库本身更大；空闲 CPU 持平。 |
 | **v4.4.2** | 2026-11-14 | **更新提示改成进度窗口，自动更新改用系统代理。** 「发现新版本」点「是」原来只是打开设置页，还得再点一次「下载并安装」并盯着百分比；现在直接弹出下载窗，按字节推进度，校验后安装、重启、退出。另一半是它为什么慢：Linux 桌面的代理写在 gsettings 或 `kioslaverc` 里，而 Python 的 urllib 只读环境变量，于是浏览器走代理飞快、更新器走直连慢慢爬（37 MB 的包 30 秒才 4%）。`system_proxy()` 现在三处都读，下载镜像不再强制直连，代理连不上时退回直连一次，直连时**优先解析 IPv4** —— 同一个文件在这张网里 IPv6 只有 142 KB/s、IPv4 有 2.5 MB/s，浏览器靠 Happy Eyeballs 把差异藏了起来。同一个 37 MB 的包实测直连 3 MB/s、走代理 15 MB/s。启动检查改成胶囊开关，下面写明关掉之后手动检查仍然可用，并可选 每次启动 / 每天 / 每周 的频率。 |
 | **v4.4.1** | 2026-11-14 | **网页版（B 站 Toy）补上 v4.4.0 的棋盘尺寸，复盘也可以换一档强度重来。** 9/13/15/19 可选，默认 **15×15**；每个尺寸单独编一份 wasm（`gomoku-<规则>-<n>.js`，共八份）与单独一张明文开局库，入门档在每个尺寸上都能查到库里的应手。联机 `state` 带尺寸，加入方跟随房主。原来复盘强度选错只剩「取消」，只能看半截结果；桌面版复盘进度页与网页版进度遮罩都新增 **「重选强度」**，停掉本轮、丢掉已算记录、退回强度页。顺带修好 wasm 构建：v4.4.0 的搜索开始引用开局库与 DFPN 之后，网页版一直链接失败。 |
 | **v4.4.0** | 2026-11-13 | **四种棋盘尺寸、官方开局库、自动更新、Linux 改发 AppImage。** 棋盘尺寸可选 —— 9/13/15/19，默认 **15×15**。C++ 侧每个尺寸单独编译（`-DGOMOKU_BOARD_SIZE`），共八个二进制，热路径没有多出分支；纯 Python 引擎经 `configure_size()` 重建全部表，两条路径的 Zobrist 都取自同一张 19×19 表，所以 `enhanced=0` 的逐字对拍在每个尺寸上都成立。联机协议的 `welcome` 与 `join` 都带尺寸，不一致在开局前拒绝。**Gomocup 2026 官方开局**以 24 条公布线连同每一段前缀入库，对手照线走就逐手应上；八种 D4 对称在启动时展开成一张 `key → move` 表，查询只在根节点做一次哈希。15×15 与 19×19 是全量（713 条），13×13 保留 22 条（633），9×9 保留 8 条（197）。禁手变体永不启用开局库。**DFPN 证明搜索**分 VCF-only 与 VCT 两版，作为 `std::thread` 与主 PVS 并行，自带棋盘与 arena。A/B 没有过闸 —— 1.5 秒/手、32 局自对弈 + 9 个局面，胜率 50.0%，接管 **0 次** —— 所以 `proof_mode` 六档全为 0。**自动更新**覆盖 Windows 安装版、Windows 便携版与 AppImage：先问站点 `version.json`，回退 GitHub API；`SHA256SUMS` 配分离式 **Ed25519** 签名，验签不过不安装。CI 只建 **draft** Release，离线传签名之后才转正。**Linux 改发 AppImage，八个裸可执行文件取消**；任何构建都能用 `--debug` 或 `GOMOKUAI_LOG=1` 打开日志。 |
