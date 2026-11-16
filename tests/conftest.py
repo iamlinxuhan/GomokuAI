@@ -165,3 +165,41 @@ def new_engine():
     except ImportError:
         pytest.skip("engine_local.py 尚未落地（Phase 1+）")
     return mod
+
+
+# ---------------------------------------------------------------- 收尾
+#: pytest 的结果码，留给 `pytest_unconfigure` 用。
+_EXIT_STATUS: int | None = None
+
+
+def pytest_sessionfinish(session, exitstatus):
+    global _EXIT_STATUS
+    _EXIT_STATUS = int(exitstatus)
+
+
+def pytest_unconfigure(config):
+    """测试全部跑完后绕开解释器终结器退出。
+
+    PySide6 6.12 / Qt 6 在 CPython 3.11 上，解释器收尾的 GC 里会报
+    ``Fatal Python error: none_dealloc: deallocating None``（C 扩展的引用计数
+    问题），进程以 134 退出 —— 而 pytest 此时已经打印完 "N passed"。CI 只看
+    退出码，于是明明全绿的一条 job 被标红。
+
+    在 ``pytest_unconfigure``（终端 summary 已经打完）里直接 ``os._exit``：
+    结果码原样带走，不经过 Qt 的 C 扩展终结器。只对 PySide6 生效，PyQt5/无
+    Qt 的环境行为不变。
+    """
+    if _EXIT_STATUS is None:
+        return
+    try:
+        from qt_compat import API as _qt_api
+    except Exception:                       # noqa: BLE001 - 没有 Qt 就算了
+        return
+    if _qt_api != "PySide6":
+        return
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:                       # noqa: BLE001
+        pass
+    os._exit(_EXIT_STATUS)
