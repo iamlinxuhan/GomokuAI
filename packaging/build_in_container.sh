@@ -335,7 +335,8 @@ rm -rf "dist/gomoku-ai/_internal/PySide6/Qt/translations" \
        "dist/gomoku-ai/_internal/PySide6/Qt/plugins/iconengines" \
        "dist/gomoku-ai/_internal/PyQt5/Qt5/translations"
 rm -rf "dist/gomoku-ai/_internal/PySide6/Qt/plugins/imageformats" \
-       "dist/gomoku-ai/_internal/PySide6/Qt/plugins/egldeviceintegrations"
+       "dist/gomoku-ai/_internal/PySide6/Qt/plugins/egldeviceintegrations" \
+       "dist/gomoku-ai/_internal/PySide6/Qt/plugins/generic"
 #  平台插件只留 xcb（X11 / XWayland）与 wayland；EGLFS、linuxfb、VNC 这些
 #  是嵌入式/远程用途，桌面版一个都用不到。
 for _p in libqeglfs libqlinuxfb libqminimalegl libqminimal libqvkkhrdisplay \
