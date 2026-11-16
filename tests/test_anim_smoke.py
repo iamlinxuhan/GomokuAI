@@ -15,8 +15,8 @@ import time
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt5.QtCore import QElapsedTimer, QEventLoop
-from PyQt5.QtWidgets import QApplication, QWidget
+from qt_compat import QElapsedTimer, QEventLoop
+from qt_compat import QApplication, QWidget
 
 import anim
 import theme

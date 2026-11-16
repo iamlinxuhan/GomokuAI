@@ -41,9 +41,9 @@ from __future__ import annotations
 
 from string import Template
 
-from PyQt5.QtCore import QSettings
-from PyQt5.QtGui import QFont, QFontDatabase
-from PyQt5.QtWidgets import QApplication
+from qt_compat import QSettings
+from qt_compat import QFont, QFontDatabase
+from qt_compat import QApplication
 
 import i18n
 

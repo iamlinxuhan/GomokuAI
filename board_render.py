@@ -29,8 +29,8 @@
 from __future__ import annotations
 
 import numpy as np
-from PyQt5.QtCore import QPointF, QRectF, Qt
-from PyQt5.QtGui import (QBrush, QColor, QFontMetricsF, QImage, QLinearGradient,
+from qt_compat import QPointF, QRectF, Qt
+from qt_compat import (QBrush, QColor, QFontMetricsF, QImage, QLinearGradient,
                          QPainter, QPainterPath, QPen, QPixmap, QRadialGradient)
 
 import theme

@@ -29,9 +29,9 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt5.QtCore import QSettings
-from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import QApplication
+from qt_compat import QSettings
+from qt_compat import QColor
+from qt_compat import QApplication
 
 import engine
 import i18n
@@ -132,7 +132,7 @@ def _card_text(card):
     ``card_button`` 是个空 ``QPushButton``，文字在子 ``QLabel``（``role=card-text``）
     里 —— 图形、标题、副标题三者靠布局上下排，按钮自身的 ``text()`` 是空的。
     """
-    from PyQt5.QtWidgets import QLabel
+    from qt_compat import QLabel
     for lbl in card.findChildren(QLabel):
         if lbl.property("role") == "card-text":
             return lbl.text()
@@ -355,7 +355,7 @@ def test_custom_review_skips_the_strength_page(win, qapp, monkeypatch):
 
 def _make_stub(captured):
     """造一个 ``ReviewWorker`` 替身类：只记参数，不真的开线程。"""
-    from PyQt5.QtCore import QObject, pyqtSignal
+    from qt_compat import QObject, pyqtSignal
 
     class _Stub(QObject):
         progressed = pyqtSignal(int, int)
@@ -572,7 +572,7 @@ def test_language_combo_style_and_self_drawn_arrow(qapp, _lang_restore):
 
 
 def test_even_width_takes_the_widest_and_respects_the_floor(qapp):
-    from PyQt5.QtWidgets import QPushButton
+    from qt_compat import QPushButton
     bs = [QPushButton(t) for t in ("关", "低", "中", "高",
                                    "Высокий", "Макс")]
     w = M._even_width(bs, M._px(78))
@@ -583,7 +583,7 @@ def test_even_width_takes_the_widest_and_respects_the_floor(qapp):
 
 def test_even_width_floor_wins_over_short_text(qapp):
     """一排短文案（「大/中/小」）不该缩成三个小方块 —— 下限先兜住。"""
-    from PyQt5.QtWidgets import QPushButton
+    from qt_compat import QPushButton
     bs = [QPushButton("大"), QPushButton("中"), QPushButton("小")]
     w = M._even_width(bs, M._px(110))
     assert w == M._px(110)

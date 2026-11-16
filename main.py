@@ -12,19 +12,19 @@ import threading
 
 import numpy as np
 
-from PyQt5.QtWidgets import (
+from qt_compat import (
     QApplication, QMainWindow, QWidget, QDialog,
     QVBoxLayout, QHBoxLayout, QStackedWidget, QStackedLayout,
     QProgressBar, QFrame, QSizePolicy, QLabel, QScrollArea, QButtonGroup,
     QLineEdit, QSlider, QMessageBox, QComboBox, QAbstractButton
 )
-from PyQt5.QtCore import (
+from qt_compat import (
     Qt, QTimer, QThread, QObject, QAbstractAnimation, pyqtSignal, QRect,
     QPoint, QPointF, QSize, QElapsedTimer, QEasingCurve, QVariantAnimation,
     QLocale, QSettings, QEvent, QUrl, QRectF
 )
-from PyQt5.QtGui import QDesktopServices
-from PyQt5.QtGui import (
+from qt_compat import QDesktopServices
+from qt_compat import (
     QPainter, QPainterPath, QPen, QBrush, QColor, QMouseEvent, QIcon,
     QPolygonF
 )
@@ -5983,17 +5983,16 @@ def _fix_qt_plugin_path():
 
     当项目路径含非 ASCII 字符（例如中文的"桌面"）时，Qt 在初始化阶段会丢掉
     插件目录，报 "Could not find the Qt platform plugin" 而无法启动。
-    这里从 PyQt5 的安装位置反推插件目录并显式写入环境变量，
-    pip / venv / 系统包各种安装方式下都成立。
+    这里由 ``qt_compat.PLUGIN_ROOT`` 反推插件目录并显式写入环境变量，
+    两种绑定、pip / venv / 系统包各种安装方式下都成立。
     """
     if os.environ.get('QT_QPA_PLATFORM_PLUGIN_PATH'):
         return
     try:
-        import PyQt5
-        platforms = os.path.join(os.path.dirname(PyQt5.__file__),
-                                 'Qt5', 'plugins', 'platforms')
+        from qt_compat import PLUGIN_ROOT
+        platforms = str(PLUGIN_ROOT / 'platforms')
         if os.path.isdir(platforms):
-            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = os.path.dirname(platforms)
+            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = str(PLUGIN_ROOT)
     except Exception:
         pass
 
@@ -6102,8 +6101,13 @@ def main():
     # 不经过 main()，于是 CI 上 DPR 恒为 1.0，所有像素几何断言都是确定的。
     # （真要放进模块级，就得改用 QT_ENABLE_HIGHDPI_SCALING 环境变量 —— 那个
     #   是进程级的，同样会污染测试。）
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    # Qt 6 默认开启高 DPI，这两个属性在 Qt 6 里要么消失、要么被标废弃
+    # （PySide6 6.12 会为 AA_UseHighDpiPixmaps 打 DeprecationWarning）。
+    # 只在 Qt 5 上设，Qt 6 一个都不碰。
+    from qt_compat import QT_MAJOR as _qt_major
+    if _qt_major == 5:
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
@@ -6130,7 +6134,7 @@ def main():
 
     window = GomokuGame()
     window.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec() if hasattr(app, "exec") else app.exec_())
 
 
 if __name__ == "__main__":

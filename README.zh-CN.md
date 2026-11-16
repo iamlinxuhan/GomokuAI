@@ -4,7 +4,7 @@
 
 ![五子棋 AI](docs/cover.png)
 
-基于 **PyQt5** 的五子棋人机对弈程序，搜索核心用 **C++17** 编写、通过本地
+基于 **Qt 6（PySide6）** 的五子棋人机对弈程序，搜索核心用 **C++17** 编写、通过本地
 TCP 暴露给界面。引擎为位棋盘 + 全增量评估 + PVS + 置换表 + 静止搜索 + VCF，
 并内置 **Gomocup 2026 官方开局库**。纯 CPU 运行。
 
@@ -14,7 +14,7 @@ TCP 暴露给界面。引擎为位棋盘 + 全增量评估 + PVS + 置换表 + �
 Windows 与 Linux 提供正式安装包，**自动更新**以 Ed25519 签名作为信任根。
 
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
-![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
+![PySide6](https://img.shields.io/badge/PySide6-6.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
 ![Version](https://img.shields.io/badge/version-4.4.2-brightgreen)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
@@ -119,7 +119,7 @@ chmod +x GomokuAI_Linux_amd_x86_64.AppImage
 ```
 
 **Windows on ARM 请用 x64 包。** 系统自带 x64 仿真，运行正常。没有原生 Windows
-ARM 包：PyQt5 整条产品线都没有 `win_arm64` wheel，编不出来。
+ARM 包。
 
 ### 自动更新
 
@@ -147,12 +147,12 @@ GOMOKU_AI_LOGDIR=/tmp/gomoku ./GomokuAI_Linux_amd_x86_64.AppImage
 ```bash
 git clone https://github.com/iamlinxuhan/GomokuAI.git
 cd GomokuAI
-uv sync                              # Python >= 3.11；运行期依赖只有 numpy + PyQt5
+uv sync                              # Python >= 3.11；运行期依赖只有 numpy + PySide6
 uv run python main.py
 ```
 
 依赖用 **uv** 管理（`pyproject.toml` + 提交在仓库里的 `uv.lock`）。不用 uv 时，
-`pip install numpy PyQt5` 对源码运行完全等价。
+`pip install numpy PySide6-Essentials` 对源码运行完全等价（32 位平台换 `PyQt5`）。
 
 ---
 
@@ -275,7 +275,7 @@ uv run python main.py
 ## 两个引擎，一层门面
 
 ```
-┌─ Python（界面，PyQt5）──────────┐        ┌─ C++17 ───────────────────┐
+┌─ Python（界面，PySide6）────────┐        ┌─ C++17 ───────────────────┐
 │  main.py                        │        │  gomoku_engine            │
 │    └ RoomClient                 │        │   ├ Board（位棋盘）       │
 │         └ Room → AIPlayer       │  TCP   │   ├ evaluate（增量）      │
@@ -534,9 +534,8 @@ Copyright (C) 2026 YFY0109 <yfy0109@qq.com>
 
 ### 为什么是 GPLv3
 
-界面基于 **PyQt5**，它本身是 GPLv3（Riverbank 只提供 GPLv3 或商业许可）。链接它的
-二进制整体已被 GPLv3 覆盖。仓库原先的 GPL-2.0 文本没有 "or later" 条款，读法是
-GPL-2.0-only，与 GPLv3 的 PyQt5 不兼容。
+界面基于 **PySide6**（Qt 6 官方绑定，LGPLv3）。i386 与 armv7 两个 32 位包退回
+**PyQt5**（Qt 6 没有 32 位轮子）。源码许可是 GPL-3.0-or-later，两条路都覆盖。
 
 ### 第三方数据
 

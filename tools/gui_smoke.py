@@ -48,9 +48,9 @@ import numpy as np  # noqa: E402
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
-from PyQt5.QtCore import QPoint, QSettings, Qt  # noqa: E402
-from PyQt5.QtTest import QTest  # noqa: E402
-from PyQt5.QtWidgets import (QApplication, QLabel, QPushButton,  # noqa: E402
+from qt_compat import QPoint, QSettings, Qt  # noqa: E402
+from qt_compat import QTest  # noqa: E402
+from qt_compat import (QApplication, QLabel, QPushButton,  # noqa: E402
                              QScrollArea)
 
 import i18n  # noqa: E402

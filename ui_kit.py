@@ -15,10 +15,10 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import Qt, QPointF, QRectF
-from PyQt5.QtGui import (QBrush, QColor, QPainter, QPen, QPixmap,
+from qt_compat import Qt, QPointF, QRectF
+from qt_compat import (QBrush, QColor, QPainter, QPen, QPixmap,
                          QRadialGradient)
-from PyQt5.QtWidgets import (QFrame, QHBoxLayout, QLabel, QPushButton,
+from qt_compat import (QFrame, QHBoxLayout, QLabel, QPushButton,
                              QSizePolicy, QStyle, QStyleOption, QVBoxLayout,
                              QWidget)
 

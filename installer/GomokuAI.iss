@@ -12,7 +12,7 @@
 ;
 ; 打包内容与旧的 7z 完全一致：`dist\GomokuAI\`（PyInstaller onedir）。
 ; onedir 而不是 onefile：onefile 每次启动都要把上百 MB 解包到临时目录，
-; PyQt5 程序的首启动会明显变慢。免安装的单文件版本由 CI 另外单独产出。
+; Qt 程序的首启动会明显变慢。免安装的单文件版本由 CI 另外单独产出。
 ;
 ; **本文件必须存为带 BOM 的 UTF-8** —— 里面有中文（应用名、图标路径）。
 ; 没有 BOM 时 ISCC 会按 ANSI 解析，中文变成乱码。

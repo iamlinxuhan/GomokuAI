@@ -311,6 +311,21 @@ jobs:
         if: matrix.qemu
         uses: docker/setup-qemu-action@v3
 
+      - name: Cache pip wheels for container builds
+        # 容器里没有 uv，pip 是唯一的安装入口（64 位装 PySide6 + pyinstaller，
+        # 32 位只补 pyinstaller）。把宿主上的目录挂进 /root/.cache/pip：
+        # 依赖清单没变时 wheel 直接复用，四个架构各省一次下载。
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip-gomoku
+          key: pip-${{ runner.os }}-${{ matrix.name }}-${{ hashFiles('pyproject.toml', 'uv.lock', 'packaging/build_in_container.sh') }}
+          restore-keys: |
+            pip-${{ runner.os }}-${{ matrix.name }}-
+            pip-${{ runner.os }}-
+
+      - name: Prepare pip cache directory
+        run: mkdir -p "$HOME/.cache/pip-gomoku"
+
       - name: Build inside ${{ matrix.name }} container
         env:
           STEM: ${{ matrix.stem }}
@@ -324,6 +339,7 @@ jobs:
             --platform ${{ matrix.platform }} \
             --dns 1.1.1.1 --dns 8.8.8.8 \
             -v "${GITHUB_WORKSPACE}:/src" -w /src \
+            -v "$HOME/.cache/pip-gomoku:/root/.cache/pip" \
             -e STEM -e EXT -e DEB_ARCH -e APP_VERSION \
             debian:bookworm \
             bash packaging/build_in_container.sh
@@ -366,10 +382,9 @@ jobs:
   #  * 手动 dispatch 仍要显式勾 `build_windows` —— 否则每次只想验证 Linux
   #    四架构都会多挂一个 Windows job，噪声正好盖住真正要看的信号。
   #
-  #  **只出 AMD x86_64。** Windows on ARM 跑的是 x64 版（系统自带模拟）——
-  #  PyQt5 全系没有 `win_arm64` 轮子（PyPI 上 5.15.11 只有 win32 / win_amd64，
-  #  PyQt5-Qt5 的 Windows 轮子停在 5.15.2），原生打包无从谈起。runner 那边
-  #  倒是现成的（`windows-11-arm`，公共仓库免费），卡的是依赖不是 CI。
+  #  **只出 AMD x86_64。** Windows on ARM 跑的是 x64 版（系统自带模拟）。
+  #  PySide6 有 win_arm64 轮子，但构建链路（PyInstaller、签名、商店包）都只
+  #  按 amd64 验证过；要出原生 ARM 包是另一件事，不在这条 job 里顺手做。
   # ============================================================
   windows:
     if: >-
@@ -483,8 +498,36 @@ jobs:
             $binArgs += "--add-binary"
             $binArgs += "cpp\build\Release\$e.exe;."
           }
+          #  PyInstaller 默认按"导入到的 Qt 模块"整棵收，但它自己的 hook 会
+          #  顺手带上一堆用不到的 Qt 库（WebEngine 一家就几十 MB）。这里按
+          #  模块名排除：业务代码只用到 QtCore / QtGui / QtWidgets，
+          #  3D、图表、多媒体、QML、SQL、PDF、设计师、帮助全部用不上。
+          #  32 位那份是 PyQt5，同样各排一遍；排除不存在的模块不会报错。
+          $excludeArgs = @()
+          foreach ($m in @(
+            "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
+            "PySide6.QtWebEngineQuick", "PySide6.QtWebChannel",
+            "PySide6.QtWebSockets", "PySide6.Qt3DCore", "PySide6.Qt3DRender",
+            "PySide6.Qt3DInput", "PySide6.Qt3DLogic", "PySide6.Qt3DAnimation",
+            "PySide6.Qt3DExtras", "PySide6.QtCharts",
+            "PySide6.QtDataVisualization", "PySide6.QtMultimedia",
+            "PySide6.QtMultimediaWidgets", "PySide6.QtQuick",
+            "PySide6.QtQuickWidgets", "PySide6.QtQml", "PySide6.QtQmlModels",
+            "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtPdf",
+            "PySide6.QtPdfWidgets", "PySide6.QtNetworkAuth",
+            "PySide6.QtDesigner", "PySide6.QtHelp", "PySide6.QtUiTools",
+            "PyQt5.QtWebEngineWidgets", "PyQt5.QtWebEngineCore",
+            "PyQt5.QtMultimedia", "PyQt5.QtQml", "PyQt5.QtQuick",
+            "PyQt5.QtSql", "PyQt5.QtTest", "PyQt5.QtDesigner",
+            "PyQt5.QtHelp", "PyQt5.QtXmlPatterns"
+          )) { $excludeArgs += "--exclude-module"; $excludeArgs += $m }
           uv run --frozen pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
-            --paths $flavorDir @binArgs main.py
+            --paths $flavorDir @binArgs @excludeArgs main.py
+
+          #  Qt 自带的多语言翻译表（.qm）只服务 Qt 自己的对话框；本程序的
+          #  六门语言走 i18n.py。删掉几十个 .qm，界面不受影响。
+          Remove-Item -Recurse -Force "dist\GomokuAI\_internal\PySide6\Qt\translations" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "dist\GomokuAI\_internal\PyQt5\Qt5\translations" -ErrorAction SilentlyContinue
 
       - name: Build portable (onefile, play)
         # 便携版只有 play 一种：需要日志时用 `--debug` / `GOMOKUAI_LOG=1`。
@@ -507,9 +550,32 @@ jobs:
             $binArgs += "--add-binary"
             $binArgs += "cpp\build\Release\$e.exe;."
           }
+          #  PyInstaller 默认按"导入到的 Qt 模块"整棵收，但它自己的 hook 会
+          #  顺手带上一堆用不到的 Qt 库（WebEngine 一家就几十 MB）。这里按
+          #  模块名排除：业务代码只用到 QtCore / QtGui / QtWidgets，
+          #  3D、图表、多媒体、QML、SQL、PDF、设计师、帮助全部用不上。
+          #  32 位那份是 PyQt5，同样各排一遍；排除不存在的模块不会报错。
+          $excludeArgs = @()
+          foreach ($m in @(
+            "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
+            "PySide6.QtWebEngineQuick", "PySide6.QtWebChannel",
+            "PySide6.QtWebSockets", "PySide6.Qt3DCore", "PySide6.Qt3DRender",
+            "PySide6.Qt3DInput", "PySide6.Qt3DLogic", "PySide6.Qt3DAnimation",
+            "PySide6.Qt3DExtras", "PySide6.QtCharts",
+            "PySide6.QtDataVisualization", "PySide6.QtMultimedia",
+            "PySide6.QtMultimediaWidgets", "PySide6.QtQuick",
+            "PySide6.QtQuickWidgets", "PySide6.QtQml", "PySide6.QtQmlModels",
+            "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtPdf",
+            "PySide6.QtPdfWidgets", "PySide6.QtNetworkAuth",
+            "PySide6.QtDesigner", "PySide6.QtHelp", "PySide6.QtUiTools",
+            "PyQt5.QtWebEngineWidgets", "PyQt5.QtWebEngineCore",
+            "PyQt5.QtMultimedia", "PyQt5.QtQml", "PyQt5.QtQuick",
+            "PyQt5.QtSql", "PyQt5.QtTest", "PyQt5.QtDesigner",
+            "PyQt5.QtHelp", "PyQt5.QtXmlPatterns"
+          )) { $excludeArgs += "--exclude-module"; $excludeArgs += $m }
           $exe = "GomokuAI_Windows_amd_x86_64_run_play"
           uv run --frozen pyinstaller --onefile --windowed --icon="五子棋.ico" --name $exe `
-            --paths $flavorDir @binArgs main.py
+            --paths $flavorDir @binArgs @excludeArgs main.py
           if (-not (Test-Path "dist\$exe.exe")) { throw "PyInstaller 没有产出 $exe.exe" }
 
       - name: Assert all eight engines got bundled

@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import pytest
-from PyQt5.QtCore import QSettings
+from qt_compat import QSettings
 
 import main as M
 import theme

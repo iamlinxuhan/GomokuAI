@@ -110,8 +110,31 @@ jobs:
             $binArgs += "--add-binary"
             $binArgs += "cpp\build\Release\$e.exe;."
           }
+          #  商店包有 100 MB 硬上限，PyInstaller 的 Qt hook 又会顺手收进
+          #  WebEngine 这类几十 MB 的库。界面只用到 QtCore / QtGui /
+          #  QtWidgets，其余按模块名排掉。
+          $excludeArgs = @()
+          foreach ($m in @(
+            "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets",
+            "PySide6.QtWebEngineQuick", "PySide6.QtWebChannel",
+            "PySide6.QtWebSockets", "PySide6.Qt3DCore", "PySide6.Qt3DRender",
+            "PySide6.Qt3DInput", "PySide6.Qt3DLogic", "PySide6.Qt3DAnimation",
+            "PySide6.Qt3DExtras", "PySide6.QtCharts",
+            "PySide6.QtDataVisualization", "PySide6.QtMultimedia",
+            "PySide6.QtMultimediaWidgets", "PySide6.QtQuick",
+            "PySide6.QtQuickWidgets", "PySide6.QtQml", "PySide6.QtQmlModels",
+            "PySide6.QtSql", "PySide6.QtTest", "PySide6.QtPdf",
+            "PySide6.QtPdfWidgets", "PySide6.QtNetworkAuth",
+            "PySide6.QtDesigner", "PySide6.QtHelp", "PySide6.QtUiTools",
+            "PyQt5.QtWebEngineWidgets", "PyQt5.QtWebEngineCore",
+            "PyQt5.QtMultimedia", "PyQt5.QtQml", "PyQt5.QtQuick",
+            "PyQt5.QtSql", "PyQt5.QtTest", "PyQt5.QtDesigner",
+            "PyQt5.QtHelp", "PyQt5.QtXmlPatterns"
+          )) { $excludeArgs += "--exclude-module"; $excludeArgs += $m }
           uv run --frozen pyinstaller --onedir --windowed --icon="五子棋.ico" --name "GomokuAI" `
-            --paths $flavorDir @binArgs main.py
+            --paths $flavorDir @binArgs @excludeArgs main.py
+          Remove-Item -Recurse -Force "dist\GomokuAI\_internal\PySide6\Qt\translations" -ErrorAction SilentlyContinue
+          Remove-Item -Recurse -Force "dist\GomokuAI\_internal\PyQt5\Qt5\translations" -ErrorAction SilentlyContinue
           if (-not (Test-Path "dist\GomokuAI\GomokuAI.exe")) {
             throw "PyInstaller 没有产出 dist\GomokuAI\GomokuAI.exe"
           }

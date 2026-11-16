@@ -35,7 +35,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PyQt5.QtWidgets import QApplication, QLabel, QPushButton
+from qt_compat import QApplication, QLabel, QPushButton
 
 import main as M
 import room as room_module

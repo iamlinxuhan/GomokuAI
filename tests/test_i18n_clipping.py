@@ -30,9 +30,9 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PyQt5.QtCore import QPoint, QRect, Qt
-from PyQt5.QtGui import QFontMetrics
-from PyQt5.QtWidgets import QAbstractButton, QApplication, QLabel, QWidget
+from qt_compat import QPoint, QRect, Qt
+from qt_compat import QFontMetrics
+from qt_compat import QAbstractButton, QApplication, QLabel, QWidget
 
 import engine
 import i18n

@@ -24,7 +24,7 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt5.QtWidgets import QApplication, QPushButton
+from qt_compat import QApplication, QPushButton
 
 import board_render
 import engine_ban
@@ -87,7 +87,7 @@ def _pump(qapp, n=5):
 
 
 def _card_text(card):
-    from PyQt5.QtWidgets import QLabel
+    from qt_compat import QLabel
     for lbl in card.findChildren(QLabel):
         if lbl.property("role") == "card-text":
             return lbl.text()
@@ -463,7 +463,7 @@ def test_the_confirm_dialog_is_the_only_way_to_play_a_forbidden_point(win, qapp)
 
     房间那边照判不误（落下去就是判负），所以这里拦的不是"规则"而是"误触"。
     """
-    from PyQt5.QtWidgets import QMessageBox
+    from qt_compat import QMessageBox
 
     win._on_mode_selected(1)
     _pump(qapp)

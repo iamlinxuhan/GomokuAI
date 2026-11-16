@@ -19,8 +19,8 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QAbstractAnimation, QEasingCurve, QPropertyAnimation
-from PyQt5.QtWidgets import QGraphicsOpacityEffect, QWidget
+from qt_compat import QAbstractAnimation, QEasingCurve, QPropertyAnimation
+from qt_compat import QGraphicsOpacityEffect, QWidget
 
 # ---- 时长（毫秒）----
 FADE_MS = 180       # 页面切换淡入

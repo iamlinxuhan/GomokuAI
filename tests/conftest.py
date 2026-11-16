@@ -17,11 +17,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("GOMOKU_AI_UI_AUTOFIT", "0")
 if not os.environ.get("QT_QPA_PLATFORM_PLUGIN_PATH"):
     try:
-        import PyQt5
-        _platforms = os.path.join(os.path.dirname(PyQt5.__file__),
-                                  'Qt5', 'plugins', 'platforms')
+        from qt_compat import PLUGIN_ROOT
+        _platforms = str(PLUGIN_ROOT / 'platforms')
         if os.path.isdir(_platforms):
-            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = os.path.dirname(_platforms)
+            os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = str(PLUGIN_ROOT)
     except Exception:
         pass
 

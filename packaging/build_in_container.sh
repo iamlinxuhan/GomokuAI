@@ -109,12 +109,22 @@ apt_install() {
     return 1
 }
 
+#: 64 位走 PySide6（Qt 6，PyPI 有 manylinux 轮子）；i386 / armhf 没有 Qt 6
+#: 轮子，继续用 apt 的 python3-pyqt5。两条路在 qt_compat.py 收口。
+ARCH_NOW="$(dpkg --print-architecture)"
+case "$ARCH_NOW" in
+    i386|armhf) QT_BINDING="PyQt5";   APT_QT="python3-pyqt5" ;;
+    *)          QT_BINDING="PySide6"; APT_QT="" ;;
+esac
+
 apt_install \
-    python3 python3-venv python3-dev python3-pyqt5 python3-numpy python3-pil \
+    python3 python3-venv python3-dev python3-numpy python3-pil \
+    $APT_QT \
     cmake g++ gcc make binutils zlib1g-dev file \
     libgl1 libglib2.0-0 libxkbcommon-x11-0 libxkbcommon0 \
     libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
     libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 \
+    libxcb-cursor0 \
     libegl1 libfontconfig1 libdbus-1-3
 
 # ---------------------------------------------------------------------------
@@ -158,15 +168,19 @@ done
 # ③ Python 侧
 #
 # **这里不走 uv / uv.lock。** 开发环境的依赖清单（pyproject.toml + uv.lock）
-# 做全平台解析，而 i386 / armhf 上 PyPI 根本没有 PyQt5 wheel（原因见 ① 段），
-# `uv sync` 在这两个架构上必然失败。这里沿用 apt 的 python3-pyqt5 /
-# python3-numpy，pip 只补 pyinstaller 一件；Python 版本也固定是镜像的 3.11。
+# 做全平台解析，而 i386 / armhf 上 PyPI 根本没有 Qt 6 轮子（原因见 ① 段），
+# `uv sync` 在这两个架构上必然失败。这里按架构各走一条：64 位 pip 装
+# PySide6-Essentials，32 位沿用 apt 的 python3-pyqt5；numpy 一律用 apt 那份。
+# pip 另补 pyinstaller —— Python 版本固定是镜像的 3.11。
 # ---------------------------------------------------------------------------
-echo "---- 准备 venv ----"
+echo "---- 准备 venv（Qt 绑定：${QT_BINDING}）----"
 python3 -m venv --system-site-packages .venv-build
 .venv-build/bin/pip install --upgrade pip
 .venv-build/bin/pip install pyinstaller
-.venv-build/bin/python -c "from PyQt5.QtWidgets import QApplication; import numpy; print('PyQt5 + numpy OK')"
+if [ "$QT_BINDING" = "PySide6" ]; then
+    .venv-build/bin/pip install "PySide6-Essentials>=6.8,<7"
+fi
+.venv-build/bin/python -c "import qt_compat; import numpy; print('Qt 绑定:', qt_compat.API, '| numpy OK')"
 
 # ---------------------------------------------------------------------------
 # ③.5 图标（PNG，按 freedesktop 的 hicolor 目录布局）
@@ -281,11 +295,61 @@ for _bin in $ENGINE_BINS; do
     PYI_ARGS+=(--add-binary "cpp/build/${_bin}:.")
 done
 
+#  PyInstaller 的 Qt hook 会收进一堆用不到的库（WebEngine 一家就几十 MB）。
+#  界面只用到 QtCore / QtGui / QtWidgets；64 位这里是 PySide6，32 位是
+#  PyQt5，两套名字都排一遍 —— 排除不存在的模块不会报错。
+EXCLUDE_ARGS=()
+for _m in \
+    PySide6.QtWebEngineCore PySide6.QtWebEngineWidgets \
+    PySide6.QtWebEngineQuick PySide6.QtWebChannel PySide6.QtWebSockets \
+    PySide6.Qt3DCore PySide6.Qt3DRender PySide6.Qt3DInput PySide6.Qt3DLogic \
+    PySide6.Qt3DAnimation PySide6.Qt3DExtras PySide6.QtCharts \
+    PySide6.QtDataVisualization PySide6.QtMultimedia \
+    PySide6.QtMultimediaWidgets PySide6.QtQuick PySide6.QtQuickWidgets \
+    PySide6.QtQml PySide6.QtQmlModels PySide6.QtSql PySide6.QtTest \
+    PySide6.QtPdf PySide6.QtPdfWidgets PySide6.QtNetworkAuth \
+    PySide6.QtDesigner PySide6.QtHelp PySide6.QtUiTools \
+    PyQt5.QtWebEngineWidgets PyQt5.QtWebEngineCore PyQt5.QtMultimedia \
+    PyQt5.QtQml PyQt5.QtQuick PyQt5.QtSql PyQt5.QtTest PyQt5.QtDesigner \
+    PyQt5.QtHelp PyQt5.QtXmlPatterns; do
+    EXCLUDE_ARGS+=(--exclude-module "$_m")
+done
+
 echo "---- PyInstaller: onedir（安装包 / AppImage 的唯一原料，play）----"
 .venv-build/bin/pyinstaller --onedir --windowed --name "gomoku-ai" \
     --paths "${FLAVOR_DIR}" \
     "${PYI_ARGS[@]}" \
+    "${EXCLUDE_ARGS[@]}" \
     --add-data "${ICON_OUT}/${APP_ICON_NAME}:." main.py
+
+#  Qt 的多语言表只服务 Qt 自己的对话框；本程序的文案走 i18n.py。
+#  其余几条都是"PyInstaller 按依赖收进来、但这个程序用不到"的东西：
+#    platformthemes/libqgtk3  → 拖进整条 GTK 栈（glib/gio/cairo，十几 MB）
+#    networkinformation/tls   → QtNetwork 的附件；程序的网络走 Python sockets
+#    iconengines/libqsvgicon  → 图标全是 PNG，没有 SVG
+#  删掉之后包小一圈，启动路径不变。
+rm -rf "dist/gomoku-ai/_internal/PySide6/Qt/translations" \
+       "dist/gomoku-ai/_internal/PySide6/Qt/plugins/platformthemes" \
+       "dist/gomoku-ai/_internal/PySide6/Qt/plugins/networkinformation" \
+       "dist/gomoku-ai/_internal/PySide6/Qt/plugins/tls" \
+       "dist/gomoku-ai/_internal/PySide6/Qt/plugins/iconengines" \
+       "dist/gomoku-ai/_internal/PyQt5/Qt5/translations"
+rm -rf "dist/gomoku-ai/_internal/PySide6/Qt/plugins/imageformats" \
+       "dist/gomoku-ai/_internal/PySide6/Qt/plugins/egldeviceintegrations"
+#  平台插件只留 xcb（X11 / XWayland）与 wayland；EGLFS、linuxfb、VNC 这些
+#  是嵌入式/远程用途，桌面版一个都用不到。
+for _p in libqeglfs libqlinuxfb libqminimalegl libqminimal libqvkkhrdisplay \
+          libqvnc libqoffscreen; do
+    rm -f "dist/gomoku-ai/_internal/PySide6/Qt/plugins/platforms/${_p}.so"
+done
+for _lib in libgtk-3.so.0 libgio-2.0.so.0 libglib-2.0.so.0 libcairo.so.2 \
+            libcairo-gobject.so.2 libpangocairo-1.0.so.0; do
+    rm -f "dist/gomoku-ai/_internal/${_lib}"
+done
+for _lib in libQt6Network.so.6 libQt6Svg.so.6 \
+            libQt6EglFSDeviceIntegration.so.6 libQt6EglFsKmsSupport.so.6; do
+    rm -f "dist/gomoku-ai/_internal/PySide6/Qt/lib/${_lib}"
+done
 
 rm -rf "${FLAVOR_DIR}"
 

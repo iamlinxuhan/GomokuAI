@@ -36,16 +36,19 @@ name = "gomoku-ai"
 version = "4.4.2"
 description = "A human-vs-AI Gomoku (five-in-a-row) program with a bitboard C++17 search core"
 readme = "README.md"
-# SPDX 标识符（PEP 639）。界面用的 PyQt5 本身以 GPLv3 发布，链接它的二进制整体
-# 受 GPLv3 约束，源码许可必须与之一致才成立 —— 此前那份 GPL-2.0 文本没有
-# "or later" 字样，按 GPL-2.0-only 解释，与 GPLv3 的 PyQt5 不兼容。理由详见
-# README 的「许可证」一节。
+# SPDX 标识符（PEP 639）。界面绑定优先 PySide6（LGPLv3），32 位平台回退
+# PyQt5（GPLv3）；拿 GPL-3.0-or-later 同时覆盖两条路。此前那份 GPL-2.0 文本
+# 没有 "or later" 字样，按 GPL-2.0-only 解释，与 GPLv3 的 PyQt5 不兼容 ——
+# 理由详见 README 的「许可证」一节。
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "numpy",
-    "PyQt5",
+    # Qt 6 的绑定走官方 PySide6；Qt 6 没有 32 位轮子，i386 / armv7 回退 PyQt5。
+    # 业务代码只 import `qt_compat`，两条绑定在那里收口。
+    "PySide6-Essentials>=6.8,<7; platform_machine != 'i686' and platform_machine != 'i386' and platform_machine != 'armv7l' and platform_machine != 'armv6l'",
+    "PyQt5; platform_machine == 'i686' or platform_machine == 'i386' or platform_machine == 'armv7l' or platform_machine == 'armv6l'",
 ]
 
 [dependency-groups]
@@ -53,7 +56,8 @@ dependencies = [
 #
 # pytest 的标记定义与告警过滤在 pytest.ini；CI 跑 `-m "not perf"`，本地跑全量。
 # pyinstaller 用于 Windows 与 Linux AMD 打包；Linux ARM/i386 的配方用 apt 的
-# PyQt5，那份 job 只额外装 pyinstaller（见 packaging/build_in_container.sh）。
+# PyQt5（Qt 6 没有 32 位轮子），那份 job 只额外装 pyinstaller
+# （见 packaging/build_in_container.sh）。
 dev = [
     "pytest",
     "pyinstaller",

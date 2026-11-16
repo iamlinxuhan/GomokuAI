@@ -4,7 +4,7 @@
 
 ![Gomoku AI](docs/cover.png)
 
-A human-vs-AI Gomoku (five-in-a-row) program on **PyQt5**, with its search core
+A human-vs-AI Gomoku (five-in-a-row) program on **Qt 6 (PySide6)**, with its search core
 written in **C++17** and reached over a loopback socket. The engine is bitboard
 based, with fully incremental evaluation, PVS + transposition table + quiescence
 search, VCF, and the **Gomocup 2026 official opening book**. It runs on the CPU
@@ -19,7 +19,7 @@ Windows and Linux builds are published with **automatic updates** verified by an
 Ed25519 signature.
 
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-blue)
-![PyQt5](https://img.shields.io/badge/PyQt5-5.x-green)
+![PySide6](https://img.shields.io/badge/PySide6-6.x-green)
 ![NumPy](https://img.shields.io/badge/NumPy-✓-orange)
 ![Version](https://img.shields.io/badge/version-4.4.2-brightgreen)
 ![License](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)
@@ -138,8 +138,7 @@ chmod +x GomokuAI_Linux_amd_x86_64.AppImage
 ```
 
 **On Windows on ARM, take the x64 build.** Windows ships x64 emulation and it
-runs fine. There is no native Windows ARM package: PyQt5 has no `win_arm64`
-wheels across the entire series, so it cannot be built.
+runs fine. There is no native Windows ARM package.
 
 ### Automatic updates
 
@@ -169,12 +168,12 @@ besides the program itself; `game_log_*.txt` is written only with `--debug` or
 ```bash
 git clone https://github.com/iamlinxuhan/GomokuAI.git
 cd GomokuAI
-uv sync                              # Python >= 3.11; runtime deps are numpy + PyQt5
+uv sync                              # Python >= 3.11; runtime deps are numpy + PySide6
 uv run python main.py
 ```
 
 Dependencies are managed with **uv** (`pyproject.toml` + a committed `uv.lock`).
-Without uv, `pip install numpy PyQt5` is exactly equivalent for running from
+Without uv, `pip install numpy PySide6-Essentials` is exactly equivalent for running from
 source.
 
 ---
@@ -317,7 +316,7 @@ The panel reports `Book` on the engine row. The three values — `C++`,
 ## Two engines, one façade
 
 ```
-┌─ Python (UI, PyQt5) ────────────┐        ┌─ C++17 ───────────────────┐
+┌─ Python (UI, PySide6) ──────────┐        ┌─ C++17 ───────────────────┐
 │  main.py                        │        │  gomoku_engine            │
 │    └ RoomClient                 │        │   ├ Board (bitboard)      │
 │         └ Room → AIPlayer       │  TCP   │   ├ evaluate (incremental)│
@@ -611,10 +610,9 @@ Copyright (C) 2026 YFY0109 <yfy0109@qq.com>
 
 ### Why GPLv3
 
-The UI is built on **PyQt5**, released under GPLv3 (Riverbank offers GPLv3 or a
-commercial licence). A binary that links it is covered by GPLv3 as a whole. The
-previous GPL-2.0 text carried no "or later" clause, reading as GPL-2.0-only,
-which is incompatible with a GPLv3 PyQt5.
+The UI is built on **PySide6**, the official Qt 6 binding, released under
+LGPLv3. The 32-bit packages (i386, armv7) fall back to **PyQt5**, because Qt 6
+ships no 32-bit wheels. The source is GPL-3.0-or-later, which covers both.
 
 ### Third-party data
 

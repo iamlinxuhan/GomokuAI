@@ -21,8 +21,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PyQt5.QtCore import QRect, QSettings
-from PyQt5.QtWidgets import QApplication
+from qt_compat import QRect, QSettings
+from qt_compat import QApplication
 
 import main as M
 import theme

@@ -32,8 +32,8 @@ os.environ.setdefault("GOMOKU_AI_UI_AUTOFIT", "0")
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _ROOT)
 
-from PyQt5.QtCore import QPoint, QRect  # noqa: E402
-from PyQt5.QtWidgets import QApplication  # noqa: E402
+from qt_compat import QPoint, QRect  # noqa: E402
+from qt_compat import QApplication  # noqa: E402
 
 import i18n  # noqa: E402
 import theme  # noqa: E402
@@ -91,8 +91,8 @@ def play(w, app, r, c, *, wait=15.0):
     是在那条路径上追点的，绕过它就等于没测到接线。落子用事件对象而非直接调用
     内部方法，是为了让命中判定也一并跑一遍。
     """
-    from PyQt5.QtCore import QPointF, Qt
-    from PyQt5.QtGui import QMouseEvent
+    from qt_compat import QPointF, Qt
+    from qt_compat import QMouseEvent
     x, y = w.board_widget.geom.px(r, c)
     ev = QMouseEvent(QMouseEvent.MouseButtonPress, QPointF(x, y),
                      Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
@@ -160,7 +160,7 @@ def probe_button_variants(w):
     这条替代了 ``gui_smoke.do_stylesheet`` —— 改用全局 QSS 后
     ``btn.styleSheet()`` 恒为空串，那个检查恒过，留着就是覆盖率的假象。
     """
-    from PyQt5.QtWidgets import QPushButton
+    from qt_compat import QPushButton
     btns = w.findChildren(QPushButton)
     missing = [b.text() or "(无题)" for b in btns
                if not b.property("variant")]
@@ -217,7 +217,7 @@ def probe_window_scrollable(w):
     就够大，压不到触发滚动的程度。所以断言的是机制：允许被压到 ``floor``，
     而当前视口不低于 ``floor``（于是默认窗口下不该平白多出一条滚动条）。
     """
-    from PyQt5.QtWidgets import QScrollArea
+    from qt_compat import QScrollArea
     outer = w.centralWidget()
     if not isinstance(outer, QScrollArea):
         return [("中央容器是滚动区", False, type(outer).__name__)]
@@ -426,7 +426,7 @@ def main():
 
 def _title_readable(w):
     """颜色选择页的标题颜色是否真的达到了 AA（实测重构前是 2.02:1）。"""
-    from PyQt5.QtWidgets import QLabel
+    from qt_compat import QLabel
     lbls = [l for l in w.selection_color.findChildren(QLabel) if l.text().strip()]
     if not lbls:
         return False, "没找到标题 QLabel"

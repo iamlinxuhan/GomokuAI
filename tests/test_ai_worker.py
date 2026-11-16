@@ -13,7 +13,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PyQt5.QtWidgets import QApplication
+from qt_compat import QApplication
 
 import main as M
 

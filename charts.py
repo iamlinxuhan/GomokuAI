@@ -27,9 +27,9 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QPointF, QRectF, QSize, Qt
-from PyQt5.QtGui import QBrush, QColor, QFontMetrics, QPainter, QPen
-from PyQt5.QtWidgets import (QFrame, QHBoxLayout, QLabel, QSizePolicy,
+from qt_compat import QPointF, QRectF, QSize, Qt
+from qt_compat import QBrush, QColor, QFontMetrics, QPainter, QPen
+from qt_compat import (QFrame, QHBoxLayout, QLabel, QSizePolicy,
                              QVBoxLayout, QWidget)
 
 import analysis as A
